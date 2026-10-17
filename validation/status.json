@@ -1,0 +1,161 @@
+{
+  "claim": "early-alpha",
+  "date": "2026-07-26",
+  "schema": "pear-sim/validation-status/v0.1",
+  "tests": {
+    "VAL-001": {
+      "implemented": [
+        "SI unit and dimension checks",
+        "analytic first-order RC transient",
+        "analytic RC time-integral and RMS checks independent of the output grid",
+        "instantaneous power balance for RC and both buck modes",
+        "time-integrated component energy and stored-energy balance audit",
+        "analytic first-order RL transient (current and inductor voltage)",
+        "analytic series-RLC step in the underdamped and overdamped regimes",
+        "ngspice differential adapter over the linear subset (RC sine/step, RLC step, PWL ramp): netlist emitted from the model, shared explicit grid via linearize, RELATIVE 1e-3-of-peak-to-peak budget with the resampling term declared; second independent evidence class next to the analytic closed forms",
+        "Celsius normalized with its 273.15 offset and temperatures below absolute zero refused \u2014 the one supported dimension where a scale factor alone is a silent error no plausibility check can catch"
+      ],
+      "missing": [
+        "KCL/KVL residual report",
+        "convergence sweep"
+      ],
+      "status": "partial"
+    },
+    "VAL-002": {
+      "implemented": [
+        "buck CCM ideal conversion ratio",
+        "boost CCM ideal conversion ratio",
+        "buck and boost compiled matrices checked against published hybrid equations",
+        "event-aware buck switching-signal means independent of the output grid",
+        "automatic canonical buck CCM expected-vs-measured analytic self-check"
+      ],
+      "missing": [
+        "buck-boost",
+        "ARCH parameter corners",
+        "state check at every switching boundary"
+      ],
+      "status": "partial"
+    },
+    "VAL-003": {
+      "claim_boundary": "early-alpha verification evidence only; not a validation claim",
+      "implemented": [
+        "independent periodic piecewise-affine canonical-buck oracle with matrix propagation, numerical BCM root, and separately refined zero-current events",
+        "bounded retained-run load sweep at nine default ratios spanning CCM, exact BCM, and DCM",
+        "zero-current inductor state reduction for the canonical buck switch-off/diode-off idle topology",
+        "natural ideal-diode turn-off at the zero-current crossing with a constrained zero-current idle interval",
+        "eleven blocking gates per point for regime, boundary states, event timing, reverse current, cycle mean, mode fractions, energy balance, cycle periodicity, unclassified time, and fraction closure",
+        "machine-readable aggregate evidence, retained per-point run artifacts, and offline human sweep report",
+        "regression smokes for DCM output-grid independence and selected solver convergence settings",
+        "versioned full-v1 numerical-evidence producer with nine operating points, sixteen unique numerical configurations, 144 retained cells, 1584 independent-oracle cell gates, and 36 family gates",
+        "tolerance, maximum-step, output-grid, and DOPRI5/DOP853/Radau/BDF study families with fail-closed pass, fail, and not-run propagation",
+        "source-revision-bound native platform bundles with exact artifact manifests and offline human reports",
+        "strict Linux/Darwin/Windows aggregator retaining 3168 comparisons over 22 signed physical semantic fields per cell while keeping the 1584 local oracle gates separate",
+        "aggregate source binding over revision, PEARSim version, source/model/request hashes, numerical profile, stable oracle identity, exactly verified local oracle artifacts, bounded independent BCM-load agreement, and verified platform family evidence",
+        "GitHub Actions definition for native full-v1 production and always-run aggregation; workflow configuration is not itself a passing cross-platform result",
+        "independent periodic piecewise-affine canonical-boost oracle with a numerical BCM root and separately refined DCM zero-current events",
+        "bounded retained-run canonical-boost load sweep at nine default ratios with thirteen gates per point, including state-ripple and event-semantics checks",
+        "strict canonical-boost topology recognition, machine-readable evidence, raw per-point run retention, offline report, and native three-point CI smoke"
+      ],
+      "missing": [
+        "standalone analytical ideal-diode turn-off case",
+        "generality beyond the separately recognized canonical single-switch ideal buck and boost topologies",
+        "a full numerical and native-platform matrix for the canonical boost slice",
+        "a retained passing full-v1 native evidence set and cross-platform aggregate bound to the current release revision"
+      ],
+      "scope": "separately recognized canonical single-switch ideal buck and boost topologies across declared CCM, numerical-BCM, and DCM load ratios",
+      "status": "partial"
+    },
+    "VAL-004": {
+      "status": "not_started"
+    },
+    "VAL-005": {
+      "claim_boundary": "executable six-step, SPWM and SVPWM-injection fixtures with floating neutral, an FFT THD golden, one retained modulation-index sweep and a closed-loop grid-following case; still not a validated general three-phase inverter claim (matrix and acceptance gate incomplete)",
+      "implemented": [
+        "three-phase six-step bridge fundamental amplitude and phase-current balance",
+        "independently computed fixed-frequency complementary PWM schedule with intrinsic interlock, atomic zero-dead-time swaps, and representable dead-time gaps",
+        "gate-to-device mapping and bounded human-readable switching timeline",
+        "bounded synchronous offline-midpoint-sampled center-aligned SPWM in the linear range with six interlocked gate outputs, abc/acb sequence, and explicit dead time",
+        "source-bound commanded carrier cells, exact realized-event replay, and bounded three-phase human-report projection",
+        "event-aligned dense-output Fourier coefficients and bandwidth-limited THD observations over an explicit integer-period half-open window",
+        "zero-dead-time analytical line-fundamental and phase-current sequence regression checks for one split-bus midpoint-neutral balanced RL fixture",
+        "SVPWM-equivalent min-max injection with law-aware linear-range bounds, recomputed bit-exactly by the modulation contract, and a v_ab fundamental check at m=1.05 (~0.1% of m*(Vdc/2)*sqrt(3))",
+        "floating-neutral three-wire star operation (invariant-derivative reduction) with textbook +/-Vdc/6*2 and +/-Vdc/2 common-mode levels including 500 ns dead time",
+        "independent FFT THD golden on the recorded uniform grid cross-checking the quadrature harmonics (fundamental rel 2e-3, THD rel 2e-2) for line voltage and phase currents",
+        "retained modulation-index sweep (bounded parameter-sweep harness) over the floating-neutral SPWM inverter with nonzero dead time; line fundamental scales with the command",
+        "closed-loop dq current control with in-the-loop SRF-PLL on a Thevenin weak grid (grid-following): PLL lock, dq tracking, P/Q at the PCC, runtime + gate-drive interlock verification",
+        "half-bridge switching-node golden: gate schedule against the modulator law in closed form (1e-12 s), pole pinned by the body diode through both dead-time gaps, and the RL trajectory against an independently integrated piecewise exponential (3.6e-11 A on ~19 A), plus the dead-time bias on the settled mean"
+      ],
+      "missing": [
+        "overmodulation beyond the min-max linear range (2/sqrt(3))",
+        "retained load and switching-frequency inverter sweeps",
+        "formal acceptance gate wiring (thresholds as blocking expectations)",
+        "complete balanced R/RL validation matrix and unbalanced-load coverage",
+        "three-phase bridge authoring helper with expansion-equivalence check"
+      ],
+      "status": "partial"
+    },
+    "VAL-006": {
+      "status": "not_started"
+    },
+    "VAL-007": {
+      "claim_boundary": "post-processing loss estimate over IDEAL recorded waveforms with synthetic datasheet-shaped cards; conduction/switching LUTs verified against closed forms on known-current runs; NOT validated against measured DPT data or vendor cards",
+      "implemented": [
+        "device-card format: conduction v_on(i,Tj) + switching E(i) at declared DPT conditions with per-figure provenance and validity envelopes",
+        "clamped-extrapolation lookups with per-table counters and warnings",
+        "declared linear voltage scaling of switching energies (E * V_comm / V_test)",
+        "conduction closed-form golden (constant-current diode, bilinear interpolation exact to 1e-9)",
+        "switching-energy golden on the CCM buck (event counts and scaled totals)",
+        "hard (switch_manager) and soft (natural_commutation) diode recovery events both counted",
+        "declared evaluation temperature \u2014 no hidden electrothermal iteration"
+      ],
+      "missing": [
+        "measured/vendor DPT datasets and their legal gate",
+        "temperature-dependent switching energies",
+        "gate-resistance and di/dt corrections",
+        "independent-engine cross-check of the thermal description (same card in both tools)"
+      ],
+      "status": "partial"
+    },
+    "VAL-008": {
+      "claim_boundary": "Foster junction-to-case chain with static TIM/heatsink path and fan-PQ operating point; step response exact vs analytic sum of exponentials; no Cauer, no shared-heatsink coupling, no measured transient validation",
+      "implemented": [
+        "Foster network via exact piecewise-constant-power recursion (analytic step-response golden at 1e-9)",
+        "per-device stored-energy balance audit with independent recomputation",
+        "fan-PQ x heatsink-impedance operating point (piecewise-linear intersection, fail closed when curves do not cross)",
+        "static TIM + heatsink resistances with declared omissions (no dynamics, no spreading, no shared-sink coupling)",
+        "ASTM E1049 rainflow counting over the junction-temperature swing (canonical example golden); counting kept separate from any lifetime model"
+      ],
+      "missing": [
+        "Cauer networks and Foster-to-Cauer conversion",
+        "heatsink/TIM thermal dynamics",
+        "electrothermal closure (VAL-009): temperature feedback into the loss tables",
+        "measured thermal step-response validation"
+      ],
+      "status": "partial"
+    },
+    "VAL-009": {
+      "status": "not_started"
+    },
+    "VAL-010": {
+      "claim_boundary": "executable three-phase three- and five-level diode-clamped bridges (18 and 42 ideal diodes) with the level-shifted PD modulator, one stiff-link operating point per depth with no independent-engine comparison, and a gated capacitive-link midpoint envelope (three-level); NOT a validated general multilevel claim (single operating point per depth, no independent-engine comparison, no active balancing, no capacitive five-level link, no loss-figure cross-check)",
+      "implemented": [
+        "lazy budget-bounded diode active-set search: bit-identical candidate order for every model the former 16-diode limit accepted; measured search statistics on the 18-diode bridge (mean ~91, max ~494 candidates per query vs 262144 brute-force)",
+        "three_phase_npc_spwm level-shifted (PD) modulator: twelve interlocked gates, band-transition hand-overs, declared minimum-pulse suppression, NPC gating invariant as a runtime interlock",
+        "modulation-law recompute contract: npc-modulation.json and every per-cell command record independently recomputed bit-exactly from the expanded control metadata; tampered records rejected",
+        "pole-voltage fundamental follows m*(Udc/2) within 0.5% at zero dead time; three-level pole waveform (+Udc/2, 0, -Udc/2) verified",
+        "capacitive-link midpoint dynamics measured and gated through blocking expectations (mean balance + peak-to-peak ripple envelope); clamp path carries all midpoint current past a floating three-wire star",
+        "five-level DNPC instantiation of the level-generic band law: 24 interlocked gates (h1..h4/l1..l4 per leg), staircase gating invariant as a runtime interlock, five pole levels verified, fundamental follows m*(Udc/2) within the documented dead-time loss",
+        "deterministic anchor repair beyond the enumeration budget: floating internal nodes are anchored clamp-first (structural body-diode classification, never by name), dead ends backtrack; resolves the 42-diode cold start no distance-ordered enumeration can reach; models within the budget keep bit-identical behavior"
+      ],
+      "missing": [
+        "capacitive five-level link (inner-tap balancing is the classic DNPC limitation; midpoint machinery exists for the three-level case)",
+        "active balancing (redundant-state selection) on the sampled-controller machinery",
+        "NPC loss-figure cross-check against an independent engine",
+        "operating-point matrix (modulation-index / load / carrier-ratio sweeps) with acceptance gates",
+        "POD/APOD carrier dispositions (PD only)",
+        "seven or more levels (band law generic; loader fails closed outside {3, 5})"
+      ],
+      "status": "partial"
+    }
+  }
+}

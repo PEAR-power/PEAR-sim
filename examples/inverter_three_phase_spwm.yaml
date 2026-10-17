@@ -1,0 +1,95 @@
+schema: pear-sim/v0.1
+name: inverter_three_phase_spwm
+
+# Three-phase two-level inverter with sine-triangle PWM (SPWM): 2 x 200 V bus, 500 Hz fundamental, 21 kHz carrier, 500 ns dead time, R-L load.
+
+parameters:
+  half_bus: 200 V
+  fundamental: 500 Hz
+  # Ratio 42 is divisible by three, so the sampled phase set is exactly cyclic.
+  carrier: 21 kHz
+  modulation_index: 80 %
+  dead_time: 500 ns
+  phase_r: 10 ohm
+  phase_l: 5 mH
+
+circuit:
+  ground: dc_minus
+  components:
+    - {id: vlow, type: voltage_source, p: neutral, n: dc_minus, value: "${half_bus}"}
+    - {id: vhigh, type: voltage_source, p: dc_plus, n: neutral, value: "${half_bus}"}
+
+    - {id: qah, type: ideal_switch, p: dc_plus, n: a, control: bridge.a.high}
+    - {id: qal, type: ideal_switch, p: a, n: dc_minus, control: bridge.a.low}
+    - {id: qbh, type: ideal_switch, p: dc_plus, n: b, control: bridge.b.high}
+    - {id: qbl, type: ideal_switch, p: b, n: dc_minus, control: bridge.b.low}
+    - {id: qch, type: ideal_switch, p: dc_plus, n: c, control: bridge.c.high}
+    - {id: qcl, type: ideal_switch, p: c, n: dc_minus, control: bridge.c.low}
+
+    # Explicit antiparallel paths make nonzero dead time electrically meaningful.
+    - {id: dah, type: diode, p: a, n: dc_plus, initial: off}
+    - {id: dal, type: diode, p: dc_minus, n: a, initial: off}
+    - {id: dbh, type: diode, p: b, n: dc_plus, initial: off}
+    - {id: dbl, type: diode, p: dc_minus, n: b, initial: off}
+    - {id: dch, type: diode, p: c, n: dc_plus, initial: off}
+    - {id: dcl, type: diode, p: dc_minus, n: c, initial: off}
+
+    # This example deliberately ties the load neutral to the DC midpoint.
+    - {id: la, type: inductor, p: a, n: ar, value: "${phase_l}", initial_current: 0 A}
+    - {id: ra, type: resistor, p: ar, n: neutral, value: "${phase_r}"}
+    - {id: lb, type: inductor, p: b, n: br, value: "${phase_l}", initial_current: 0 A}
+    - {id: rb, type: resistor, p: br, n: neutral, value: "${phase_r}"}
+    - {id: lc, type: inductor, p: c, n: cr, value: "${phase_l}", initial_current: 0 A}
+    - {id: rc, type: resistor, p: cr, n: neutral, value: "${phase_r}"}
+
+    - {id: vab, type: voltage_probe, p: a, n: b}
+    - {id: vbc, type: voltage_probe, p: b, n: c}
+    - {id: vca, type: voltage_probe, p: c, n: a}
+    - {id: van, type: voltage_probe, p: a, n: neutral}
+    - {id: vbn, type: voltage_probe, p: b, n: neutral}
+    - {id: vcn, type: voltage_probe, p: c, n: neutral}
+    - {id: vdc, type: voltage_probe, p: dc_plus, n: dc_minus}
+
+controls:
+  bridge:
+    type: three_phase_spwm
+    carrier_frequency: "${carrier}"
+    fundamental_frequency: "${fundamental}"
+    modulation_index: "${modulation_index}"
+    carrier_phase: 0 s
+    reference_phase: 0 s
+    sequence: abc
+    dead_time: "${dead_time}"
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 12 ms
+    output_step: 1 us
+    solver: dop853
+    rtol: 1.0e-9
+    atol: 1.0e-11
+  harmonics:
+    start: 8 ms
+    stop: 12 ms
+    fundamental_frequency: "${fundamental}"
+    max_harmonic: 42
+    signals:
+      - {signal: v(vab), semantic: line_voltage_ab}
+      - {signal: v(vbc), semantic: line_voltage_bc}
+      - {signal: v(vca), semantic: line_voltage_ca}
+      - {signal: i(la), semantic: phase_current_a}
+      - {signal: i(lb), semantic: phase_current_b}
+      - {signal: i(lc), semantic: phase_current_c}
+
+outputs:
+  - v(vab)
+  - v(vbc)
+  - v(vca)
+  - v(van)
+  - v(vbn)
+  - v(vcn)
+  - v(vdc)
+  - i(la)
+  - i(lb)
+  - i(lc)

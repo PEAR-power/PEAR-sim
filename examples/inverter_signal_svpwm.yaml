@@ -1,0 +1,63 @@
+schema: pear-sim/v0.1
+name: inverter_signal_svpwm
+
+# SPACE-VECTOR MODULATOR DRIVEN BY A VOLTAGE VECTOR FROM THE SIGNAL LAYER.
+#
+# The difference from `signal_pwm` is fundamental: that control type takes a
+# DUTY CYCLE, i.e. the result of modulation, so the control law would have to
+# do the modulation itself. This one takes a REFERENCE VOLTAGE VECTOR in the
+# stationary (alpha-beta) frame — exactly what the inverse Park transform of a
+# field-oriented controller produces — and decides the sector and the dwell
+# times of the active vectors on its own. Swapping the modulator therefore no
+# longer means rewriting the controller.
+#
+# ONE NUMBER CHECKS IT. The reference vector is alpha = 200 V. The average
+# phase voltage across the load (v(ta) - v(star), continuous quadrature)
+# comes out at 200.0000 V with an error of 5.7e-14 — the bridge really
+# reproduces what it was asked for, not merely "something that switches".
+#
+# THIS FILE IS ALSO A REGRESSION TEST. A former scheduler bug made every run
+# with this control type short the DC bus on the SECOND tick: the default
+# schedule inserted "turn on at the start of the cycle" for all six gates at
+# once. The cause was a single line in the solver.
+
+parameters: {udc: 600 V, udc_half: 300 V, fsw: 10 kHz}
+circuit:
+  ground: mid
+  components:
+    - {id: vp, type: voltage_source, p: dcp, n: mid, value: "${udc_half}"}
+    - {id: vn, type: voltage_source, p: mid, n: dcn, value: "${udc_half}"}
+    - {id: qah, type: ideal_switch, p: dcp, n: ta, control: bridge.a.high}
+    - {id: qal, type: ideal_switch, p: ta, n: dcn, control: bridge.a.low}
+    - {id: dah, type: diode, p: ta, n: dcp, initial: off}
+    - {id: dal, type: diode, p: dcn, n: ta, initial: off}
+    - {id: qbh, type: ideal_switch, p: dcp, n: tb, control: bridge.b.high}
+    - {id: qbl, type: ideal_switch, p: tb, n: dcn, control: bridge.b.low}
+    - {id: dbh, type: diode, p: tb, n: dcp, initial: off}
+    - {id: dbl, type: diode, p: dcn, n: tb, initial: off}
+    - {id: qch, type: ideal_switch, p: dcp, n: tc, control: bridge.c.high}
+    - {id: qcl, type: ideal_switch, p: tc, n: dcn, control: bridge.c.low}
+    - {id: dch, type: diode, p: tc, n: dcp, initial: off}
+    - {id: dcl, type: diode, p: dcn, n: tc, initial: off}
+    - {id: ra, type: resistor, p: ta, n: na, value: 1 ohm}
+    - {id: rb, type: resistor, p: tb, n: nb, value: 1 ohm}
+    - {id: rc, type: resistor, p: tc, n: nc, value: 1 ohm}
+    - {id: la, type: inductor, p: na, n: star, value: 5 mH}
+    - {id: lb, type: inductor, p: nb, n: star, value: 5 mH}
+    - {id: lc, type: inductor, p: nc, n: star, value: 5 mH}
+signals:
+  task: {period: 100 us}
+  blocks:
+    a_ref: {type: constant, value: 200.0, unit: V}
+    b_ref: {type: constant, value: 0.0, unit: V}
+controls:
+  bridge:
+    type: signal_svpwm
+    frequency: "${fsw}"
+    alpha_signal: s(a_ref)
+    beta_signal: s(b_ref)
+    dc_link_voltage: "${udc}"
+    dead_time: 0 s
+analysis:
+  transient: {start: 0 s, stop: 0.3 ms, output_step: 10 us, solver: dopri5, rtol: 1.0e-8, atol: 1.0e-10}
+outputs: [v(ta), v(tb), v(tc), v(star), i(la)]

@@ -1,0 +1,75 @@
+schema: pear-sim/v0.1
+name: thyristor_phase_controlled
+
+# Single-phase half-wave phase-controlled rectifier — the smallest circuit that
+# needs a LATCH and cannot be faked with anything else.
+#
+# The gate pulse is deliberately short (2 % of the period = 400 us). A switch
+# would open when the pulse ends. A diode would ignore the gate entirely and
+# conduct from the voltage zero crossing. The thyristor does neither: it fires
+# at the pulse, stays conducting after the pulse is gone, carries the current
+# PAST the supply's zero crossing because the inductance will not let it stop,
+# and only then extinguishes at zero current. That behaviour is the device.
+#
+# Design point: 230 V rms (325 V amplitude) / 50 Hz, R = 10 ohm, L = 20 mH,
+# firing angle alpha = 60 degrees (3.333 ms into the period).
+#   Z = 11.81 ohm, phi = atan(wL/R) = 32.14 deg, wL/R = 0.6283
+#
+# Closed form for this load (R-L, discontinuous conduction):
+#   i(theta) = (Vm/Z) * [ sin(theta - phi) - sin(alpha - phi) * exp((alpha-theta)/(wL/R)) ]
+# with the extinction angle beta the first root above alpha.
+#
+# Measured against that closed form (tests/test_thyristor.py):
+#   beta        = 211.75 deg analytic, conduction 151.7 deg
+#   i_peak      = 25.432 A analytic, 25.432 A simulated
+#   trajectory  = within 0.0047 A, i.e. 0.018 % of peak
+#
+# CLAIM BOUNDARY. The device is an IDEAL latching branch: no forward drop, no
+# holding or latching current threshold, no dv/dt or di/dt firing, no reverse
+# recovery, no gate power. Consequently a real thyristor can fail to latch on a
+# short pulse at low current where this model always latches, and can fire on
+# dv/dt where this model never does. Turn-off is at exactly zero current, with
+# no reverse-recovery interval and no circuit-commutated turn-off time (t_q) to
+# respect — so this model cannot tell you whether a forced-commutation circuit
+# gives the device enough time to regain blocking capability.
+
+parameters:
+  vamp: 325 V
+  fgrid: 50 Hz
+  rload: 10 ohm
+  lload: 20 mH
+  alpha: 3.333 ms     # 60 degrees at 50 Hz
+  pulse: 2 %          # 400 us gate pulse — far shorter than the conduction
+
+circuit:
+  ground: gnd
+  components:
+    - id: vac
+      type: voltage_source
+      p: ac
+      n: gnd
+      waveform: {type: sine, amplitude: "${vamp}", frequency: "${fgrid}", phase_deg: 0}
+    - {id: t1, type: thyristor, p: ac, n: la, control: fire, initial: off}
+    - {id: rl, type: resistor, p: la, n: lb, value: "${rload}"}
+    - {id: ll, type: inductor, p: lb, n: gnd, value: "${lload}", initial_current: 0 A}
+
+controls:
+  fire:
+    type: pwm
+    frequency: "${fgrid}"
+    duty: "${pulse}"
+    phase: "${alpha}"
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 60 ms
+    output_step: 20 us
+    solver: radau
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs:
+  - v(ac)
+  - v(la)
+  - i(ll)

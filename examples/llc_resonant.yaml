@@ -1,0 +1,90 @@
+schema: pear-sim/v0.1
+name: llc_resonant
+
+# Half-bridge LLC — the resonant rung of the gradient engine's LLC/DAB slice, and the
+# first example whose NATURAL commutations happen on a ringing tank rather
+# than a decaying ramp. The series Cr blocks any DC through the transformer,
+# so unlike the DAB no winding resistance is needed to make the periodic map
+# well-posed; the tank itself is the damping path into the load.
+#
+# Operating point ABOVE resonance (fs = 20 kHz > fr ~ 15.9 kHz): the
+# rectifier conducts continuously and commutates HARD at each secondary
+# current zero — one scalar switching surface (the winding current) at which
+# BOTH diode pairs swap. That is exactly one saltation event per crossing:
+# a single guard, one dynamics jump, the pair flip declared in the next
+# step's diode states.
+#
+# SECONDARY GROUND TIE, declared (same reasoning as the DAB example): the
+# rectifier's negative rail shares the primary ground; nothing else couples
+# the sides, so the electrical solution is identical to the floating one.
+#
+# CLAIM BOUNDARY: ideal switches and diodes, no dead time, no magnetizing
+# saturation, no ZVS timing claims (dead time is zero, so there is no ZVS
+# interval to speak of — that claim needs a dead-time program, not this
+# example). Numbers are representative.
+
+parameters:
+  vhalf: 200 V
+  fsw: 20 kHz
+  lr: 100 uH
+  cr: 1 uF
+  lp: 1 mH
+  lsec: 1 mH
+  k: 95 %
+  cout: 20 uF
+  load: 50 ohm
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vp, type: voltage_source, p: dcp, n: gnd, value: "${vhalf}"}
+    - {id: vn, type: voltage_source, p: gnd, n: dcn, value: "${vhalf}"}
+
+    # Half bridge with atomic complementary switching.
+    - {id: qh, type: ideal_switch, p: dcp, n: hb, control: leg.high, initial: on}
+    - {id: ql, type: ideal_switch, p: hb, n: dcn, control: leg.low, initial: off}
+    - {id: dh, type: diode, p: hb, n: dcp, initial: off}
+    - {id: dl, type: diode, p: dcn, n: hb, initial: off}
+
+    # Resonant tank: Cr blocks DC, Lr sets the resonance with it.
+    - {id: cres, type: capacitor, p: hb, n: tk, value: "${cr}", initial_voltage: 0 V}
+    - {id: lres, type: inductor, p: tk, n: pri, value: "${lr}", initial_current: 0 A}
+
+    # Transformer: magnetizing inductance from the coupled pair (k < 1).
+    - {id: lprim, type: inductor, p: pri, n: gnd, value: "${lp}", initial_current: 0 A}
+    - {id: lsecw, type: inductor, p: sa, n: sb, value: "${lsec}", initial_current: 0 A}
+
+    # Full-bridge rectifier into the output filter.
+    - {id: dr1, type: diode, p: sa, n: op, initial: off}
+    - {id: dr2, type: diode, p: sb, n: op, initial: off}
+    - {id: dr3, type: diode, p: gnd, n: sa, initial: off}
+    - {id: dr4, type: diode, p: gnd, n: sb, initial: off}
+    - {id: cout, type: capacitor, p: op, n: gnd, value: "${cout}", initial_voltage: 150 V}
+    - {id: rload, type: resistor, p: op, n: gnd, value: "${load}"}
+
+  couplings:
+    - {inductors: [lprim, lsecw], coupling: "${k}"}
+
+controls:
+  leg:
+    type: complementary_pwm
+    frequency: "${fsw}"
+    duty: 50 %
+    phase: 0 s
+    dead_time: 0 s
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 8 ms
+    output_step: 0.5 us
+    solver: radau
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs:
+  - v(op)
+  - v(hb)
+  - i(lres)
+  - i(lsecw)
+  - v(cres)

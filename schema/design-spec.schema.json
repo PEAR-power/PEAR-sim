@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PEAR-power/pear-sim/main/schema/design-spec.schema.json",
+  "title": "PEARSim design specification (pear-sim/design-spec/v0.1)",
+  "description": "Structural shape of a design specification. The semantic layer (closed field vocabulary, hard/soft section discipline, conditional requirements, provenance rules) is enforced by pear_sim.design.spec on top of this schema; both must accept a document for it to load.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "name", "owner"],
+  "properties": {
+    "schema": {"const": "pear-sim/design-spec/v0.1"},
+    "name": {"type": "string", "minLength": 1},
+    "owner": {"$ref": "#/$defs/actor"},
+    "hard": {"type": "object"},
+    "soft": {"type": "object"},
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["field", "value", "author", "rationale"],
+        "properties": {
+          "field": {"type": "string", "minLength": 1},
+          "value": {},
+          "author": {"$ref": "#/$defs/actor"},
+          "rationale": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PEAR-power/pear-sim/main/schema/cross-platform-evidence.schema.json",
+  "title": "PEARSim cross-platform numerical evidence v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "kind",
+    "status",
+    "profile",
+    "profile_semantic_sha256",
+    "source_revision",
+    "required_systems",
+    "platform_overall_statuses",
+    "platforms",
+    "inputs",
+    "comparison_policy",
+    "cells",
+    "comparisons",
+    "studies",
+    "failures",
+    "summary",
+    "artifacts",
+    "claim"
+  ],
+  "properties": {
+    "schema": {"const": "pear-sim/cross-platform-evidence/v0.1"},
+    "kind": {"const": "native_cross_platform_numerical_evidence"},
+    "status": {"$ref": "#/$defs/status"},
+    "profile": {"type": "object"},
+    "profile_semantic_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}(?![\\s\\S])"},
+    "source_revision": {"type": "string", "minLength": 1, "maxLength": 256},
+    "required_systems": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "Darwin"},
+        {"const": "Linux"},
+        {"const": "Windows"}
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "platform_overall_statuses": {"type": "object"},
+    "platforms": {"type": "array", "minItems": 3, "maxItems": 3},
+    "inputs": {"type": "array", "minItems": 3, "maxItems": 3},
+    "comparison_policy": {"type": "object"},
+    "cells": {"type": "array", "minItems": 144, "maxItems": 144},
+    "comparisons": {
+      "type": "array",
+      "minItems": 3168,
+      "maxItems": 3168,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cell_id",
+          "point_id",
+          "configuration_id",
+          "study_ids",
+          "gate_id",
+          "kind",
+          "quantity",
+          "unit",
+          "policy_id",
+          "values",
+          "actual_range",
+          "limit",
+          "status"
+        ],
+        "properties": {
+          "cell_id": {"type": "string", "minLength": 1, "maxLength": 512},
+          "point_id": {"type": "string", "minLength": 1, "maxLength": 256},
+          "configuration_id": {"type": "string", "minLength": 1, "maxLength": 256},
+          "study_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 2,
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1, "maxLength": 256}
+          },
+          "gate_id": {"type": "string", "minLength": 1, "maxLength": 512},
+          "kind": {"enum": ["exact", "numeric"]},
+          "quantity": {"type": "string", "minLength": 1, "maxLength": 256},
+          "unit": {"type": "string", "minLength": 1, "maxLength": 64},
+          "policy_id": {"type": "string", "minLength": 1, "maxLength": 256},
+          "values": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["Darwin", "Linux", "Windows"],
+            "properties": {
+              "Darwin": {"type": ["number", "string", "integer", "boolean", "null"]},
+              "Linux": {"type": ["number", "string", "integer", "boolean", "null"]},
+              "Windows": {"type": ["number", "string", "integer", "boolean", "null"]}
+            }
+          },
+          "actual_range": {"type": ["number", "null"], "minimum": 0},
+          "limit": {"type": ["number", "null"], "minimum": 0},
+          "status": {"$ref": "#/$defs/status"}
+        }
+      }
+    },
+    "studies": {"type": "object"},
+    "failures": {"type": "array", "maxItems": 5000},
+    "summary": {"type": "object", "required": ["status", "platform_count", "cell_count", "comparison_count", "failure_count"]},
+    "artifacts": {"type": "object"},
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "validation_claim",
+        "compatibility_claim",
+        "hardware_sign_off_allowed",
+        "statement"
+      ],
+      "properties": {
+        "validation_claim": {"const": false},
+        "compatibility_claim": {"const": false},
+        "hardware_sign_off_allowed": {"const": false},
+        "statement": {"type": "string", "minLength": 1, "maxLength": 2048}
+      }
+    }
+  },
+  "$defs": {
+    "status": {"enum": ["pass", "fail", "not-run"]}
+  }
+}

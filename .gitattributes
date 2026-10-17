@@ -1,0 +1,12 @@
+* text=auto
+
+# Source and evidence inputs must have byte-stable working-tree line endings on
+# macOS, Linux, and Windows because raw source SHA-256 is part of the evidence binding.
+*.json text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.svg text eol=lf
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.lock text eol=lf

@@ -1,0 +1,42 @@
+schema: pear-sim/v0.1
+name: buck_dcm_zero_ic
+
+# Ideal buck in discontinuous conduction (DCM): light 1 kohm load, so the diode turns off naturally each cycle.
+
+parameters:
+  vin: 100 V
+  fsw: 20 kHz
+  duty: 20 %
+  load: 1 kohm
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+    - {id: q1, type: ideal_switch, p: in, n: sw, control: pwm, initial: on}
+    - {id: d1, type: diode, p: gnd, n: sw, initial: off}
+    - {id: l1, type: inductor, p: sw, n: out, value: 100 uH, initial_current: 0 A}
+    - {id: c1, type: capacitor, p: out, n: gnd, value: 1 uF, initial_voltage: 0 V}
+    - {id: load, type: resistor, p: out, n: gnd, value: "${load}"}
+
+controls:
+  pwm:
+    type: pwm
+    frequency: "${fsw}"
+    duty: "${duty}"
+    phase: 0 s
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 10 ms
+    output_step: 250 ns
+    solver: dopri5
+    rtol: 1.0e-9
+    atol: 1.0e-11
+    max_step: 1 us
+
+outputs:
+  - v(out)
+  - i(l1)
+  - i(d1)

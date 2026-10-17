@@ -1,0 +1,111 @@
+# Grid interface: closed-loop grid-following converter (dq current control
+# with an in-the-loop SRF-PLL) tied to a weak three-phase grid.
+# Per carrier cycle the sampled_dq_current_pwm block samples three converter
+# currents and three PCC voltages from the pre-edge state, advances the PLL,
+# runs one PI step per dq axis (conditional-integration anti-windup against
+# the +/-voltage_scale clamp), inverse-Park + min-max injection, and realizes
+# center-aligned complementary pulses with dead time.
+# Measured behaviour (60 ms): PLL locks at 50.001 Hz, i_d -> 5.00 A,
+# i_q -> 0.00 A, P at PCC ~2.55 kW, Q ~ 0; energy audit balanced.
+# NOTE: the 100 kOhm earthing reference creates a ~70 ns zero-sequence mode;
+# an explicit integrator grinds sub-microsecond steps there, so this model
+# declares the implicit radau solver (~200x faster on this circuit). The test
+# suite runs a reduced 4 kHz variant of the same closed loop.
+schema: pear-sim/v0.1
+name: grid_following_converter
+
+parameters:
+  half_bus: 400 V
+  fsw: 10 kHz
+  amp: 325 V
+  f_grid: 50 Hz
+
+circuit:
+  ground: dc_minus
+  components:
+    - {id: vlow, type: voltage_source, p: midpoint, n: dc_minus, value: "${half_bus}"}
+    - {id: vhigh, type: voltage_source, p: dc_plus, n: midpoint, value: "${half_bus}"}
+
+    - {id: qah, type: ideal_switch, p: dc_plus, n: a, control: ctrl.a.high}
+    - {id: qal, type: ideal_switch, p: a, n: dc_minus, control: ctrl.a.low}
+    - {id: qbh, type: ideal_switch, p: dc_plus, n: b, control: ctrl.b.high}
+    - {id: qbl, type: ideal_switch, p: b, n: dc_minus, control: ctrl.b.low}
+    - {id: qch, type: ideal_switch, p: dc_plus, n: c, control: ctrl.c.high}
+    - {id: qcl, type: ideal_switch, p: c, n: dc_minus, control: ctrl.c.low}
+
+    - {id: dah, type: diode, p: a, n: dc_plus, initial: off}
+    - {id: dal, type: diode, p: dc_minus, n: a, initial: off}
+    - {id: dbh, type: diode, p: b, n: dc_plus, initial: off}
+    - {id: dbl, type: diode, p: dc_minus, n: b, initial: off}
+    - {id: dch, type: diode, p: c, n: dc_plus, initial: off}
+    - {id: dcl, type: diode, p: dc_minus, n: c, initial: off}
+
+    - {id: rfa, type: resistor, p: a, n: na, value: 0.1 ohm}
+    - {id: lfa, type: inductor, p: na, n: pa, value: 5 mH, initial_current: 0 A}
+    - {id: rfb, type: resistor, p: b, n: nb, value: 0.1 ohm}
+    - {id: lfb, type: inductor, p: nb, n: pb, value: 5 mH, initial_current: 0 A}
+    - {id: rfc, type: resistor, p: c, n: nc, value: 0.1 ohm}
+    - {id: lfc, type: inductor, p: nc, n: pc, value: 5 mH, initial_current: 0 A}
+
+    - {id: lga, type: inductor, p: pa, n: ga, value: 2 mH, initial_current: 0 A}
+    - {id: rga, type: resistor, p: ga, n: sa, value: 0.5 ohm}
+    - {id: lgb, type: inductor, p: pb, n: gb, value: 2 mH, initial_current: 0 A}
+    - {id: rgb, type: resistor, p: gb, n: sb, value: 0.5 ohm}
+    - {id: lgc, type: inductor, p: pc, n: gc, value: 2 mH, initial_current: 0 A}
+    - {id: rgc, type: resistor, p: gc, n: sc, value: 0.5 ohm}
+
+    - id: ea
+      type: voltage_source
+      p: sa
+      n: n0
+      waveform: {type: sine, amplitude: "${amp}", frequency: "${f_grid}", phase_deg: 90}
+    - id: eb
+      type: voltage_source
+      p: sb
+      n: n0
+      waveform: {type: sine, amplitude: "${amp}", frequency: "${f_grid}", phase_deg: -30}
+    - id: ec
+      type: voltage_source
+      p: sc
+      n: n0
+      waveform: {type: sine, amplitude: "${amp}", frequency: "${f_grid}", phase_deg: 210}
+
+    # Grid-neutral earthing reference (transformer star-point ground). Without
+    # it the grid island's common-mode potential is genuinely undefined (an
+    # inductor cutset around a multi-node island, which the kernel does not reduce);
+    # 100 kOhm keeps the reference while making zero-sequence current
+    # negligible (the real transformerless leakage path, deliberately weak).
+    - {id: rearth, type: resistor, p: n0, n: dc_minus, value: 100 kohm}
+
+controls:
+  ctrl:
+    type: sampled_dq_current_pwm
+    frequency: "${fsw}"
+    dead_time: 1 us
+    sense_currents: [i(lfa), i(lfb), i(lfc)]
+    sense_voltages: [v(pa), v(pb), v(pc)]
+    id_ref: 5 A
+    iq_ref: 0 A
+    current_kp: 12
+    current_ki: 3000
+    voltage_scale: "${half_bus}"
+    pll_nominal_frequency: "${f_grid}"
+    pll_bandwidth: 20 Hz
+    injection: min_max
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 60 ms
+    output_step: 20 us
+    solver: radau
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs:
+  - i(lfa)
+  - i(lfb)
+  - i(lfc)
+  - v(pa)
+  - v(pb)
+  - v(pc)

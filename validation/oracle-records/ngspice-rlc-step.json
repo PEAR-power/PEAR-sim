@@ -1,0 +1,24 @@
+{
+  "captured_at_utc": "unrecorded",
+  "case_id": "ngspice-rlc-step",
+  "fixture": "netlist emitted from the model itself (differential adapter)",
+  "grid_points": 1001,
+  "notes": "linear-subset differential run; RELATIVE budget 1e-3 of each signal's peak-to-peak covers ngspice solver tolerance plus the linearize resampling term on the shared grid",
+  "oracle_product": "ngspice",
+  "oracle_version_declared": "ngspice-46 done",
+  "pear_sim_version": "0.1.0.dev0",
+  "schema": "pear-sim/oracle-comparison/v0.1",
+  "signals": {
+    "v(mid)": {
+      "max_abs_deviation": 0.0014257270607664907,
+      "tolerance": 0.002982750905104469,
+      "unit": "V"
+    },
+    "v(out)": {
+      "max_abs_deviation": 0.007078231266572033,
+      "tolerance": 0.017292275323465233,
+      "unit": "V"
+    }
+  },
+  "verdict": "pass"
+}

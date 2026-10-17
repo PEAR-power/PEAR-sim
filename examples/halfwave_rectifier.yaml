@@ -1,0 +1,34 @@
+# Half-wave rectifier with a capacitor filter: the first canonical use of a
+# time-varying source. The 1-ohm source resistance is physical, not numerical
+# convenience: an ideal sine source directly across the filter capacitor
+# through a conducting ideal diode is a genuinely singular topology and the
+# kernel refuses it (no hidden gmin).
+schema: pear-sim/v0.1
+name: halfwave_rectifier
+
+circuit:
+  ground: gnd
+  components:
+    - id: vin
+      type: voltage_source
+      p: ac
+      n: gnd
+      waveform: {type: sine, amplitude: 10 V, frequency: 50 Hz}
+    - {id: rs, type: resistor, p: ac, n: mid, value: 1 ohm}
+    - {id: d1, type: diode, p: mid, n: out, initial: off}
+    - {id: rload, type: resistor, p: out, n: gnd, value: 100 ohm}
+    - {id: cfilt, type: capacitor, p: out, n: gnd, value: 470 uF, initial_voltage: 0 V}
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 100 ms
+    output_step: 50 us
+    solver: dopri5
+    rtol: 1.0e-9
+    atol: 1.0e-11
+
+outputs:
+  - v(out)
+  - i(d1)
+  - v(vin)

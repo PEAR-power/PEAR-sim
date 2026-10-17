@@ -1,0 +1,202 @@
+schema: pear-sim/v0.1
+name: pmsm_foc_current_control
+
+# FIELD-ORIENTED CURRENT CONTROL OF A PMSM, BUILT ENTIRELY FROM SIGNAL BLOCKS.
+#
+# A standard textbook field-oriented controller expressed purely as model
+# data: there is no controller-specific code in src/. Every stage below is a
+# composition of generic signal blocks.
+#
+# THE SIGNAL CHAIN, stage by stage:
+#   * phase-current measurement -> Park transform on the measured rotor angle
+#   * d- and q-axis PI current controllers with BACK-CALCULATION anti-windup
+#   * omega*L*i cross-coupling decoupling feed-forward, with an on/off FLAG
+#   * voltage limit as a CIRCLE in the d-q plane (radius from Udc/sqrt(3)),
+#     feeding the saturation error back to the controllers' integrators
+#   * a margin for inverter dead time taken off the available voltage
+#   * one-step ROTOR-ANGLE PREDICTION
+#   * inverse Park transform on the PREDICTED angle -> space-vector PWM
+#
+# DELIBERATELY LEFT OUT:
+#   * field weakening — it needs extra inputs and an operating-point map;
+#     the current references here are constant because this file studies the
+#     CONTROL LAW, not the operating point;
+#   * flux maps psi(id,iq) inside the control loop — `lookup_2d` blocks exist,
+#     but a real map has to come from identification of a specific machine,
+#     and inventing one would be worse than having none. The controllers
+#     therefore regulate CURRENTS, not flux linkage.
+#
+# THE LOOPS THROUGH z^-1 ARE THE KEY: the integrators and the anti-windup
+# path read their own output from the previous tick. The graph has no
+# algebraic loop — which is exactly what a difference equation is.
+
+parameters:
+  udc: 600 V
+  udc_half: 300 V
+  fsw: 10 kHz
+  tsamp: 100 us
+  # Controller gains, limits and references live in the signal blocks below
+  # (kp 8.0, ki 0.3, kaw 0.5, umax 329.09 V, id_ref -6 A, iq_ref 12 A).
+
+circuit:
+  ground: mid
+  components:
+    - {id: vp, type: voltage_source, p: dcp, n: mid, value: "${udc_half}"}
+    - {id: vn, type: voltage_source, p: mid, n: dcn, value: "${udc_half}"}
+    - {id: qah, type: ideal_switch, p: dcp, n: ta, control: bridge.a.high}
+    - {id: qal, type: ideal_switch, p: ta, n: dcn, control: bridge.a.low}
+    - {id: dah, type: diode, p: ta, n: dcp, initial: off}
+    - {id: dal, type: diode, p: dcn, n: ta, initial: off}
+    - {id: qbh, type: ideal_switch, p: dcp, n: tb, control: bridge.b.high}
+    - {id: qbl, type: ideal_switch, p: tb, n: dcn, control: bridge.b.low}
+    - {id: dbh, type: diode, p: tb, n: dcp, initial: off}
+    - {id: dbl, type: diode, p: dcn, n: tb, initial: off}
+    - {id: qch, type: ideal_switch, p: dcp, n: tc, control: bridge.c.high}
+    - {id: qcl, type: ideal_switch, p: tc, n: dcn, control: bridge.c.low}
+    - {id: dch, type: diode, p: tc, n: dcp, initial: off}
+    - {id: dcl, type: diode, p: dcn, n: tc, initial: off}
+
+machines:
+  motor:
+    type: pmsm
+    terminals: [ta, tb, tc]
+    neutral: nstar
+    pole_pairs: 4
+    stator_resistance_ohm: 0.05
+    stator_inductance_h: 0.002
+    d_axis_inductance_h: 0.0015
+    q_axis_inductance_h: 0.003
+    flux_linkage_wb: 0.1
+    # Shaft driven externally: the subject is the controller, not the mechanics.
+    driven_speed:
+      initial_rad_s: 100.0
+
+signals:
+  task:
+    period: "${tsamp}"
+  blocks:
+    # --- measurement ----------------------------------------------------
+    ia:     {type: probe, source: i(motor.a.l), unit: A}
+    ib:     {type: probe, source: i(motor.b.l), unit: A}
+    ic:     {type: probe, source: i(motor.c.l), unit: A}
+    theta:  {type: probe, source: angle_elec(motor), unit: rad}
+    omega:  {type: probe, source: speed_elec(motor), unit: rad/s}
+
+    # --- Park transform on the measured angle (abc -> dq) ---------------
+    id_meas: {type: park, axis: d, a: ia, b: ib, c: ic, angle: theta, unit: A}
+    iq_meas: {type: park, axis: q, a: ia, b: ib, c: ic, angle: theta, unit: A}
+
+    # --- current references ---------------------------------------------
+    id_ref: {type: constant, value: -6.0, unit: A}
+    iq_ref: {type: constant, value: 12.0, unit: A}
+    err_d:  {type: sum, inputs: [id_ref, id_meas], signs: [1, -1], unit: A}
+    err_q:  {type: sum, inputs: [iq_ref, iq_meas], signs: [1, -1], unit: A}
+
+    # --- d-axis PI controller with BACK-CALCULATION anti-windup ---------
+    # int_d(k) = int_d(k-1) + ki*err_d + kaw*(u_d_limited - u_d_raw)
+    kp_d:   {type: gain, input: err_d, gain: 8.0, unit: V}
+    ki_d:   {type: gain, input: err_d, gain: 0.3, unit: V}
+    # THE ANTI-WINDUP SIGNAL RETURNS ONE TICK LATE, and that is not a trick
+    # to get past a check. The limiter is evaluated AFTER the controller in
+    # the same sample, so its result can only enter the integrator in the
+    # next one — exactly how a real digital implementation behaves. Without
+    # the delay the loader rejects the graph as an algebraic loop and names
+    # the whole cycle, instead of evaluating it in an arbitrary order.
+    sat_gap_d_prev: {type: unit_delay, input: sat_gap_d, initial: 0.0, unit: V}
+    aw_d:   {type: gain, input: sat_gap_d_prev, gain: 0.5, unit: V}
+    int_d_prev: {type: unit_delay, input: int_d, initial: 0.0, unit: V}
+    int_d:  {type: sum, inputs: [int_d_prev, ki_d, aw_d], unit: V}
+    u_d_ctl: {type: sum, inputs: [kp_d, int_d], unit: V}
+
+    # --- q-axis PI controller --------------------------------------------
+    kp_q:   {type: gain, input: err_q, gain: 8.0, unit: V}
+    ki_q:   {type: gain, input: err_q, gain: 0.3, unit: V}
+    sat_gap_q_prev: {type: unit_delay, input: sat_gap_q, initial: 0.0, unit: V}
+    aw_q:   {type: gain, input: sat_gap_q_prev, gain: 0.5, unit: V}
+    int_q_prev: {type: unit_delay, input: int_q, initial: 0.0, unit: V}
+    int_q:  {type: sum, inputs: [int_q_prev, ki_q, aw_q], unit: V}
+    u_q_ctl: {type: sum, inputs: [kp_q, int_q], unit: V}
+
+    # --- decoupling feed-forward, with a FLAG ----------------------------
+    # u_d_ff = -omega*Lq*iq ,  u_q_ff = +omega*(Ld*id + psi_f)
+    wLq_iq:  {type: product, inputs: [omega, iq_meas], unit: V}
+    dist_d_on: {type: gain, input: wLq_iq, gain: -0.003, unit: V}
+    wLd_id:  {type: product, inputs: [omega, id_meas], unit: V}
+    dist_q_i: {type: gain, input: wLd_id, gain: 0.0015, unit: V}
+    dist_q_f: {type: gain, input: omega, gain: 0.1, unit: V}
+    dist_q_on: {type: sum, inputs: [dist_q_i, dist_q_f], unit: V}
+    zero_v:  {type: constant, value: 0.0, unit: V}
+    # A MODEL FLAG, not a signal: it is a property of the experiment —
+    # "run this with decoupling or without it" — not a state quantity.
+    # It lets the contribution of the feed-forward term be shown on its own.
+    dist_d:  {type: switch, flag: true, if_true: dist_d_on, if_false: zero_v,
+              unit: V}
+    dist_q:  {type: switch, flag: true, if_true: dist_q_on, if_false: zero_v,
+              unit: V}
+
+    # --- controller output plus feed-forward -----------------------------
+    u_d_raw: {type: sum, inputs: [u_d_ctl, dist_d], unit: V}
+    u_q_raw: {type: sum, inputs: [u_q_ctl, dist_q], unit: V}
+
+    # --- CIRCULAR VOLTAGE LIMIT (with dead-time margin) ------------------
+    # Scale the vector rather than clipping each axis separately: the
+    # inverter limit is a circle, and per-axis clipping would let |u| reach
+    # up to sqrt(2) times too much.
+    u_mag:   {type: hypot, x: u_d_raw, y: u_q_raw, unit: V}
+    umax:    {type: constant, value: 329.09, unit: V}
+    over:    {type: compare, left: u_mag, right: umax, op: gt, unit: bool}
+    u_mag_safe: {type: saturate, input: u_mag, min: 0.001, max: 1000000.0, unit: V}
+    scale_raw: {type: divide, numerator: umax, denominator: u_mag_safe, unit: "1"}
+    one:     {type: constant, value: 1.0, unit: "1"}
+    scale:   {type: select, condition: over, if_true: scale_raw, if_false: one,
+              unit: "1"}
+    u_d_lim: {type: product, inputs: [u_d_raw, scale], unit: V}
+    u_q_lim: {type: product, inputs: [u_q_raw, scale], unit: V}
+
+    # --- anti-windup signal fed back to the controllers -----------------
+    sat_gap_d: {type: sum, inputs: [u_d_lim, u_d_raw], signs: [1, -1], unit: V}
+    sat_gap_q: {type: sum, inputs: [u_q_lim, u_q_raw], signs: [1, -1], unit: V}
+
+    # --- ROTOR-ANGLE PREDICTION -----------------------------------------
+    # The angle advances by omega*Tsamp between the sample and the middle of
+    # the cycle in which this voltage is actually applied. Without it the
+    # vector lags by an angle that grows with speed — the error grows
+    # exactly where it hurts most.
+    dtheta:  {type: gain, input: omega, gain: 0.00015, unit: rad}
+    theta_pred: {type: sum, inputs: [theta, dtheta], unit: rad}
+
+    # --- inverse Park transform on the PREDICTED angle (dq -> alpha-beta) -
+    u_alpha: {type: inverse_park, axis: alpha, d: u_d_lim, q: u_q_lim,
+              angle: theta_pred, unit: V}
+    u_beta:  {type: inverse_park, axis: beta, d: u_d_lim, q: u_q_lim,
+              angle: theta_pred, unit: V}
+
+controls:
+  bridge:
+    type: signal_svpwm
+    frequency: "${fsw}"
+    alpha_signal: s(u_alpha)
+    beta_signal: s(u_beta)
+    dc_link_voltage: "${udc}"
+    dead_time: 0 s
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 20 ms
+    output_step: 10 us
+    solver: dopri5
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs:
+  - i(motor.a.l)
+  - i(motor.b.l)
+  - i(motor.c.l)
+  - angle_elec(motor)
+  - speed_elec(motor)
+  - torque(motor)
+  - s(id_meas)
+  - s(iq_meas)
+  - s(u_d_lim)
+  - s(u_q_lim)

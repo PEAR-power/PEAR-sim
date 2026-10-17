@@ -1,0 +1,127 @@
+# Loss/thermal showcase: the canonical buck with device cards, a full cooling
+# path (TIM + heatsink + fan operating point) and the losses-thermal
+# estimate. The kernel stays ideal — losses are a POST-PROCESSING estimate
+# over recorded waveforms at a DECLARED evaluation temperature (no hidden
+# electrothermal iteration); every extrapolated lookup is counted.
+# Card numbers below are synthetic but datasheet-shaped; provenance fields
+# show the intended per-figure granularity.
+schema: pear-sim/v0.1
+name: buck_with_loss_cards
+
+parameters:
+  vin: 100 V
+  fsw: 20 kHz
+  duty: 40 %
+  load: 4 ohm
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+    - {id: q1, type: ideal_switch, p: in, n: sw, control: pwm, initial: on}
+    - {id: d1, type: diode, p: gnd, n: sw, initial: off}
+    - {id: l1, type: inductor, p: sw, n: out, value: 1 mH, initial_current: 10 A}
+    - {id: c1, type: capacitor, p: out, n: gnd, value: 100 uF, initial_voltage: 40 V}
+    - {id: load, type: resistor, p: out, n: gnd, value: "${load}"}
+    - {id: vdc, type: voltage_probe, p: in, n: gnd}
+
+controls:
+  pwm:
+    type: pwm
+    frequency: "${fsw}"
+    duty: "${duty}"
+    phase: 0 s
+
+device_cards:
+  igbt_syn600:
+    kind: switch
+    provenance: {source: "Synthetic IGBT card v1 (datasheet-shaped)"}
+    validity: {tj_min_c: 25, tj_max_c: 150, current_max_a: 60}
+    conduction:
+      current_axis_a: [0, 10, 25, 50]
+      temperature_axis_c: [25, 125]
+      voltage_table_v:
+        - [0.8, 1.3, 1.8, 2.6]
+        - [0.7, 1.4, 2.0, 3.0]
+      provenance: {source: "Synthetic IGBT card v1", page: 3, figure: "Fig. 5"}
+    switching:
+      test_voltage_v: 300
+      test_temperature_c: 125
+      current_axis_a: [0, 10, 25, 50]
+      e_on_j: [0.0, 0.8e-3, 2.2e-3, 5.0e-3]
+      e_off_j: [0.0, 1.1e-3, 2.8e-3, 6.2e-3]
+      voltage_scaling: linear
+      provenance: {source: "Synthetic IGBT card v1", page: 5, figure: "Fig. 10"}
+    thermal:
+      foster_stages:
+        - {resistance_k_per_w: 0.08, time_constant_s: 0.001}
+        - {resistance_k_per_w: 0.25, time_constant_s: 0.02}
+        - {resistance_k_per_w: 0.15, time_constant_s: 0.2}
+      provenance: {source: "Synthetic IGBT card v1", page: 7, figure: "Fig. 14"}
+  diode_syn600:
+    kind: diode
+    provenance: {source: "Synthetic diode card v1 (datasheet-shaped)"}
+    validity: {tj_min_c: 25, tj_max_c: 150, current_max_a: 60}
+    conduction:
+      current_axis_a: [0, 10, 25, 50]
+      temperature_axis_c: [25, 125]
+      voltage_table_v:
+        - [0.6, 1.0, 1.4, 2.0]
+        - [0.5, 1.1, 1.6, 2.3]
+      provenance: {source: "Synthetic diode card v1", page: 2, figure: "Fig. 3"}
+    switching:
+      test_voltage_v: 300
+      test_temperature_c: 125
+      current_axis_a: [0, 10, 25, 50]
+      e_rec_j: [0.0, 0.4e-3, 0.9e-3, 1.8e-3]
+      voltage_scaling: linear
+      provenance: {source: "Synthetic diode card v1", page: 4, figure: "Fig. 8"}
+    thermal:
+      foster_stages:
+        - {resistance_k_per_w: 0.12, time_constant_s: 0.002}
+        - {resistance_k_per_w: 0.4, time_constant_s: 0.05}
+      provenance: {source: "Synthetic diode card v1", page: 6, figure: "Fig. 12"}
+
+cooling:
+  tims:
+    tim_pad: {rth_k_per_w: 0.2, provenance: {source: "Synthetic TIM pad"}}
+  heatsinks:
+    hs_extruded:
+      airflow_axis_m3_per_h: [0, 20, 40, 80]
+      rth_k_per_w: [2.4, 1.1, 0.75, 0.5]
+      pressure_drop_pa: [0, 12, 40, 140]
+      provenance: {source: "Synthetic heatsink curve", figure: "Fig. 2"}
+  fans:
+    fan_axial:
+      flow_axis_m3_per_h: [0, 30, 60, 90]
+      pressure_pa: [90, 60, 25, 0]
+      provenance: {source: "Synthetic axial fan PQ", figure: "Fig. 1"}
+
+loss_analysis:
+  ambient_c: 40
+  tj_evaluation_c: 125
+  devices:
+    q1:
+      card: igbt_syn600
+      commutation_voltage: v(vdc)
+      cooling: {tim: tim_pad, heatsink: hs_extruded, fan: fan_axial}
+    d1:
+      card: diode_syn600
+      commutation_voltage: v(vdc)
+      cooling: {tim: tim_pad, heatsink: hs_extruded, fan: fan_axial}
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 20 ms
+    output_step: 1 us
+    solver: dopri5
+    rtol: 1.0e-9
+    atol: 1.0e-11
+
+outputs:
+  - v(out)
+  - i(l1)
+  - i(q1)
+  - i(d1)
+  - v(vdc)

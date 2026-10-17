@@ -1,0 +1,598 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PEAR-power/pear-sim/main/schema/parameter-sweep-evidence.schema.json",
+  "title": "PEARSim retained one-dimensional parameter-sweep evidence v0.1",
+  "oneOf": [
+    {"$ref": "#/$defs/normalized_request"},
+    {"$ref": "#/$defs/source_model"},
+    {"$ref": "#/$defs/point"},
+    {"$ref": "#/$defs/projections"},
+    {"$ref": "#/$defs/failures"},
+    {"$ref": "#/$defs/confidence"},
+    {"$ref": "#/$defs/report"}
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 8192},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "bytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "path_only": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 8192}
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "message"],
+      "properties": {
+        "type": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "message": {"type": "string", "maxLength": 4096}
+      }
+    },
+    "execution_status": {
+      "enum": ["pass", "fail"]
+    },
+    "acceptance_status": {
+      "enum": ["pass", "fail", "not_run", "not_comparable", "not_applicable"]
+    },
+    "overall_status": {
+      "enum": ["pass", "fail", "not_run", "not_comparable", "not_applicable"]
+    },
+    "parameter_base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "dimension", "base_value_si"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?![\\s\\S])"},
+        "dimension": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "base_value_si": {"type": "number"}
+      }
+    },
+    "parameter_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "dimension"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?![\\s\\S])"},
+        "dimension": {"type": "string", "minLength": 1, "maxLength": 4096}
+      }
+    },
+    "parameter_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "dimension", "value_si"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?![\\s\\S])"},
+        "dimension": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "value_si": {"type": "number"}
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signal", "metric", "unit"],
+      "properties": {
+        "signal": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[vi]\\([A-Za-z_][A-Za-z0-9_.:-]*\\)(?![\\s\\S])"},
+        "metric": {
+          "enum": [
+            "final",
+            "max",
+            "max_last_half",
+            "mean",
+            "mean_last_half",
+            "min",
+            "min_last_half",
+            "peak_to_peak",
+            "peak_to_peak_last_half",
+            "ripple",
+            "ripple_last_half",
+            "rms",
+            "rms_last_half",
+            "sample_final",
+            "sample_max",
+            "sample_max_last_half",
+            "sample_mean",
+            "sample_mean_last_half",
+            "sample_min",
+            "sample_min_last_half",
+            "sample_peak_to_peak",
+            "sample_peak_to_peak_last_half",
+            "sample_rms",
+            "sample_rms_last_half"
+          ]
+        },
+        "unit": {"enum": ["V", "A"]}
+      }
+    },
+    "projection_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "signal", "metric", "unit"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]*(?![\\s\\S])"},
+        "signal": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[vi]\\([A-Za-z_][A-Za-z0-9_.:-]*\\)(?![\\s\\S])"},
+        "metric": {"$ref": "#/$defs/selector/properties/metric"},
+        "unit": {"enum": ["V", "A"]}
+      }
+    },
+    "projection_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "selector", "status", "value", "reason"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]*(?![\\s\\S])"},
+        "selector": {"$ref": "#/$defs/selector"},
+        "status": {"enum": ["recorded", "not_run"]},
+        "value": {"type": ["number", "null"]},
+        "reason": {"type": ["string", "null"], "maxLength": 8192}
+      }
+    },
+    "run_link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "run_sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 8192},
+        "run_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "model_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_sha256", "model_sha256", "request_sha256"],
+      "properties": {
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "model_sha256": {"$ref": "#/$defs/sha256"},
+        "request_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "normalized_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "source", "parameter", "values", "projections", "limits"],
+      "properties": {
+        "schema": {"const": "pear-sim/parameter-sweep-request-normalized/v0.1"},
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "artifact", "sha256"],
+          "properties": {
+            "schema": {"const": "pear-sim/parameter-sweep-request/v0.1"},
+            "artifact": {"const": "request.source.json"},
+            "sha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "parameter": {"$ref": "#/$defs/parameter_base"},
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["index", "value_si"],
+            "properties": {
+              "index": {"type": "integer", "minimum": 0, "maximum": 63},
+              "value_si": {"type": "number"}
+            }
+          }
+        },
+        "projections": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"$ref": "#/$defs/projection_request"}
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "maximum_points",
+            "maximum_projections",
+            "maximum_samples_per_point",
+            "maximum_total_samples",
+            "maximum_scheduled_edges_per_point",
+            "maximum_total_scheduled_edges",
+            "maximum_outputs",
+            "maximum_source_model_bytes",
+            "maximum_components_per_point",
+            "maximum_states_per_point",
+            "maximum_controls_per_point",
+            "maximum_sources_per_point",
+            "maximum_parameters",
+            "maximum_requested_max_step_intervals_per_point",
+            "maximum_total_requested_max_step_intervals",
+            "maximum_sample_output_cells_per_point",
+            "maximum_total_sample_output_cells",
+            "maximum_point_wall_time_s",
+            "maximum_total_wall_time_s"
+          ],
+          "properties": {
+            "maximum_points": {"const": 64},
+            "maximum_projections": {"const": 32},
+            "maximum_samples_per_point": {"const": 1000001},
+            "maximum_total_samples": {"const": 4000000},
+            "maximum_scheduled_edges_per_point": {"const": 100000},
+            "maximum_total_scheduled_edges": {"const": 4000000},
+            "maximum_outputs": {"const": 256},
+            "maximum_source_model_bytes": {"const": 2097152},
+            "maximum_components_per_point": {"const": 128},
+            "maximum_states_per_point": {"const": 64},
+            "maximum_controls_per_point": {"const": 32},
+            "maximum_sources_per_point": {"const": 32},
+            "maximum_parameters": {"const": 256},
+            "maximum_requested_max_step_intervals_per_point": {"const": 250000},
+            "maximum_total_requested_max_step_intervals": {"const": 1000000},
+            "maximum_sample_output_cells_per_point": {"const": 4000000},
+            "maximum_total_sample_output_cells": {"const": 16000000},
+            "maximum_point_wall_time_s": {"const": 60.0},
+            "maximum_total_wall_time_s": {"const": 600.0}
+          }
+        }
+      }
+    },
+    "source_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "model",
+        "source_artifact",
+        "hashes",
+        "parameters",
+        "swept_parameter"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/parameter-sweep-source-model/v0.1"},
+        "model": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "source_artifact": {"$ref": "#/$defs/artifact"},
+        "hashes": {"$ref": "#/$defs/model_hashes"},
+        "parameters": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"type": "string", "minLength": 1, "maxLength": 4096},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["value_si", "dimension"],
+            "properties": {
+              "value_si": {"type": "number"},
+              "dimension": {"type": "string", "minLength": 1, "maxLength": 4096}
+            }
+          }
+        },
+        "swept_parameter": {"$ref": "#/$defs/parameter_base"}
+      }
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "index",
+        "point_id",
+        "parameter",
+        "execution",
+        "acceptance",
+        "overall_status",
+        "projections"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/parameter-sweep-point/v0.1"},
+        "index": {"type": "integer", "minimum": 0, "maximum": 63},
+        "point_id": {"type": "string", "pattern": "^point-[0-9]{3}-[0-9a-f]{12}(?![\\s\\S])"},
+        "parameter": {"$ref": "#/$defs/parameter_value"},
+        "execution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "error", "run"],
+          "properties": {
+            "status": {"$ref": "#/$defs/execution_status"},
+            "error": {
+              "oneOf": [
+                {"type": "null"},
+                {"$ref": "#/$defs/error"}
+              ]
+            },
+            "run": {
+              "oneOf": [
+                {"type": "null"},
+                {"$ref": "#/$defs/run_link"}
+              ]
+            }
+          }
+        },
+        "acceptance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "accepted", "reason", "evidence"],
+          "properties": {
+            "status": {"$ref": "#/$defs/acceptance_status"},
+            "accepted": {"type": ["boolean", "null"]},
+            "reason": {"type": ["string", "null"], "maxLength": 8192},
+            "evidence": {
+              "oneOf": [
+                {"type": "null"},
+                {"$ref": "#/$defs/path_only"}
+              ]
+            }
+          }
+        },
+        "overall_status": {"$ref": "#/$defs/overall_status"},
+        "projections": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"$ref": "#/$defs/projection_record"}
+        }
+      }
+    },
+    "projection_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index",
+        "point_id",
+        "parameter_value_si",
+        "status",
+        "value",
+        "reason"
+      ],
+      "properties": {
+        "index": {"type": "integer", "minimum": 0, "maximum": 63},
+        "point_id": {"type": "string", "pattern": "^point-[0-9]{3}-[0-9a-f]{12}(?![\\s\\S])"},
+        "parameter_value_si": {"type": "number"},
+        "status": {"enum": ["recorded", "not_run"]},
+        "value": {"type": ["number", "null"]},
+        "reason": {"type": ["string", "null"], "maxLength": 8192}
+      }
+    },
+    "projection_status_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "recorded": {"type": "integer", "minimum": 0, "maximum": 2048},
+        "not_run": {"type": "integer", "minimum": 0, "maximum": 2048}
+      }
+    },
+    "projections": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "parameter", "summary", "projections"],
+      "properties": {
+        "schema": {"const": "pear-sim/parameter-sweep-projections/v0.1"},
+        "parameter": {"$ref": "#/$defs/parameter_identity"},
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["selector_count", "record_count", "status_counts"],
+          "properties": {
+            "selector_count": {"type": "integer", "minimum": 0, "maximum": 32},
+            "record_count": {"type": "integer", "minimum": 0, "maximum": 2048},
+            "status_counts": {"$ref": "#/$defs/projection_status_counts"}
+          }
+        },
+        "projections": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "selector", "points"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]*(?![\\s\\S])"},
+              "selector": {"$ref": "#/$defs/selector"},
+              "points": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {"$ref": "#/$defs/projection_point"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "status", "point_id", "stage", "message", "error"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 8192},
+        "kind": {"enum": ["execution", "projection", "acceptance"]},
+        "status": {"enum": ["fail", "not_run"]},
+        "point_id": {"type": "string", "pattern": "^point-[0-9]{3}-[0-9a-f]{12}(?![\\s\\S])"},
+        "stage": {
+          "enum": ["model_override", "simulation", "run_bundle", "projection", "acceptance"]
+        },
+        "message": {"type": "string", "minLength": 1, "maxLength": 8192},
+        "error": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/error"}
+          ]
+        }
+      }
+    },
+    "failure_kind_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "execution": {"type": "integer", "minimum": 0, "maximum": 64},
+        "projection": {"type": "integer", "minimum": 0, "maximum": 2048},
+        "acceptance": {"type": "integer", "minimum": 0, "maximum": 64}
+      }
+    },
+    "failures": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "summary", "failures"],
+      "properties": {
+        "schema": {"const": "pear-sim/parameter-sweep-failures/v0.1"},
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["count", "kind_counts"],
+          "properties": {
+            "count": {"type": "integer", "minimum": 0, "maximum": 2176},
+            "kind_counts": {"$ref": "#/$defs/failure_kind_counts"}
+          }
+        },
+        "failures": {
+          "type": "array",
+          "maxItems": 2176,
+          "items": {"$ref": "#/$defs/failure"}
+        }
+      }
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "level", "acceptance", "envelope", "claim"],
+      "properties": {
+        "schema": {"const": "pear-sim/confidence/parameter-sweep/v0.1"},
+        "kind": {"const": "agent_confidence_card"},
+        "level": {"const": "EXPLORATORY"},
+        "acceptance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "execution_status",
+            "acceptance_status",
+            "accepted",
+            "overall_status",
+            "sweep_summary_sha256"
+          ],
+          "properties": {
+            "execution_status": {"$ref": "#/$defs/execution_status"},
+            "acceptance_status": {"$ref": "#/$defs/acceptance_status"},
+            "accepted": {"type": ["boolean", "null"]},
+            "overall_status": {"$ref": "#/$defs/overall_status"},
+            "sweep_summary_sha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "envelope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "parameter",
+            "point_count",
+            "expectations_supplied",
+            "cross_platform_evidence",
+            "convergence_study"
+          ],
+          "properties": {
+            "status": {"const": "requested_points_only"},
+            "parameter": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "dimension", "values_si"],
+              "properties": {
+                "name": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "dimension": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "values_si": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 64,
+                  "items": {"type": "number"}
+                }
+              }
+            },
+            "point_count": {"type": "integer", "minimum": 1, "maximum": 64},
+            "expectations_supplied": {"type": "boolean"},
+            "cross_platform_evidence": {"const": "not_run"},
+            "convergence_study": {"const": "not_run"}
+          }
+        },
+        "claim": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "validation_claim",
+            "compatibility_claim",
+            "hardware_sign_off_allowed",
+            "general_parameter_envelope_claimed"
+          ],
+          "properties": {
+            "validation_claim": {"const": false},
+            "compatibility_claim": {"const": false},
+            "hardware_sign_off_allowed": {"const": false},
+            "general_parameter_envelope_claimed": {"const": false}
+          }
+        }
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "generator", "claim", "source", "recorded", "files"],
+      "properties": {
+        "schema": {"const": "pear-sim/parameter-sweep-report/v0.1"},
+        "generator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version"],
+          "properties": {
+            "name": {"const": "pear_sim"},
+            "version": {"type": "string", "minLength": 1, "maxLength": 256}
+          }
+        },
+        "claim": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["level", "validation_claim", "hardware_sign_off_allowed", "statement"],
+          "properties": {
+            "level": {"const": "exploratory"},
+            "validation_claim": {"const": false},
+            "hardware_sign_off_allowed": {"const": false},
+            "statement": {"type": "string", "minLength": 1, "maxLength": 4096}
+          }
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sweep_summary", "projections", "failures"],
+          "properties": {
+            "sweep_summary": {"$ref": "#/$defs/artifact"},
+            "projections": {"$ref": "#/$defs/artifact"},
+            "failures": {"$ref": "#/$defs/artifact"}
+          }
+        },
+        "recorded": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sweep_summary", "projections", "failures"],
+          "properties": {
+            "sweep_summary": {
+              "$ref": "https://raw.githubusercontent.com/PEAR-power/pear-sim/main/schema/parameter-sweep-summary.schema.json"
+            },
+            "projections": {"$ref": "#/$defs/projections"},
+            "failures": {"$ref": "#/$defs/failures"}
+          }
+        },
+        "files": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["html", "schematic"],
+          "properties": {
+            "html": {"const": "report/parameter-sweep-report.html"},
+            "schematic": {"const": "report/schematic.svg"}
+          }
+        }
+      }
+    }
+  }
+}

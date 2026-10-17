@@ -1,0 +1,23 @@
+{
+  "schema": "pear-sim/parameter-sweep-request/v0.1",
+  "parameter": "load",
+  "values": [
+    "5 ohm",
+    "10 ohm",
+    "20 ohm"
+  ],
+  "projections": [
+    {
+      "id": "mean_output_voltage",
+      "signal": "v(out)",
+      "metric": "mean_last_half",
+      "unit": "V"
+    },
+    {
+      "id": "inductor_current_peak_to_peak",
+      "signal": "i(l1)",
+      "metric": "peak_to_peak_last_half",
+      "unit": "A"
+    }
+  ]
+}

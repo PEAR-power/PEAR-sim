@@ -1,0 +1,79 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+# Releasing (keep these in step):
+# - version here, in packaging/pear-sim-mcp/pyproject.toml (version and the
+#   pear-sim[mcp]==X pin) and in server.json (version, packages[0].version);
+#   tests/test_packaging.py checks the first two;
+# - CHANGELOG.md: move [Unreleased] under the new version with the date;
+# - tag "vX.Y.Z", then run the release workflow (.github/workflows/release.yml).
+[project]
+name = "pear-sim"
+version = "0.1.0.dev0"
+description = "Headless, deterministic power-electronics simulator with an MCP server for AI agents"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "PEAR Power and the PEARSim contributors" }]
+keywords = [
+  "power electronics", "circuit simulation", "converter", "inverter",
+  "switching simulation", "mcp", "model context protocol", "ai agents",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Manufacturing",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+]
+
+dependencies = [
+  "numpy>=2.1",
+  "scipy>=1.14",
+  "PyYAML>=6.0.2",
+  "jsonschema>=4.23,<5",
+]
+
+[project.urls]
+Homepage = "https://github.com/PEAR-power/pear-sim"
+Documentation = "https://github.com/PEAR-power/pear-sim/tree/main/docs"
+Issues = "https://github.com/PEAR-power/pear-sim/issues"
+Changelog = "https://github.com/PEAR-power/pear-sim/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+# The MCP server (pear-sim mcp). Optional so the core stays
+# numpy/scipy/PyYAML/jsonschema-only for air-gapped and library use.
+mcp = [
+  "mcp>=2.3,<3",
+]
+dev = [
+  "pytest>=8.3",
+  "pytest-cov>=6.0",
+  "ruff>=0.9",
+  "mcp>=2.3,<3",
+]
+
+[project.scripts]
+pear-sim = "pear_sim.api.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pear_sim"]
+
+# Reference material the MCP server serves to agents (format reference, examples).
+[tool.hatch.build.targets.wheel.force-include]
+"docs/model-format.md" = "pear_sim/_data/docs/model-format.md"
+"examples" = "pear_sim/_data/examples"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

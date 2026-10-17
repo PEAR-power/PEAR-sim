@@ -1,0 +1,35 @@
+{
+  "schema": "pear-sim/compare-profile/v0.1",
+  "id": "buck-agent-numerical-equivalence-v1",
+  "alignment": {
+    "mode": "matching_events_piecewise",
+    "event_time_tolerance_s": 5e-9
+  },
+  "edge_exclusion": {
+    "before_s": 1e-8,
+    "after_s": 1e-8
+  },
+  "coverage": {
+    "minimum_fraction": 0.8
+  },
+  "signals": [
+    {
+      "name": "v(out)",
+      "unit": "V",
+      "tolerances": {
+        "max_absolute_error": {"absolute": 1e-5, "relative": 1e-6},
+        "mean_absolute_error": {"absolute": 1e-6, "relative": 1e-6},
+        "nrmse": 1e-6
+      }
+    },
+    {
+      "name": "i(l1)",
+      "unit": "A",
+      "tolerances": {
+        "max_absolute_error": {"absolute": 1e-6, "relative": 1e-6},
+        "mean_absolute_error": {"absolute": 1e-7, "relative": 1e-6},
+        "nrmse": 1e-6
+      }
+    }
+  ]
+}

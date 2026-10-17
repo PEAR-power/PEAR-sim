@@ -1,0 +1,140 @@
+# User stories for the PEARSim MCP server: what a real user would ask.
+#
+# Unlike tasks.yaml these are graded by reading the answer against the runs the
+# agent produced and against closed forms (see the review in the evaluation
+# record). Several stories deliberately probe the limits: the right outcome
+# there is an honest "the tool cannot do this", not a number.
+- id: us01_student_buck_basics
+  persona: student
+  prompt: >-
+    I'm learning power electronics. What output voltage does a buck converter give
+    from 24 V at 50 % duty cycle? Show it with a simulation, not just the formula.
+- id: us02_size_inductor
+  persona: designer
+  prompt: >-
+    I need a 12 V to 5 V, 3 A buck at 500 kHz. Pick the inductor for about 30 %
+    peak-to-peak ripple current and an output capacitor for under 20 mV ripple,
+    and verify both in simulation.
+- id: us03_boost_light_load
+  persona: designer
+  prompt: >-
+    My 5 V to 12 V, 1 A boost runs at 1 MHz with a 4.7 uH inductor. Does it stay in
+    continuous conduction at 10 % load? Check by simulation.
+- id: us04_inverting_polarity
+  persona: student
+  prompt: >-
+    Simulate an inverting buck-boost from 12 V at 55 % duty and tell me the output
+    voltage, including its sign.
+- id: us05_flyback
+  persona: designer
+  prompt: >-
+    Simulate a 48 V to 5 V, 2 A flyback converter at 100 kHz with a 4:1 transformer
+    and tell me the output ripple.
+- id: us06_llc_resonance
+  persona: designer
+  prompt: >-
+    For the shipped LLC example, what are the series resonant frequency and the
+    switching frequency, and does it operate above or below resonance?
+- id: us07_svpwm_current_thd
+  persona: drives engineer
+  prompt: >-
+    Using the shipped SVPWM inverter example, what is the THD of the line-to-line
+    voltage and how large is the phase-current ripple?
+- id: us08_schematic
+  persona: reviewer
+  prompt: >-
+    Draw me the schematic of the shipped synchronous buck example and describe the
+    circuit in words.
+- id: us09_thyristor_angle
+  persona: student
+  prompt: >-
+    For the shipped phase-controlled thyristor rectifier, how does the mean output
+    voltage depend on the firing angle? Compare the simulation with the textbook
+    formula for its load.
+- id: us10_compensator_design
+  persona: control engineer
+  prompt: >-
+    Design a PI voltage compensator for the shipped buck example (20 kHz) that gives
+    at least 45 degrees of phase margin with a crossover around 1-2 kHz. Verify the
+    margins with the tool.
+- id: us11_load_step
+  persona: control engineer
+  prompt: >-
+    Run the shipped closed-loop buck with the load step and tell me the output
+    undershoot and how long it takes to recover.
+- id: us12_sync_vs_diode
+  persona: designer
+  prompt: >-
+    For a 12 V to 3.3 V, 5 A buck at 300 kHz, compare the conduction efficiency with
+    a Schottky diode (0.45 V drop) against synchronous rectification with a 10 mOhm
+    low-side MOSFET. Use 10 mOhm for the high-side switch in both.
+- id: us13_thermal
+  persona: designer
+  prompt: >-
+    With the shipped loss-card buck, does any junction exceed 100 degC at 40 degC
+    ambient? How much margin is there?
+- id: us14_ripple_vs_frequency
+  persona: designer
+  prompt: >-
+    How does the output voltage ripple of the shipped buck change as the switching
+    frequency goes from 10 kHz to 40 kHz? Give a small table.
+- id: us15_tolerance
+  persona: reliability engineer
+  prompt: >-
+    What is the worst-case output voltage of the shipped buck if the load can vary
+    by plus or minus 20 % and the duty by plus or minus 2 %?
+- id: us16_debug_cap_loop
+  persona: hobbyist
+  prompt: |
+    My model fails and I don't understand the error. Fix it and explain:
+
+    schema: pear-sim/v0.1
+    name: lc_filter
+    circuit:
+      ground: gnd
+      components:
+        - {id: vin, type: voltage_source, p: in, n: gnd, value: 12 V}
+        - {id: c0, type: capacitor, p: in, n: gnd, value: 10 uF, initial_voltage: 12 V}
+        - {id: l1, type: inductor, p: in, n: out, value: 10 uH, initial_current: 0 A}
+        - {id: c1, type: capacitor, p: out, n: gnd, value: 22 uF, initial_voltage: 0 V}
+        - {id: r1, type: resistor, p: out, n: gnd, value: 5 ohm}
+    analysis:
+      transient: {start: 0 s, stop: 2 ms, output_step: 1 us, solver: dopri5, rtol: 1.0e-8, atol: 1.0e-10}
+    outputs: [v(out)]
+- id: us17_unit_slip
+  persona: hobbyist
+  prompt: |
+    My buck output is suspiciously smooth, almost no ripple at all. Is something
+    wrong with my model?
+
+    schema: pear-sim/v0.1
+    name: my_buck
+    circuit:
+      ground: gnd
+      components:
+        - {id: vin, type: voltage_source, p: in, n: gnd, value: 24 V}
+        - {id: q1, type: ideal_switch, p: in, n: sw, control: pwm}
+        - {id: d1, type: diode, p: gnd, n: sw}
+        - {id: l1, type: inductor, p: sw, n: out, value: 47 uH, initial_current: 2 A}
+        - {id: c1, type: capacitor, p: out, n: gnd, value: 100 F, initial_voltage: 12 V}
+        - {id: load, type: resistor, p: out, n: gnd, value: 6 ohm}
+    controls:
+      pwm: {type: pwm, frequency: 100 kHz, duty: 50 %, phase: 0 s}
+    analysis:
+      transient: {start: 0 s, stop: 1 ms, output_step: 100 ns, solver: dopri5, rtol: 1.0e-8, atol: 1.0e-10}
+    outputs: [v(out), i(l1)]
+- id: us18_pmsm_torque
+  persona: drives engineer
+  prompt: >-
+    With the shipped PMSM torque-test example, what torque does the machine produce,
+    and does it match the dq torque equation for the currents it carries?
+- id: us19_emi
+  persona: compliance engineer
+  prompt: >-
+    Estimate the conducted EMI of the shipped synchronous buck in the 150 kHz to
+    30 MHz band. Will it pass CISPR 32 class B?
+- id: us20_real_part
+  persona: designer
+  prompt: >-
+    I want to use an Infineon IPP045N10N3 MOSFET in the shipped synchronous buck.
+    What will its switching loss be?

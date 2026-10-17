@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PEAR-power/pear-sim/main/schema/expectations.schema.json",
+  "title": "PEARSim expectations v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "criteria"],
+  "properties": {
+    "schema": {"const": "pear-sim/expectations/v0.1"},
+    "purpose": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "measurement_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "start_s", "end_s"],
+      "properties": {
+        "kind": {"enum": ["full", "last_half", "explicit"]},
+        "start_s": {"type": "number"},
+        "end_s": {"type": "number"}
+      }
+    },
+    "criteria": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {"$ref": "#/$defs/criterion"}
+    },
+    "human_checks": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {"type": "string", "minLength": 1, "maxLength": 4096}
+    },
+    "automation_status": {"type": "string", "minLength": 1, "maxLength": 4096}
+  },
+  "$defs": {
+    "criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "signal", "metric", "unit"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "signal": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "metric": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "unit": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "target": {"type": "number"},
+        "absolute_tolerance": {"type": "number", "minimum": 0},
+        "relative_tolerance": {"type": "number", "minimum": 0},
+        "minimum": {"type": "number"},
+        "maximum": {"type": "number"},
+        "blocking": {"type": "boolean", "default": true},
+        "applicability": {
+          "enum": ["applicable", "not_applicable"],
+          "default": "applicable"
+        },
+        "reason": {"type": "string", "minLength": 1, "maxLength": 4096}
+      },
+      "oneOf": [
+        {
+          "required": ["target"],
+          "anyOf": [
+            {"required": ["absolute_tolerance"]},
+            {"required": ["relative_tolerance"]}
+          ],
+          "not": {"anyOf": [{"required": ["minimum"]}, {"required": ["maximum"]}]}
+        },
+        {
+          "anyOf": [{"required": ["minimum"]}, {"required": ["maximum"]}],
+          "not": {
+            "anyOf": [
+              {"required": ["target"]},
+              {"required": ["absolute_tolerance"]},
+              {"required": ["relative_tolerance"]}
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

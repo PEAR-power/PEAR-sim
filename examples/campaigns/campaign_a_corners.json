@@ -1,0 +1,34 @@
+{
+  "schema": "pear-sim/perturbation-campaign-request/v0.1",
+  "label": "A — parametric corners (EOL-drift proxy)",
+  "nominal": {"vout_v": 12.0, "recovery_band_percent": 2.0},
+  "axes": [
+    {"id": "vref", "kind": "parameter_corners", "parameter": "vref"},
+    {"id": "voffset", "kind": "parameter_corners", "parameter": "voffset"},
+    {"id": "fsw", "kind": "parameter_corners", "parameter": "fsw"},
+    {"id": "esr", "kind": "parameter_corners", "parameter": "esr"}
+  ],
+  "criteria": [
+    {
+      "id": "vout_regulation",
+      "signal": "v(out)", "field": "mean_last_half",
+      "op": "abs_deviation_max", "reference": 12.0, "limit": 0.6, "unit": "V",
+      "source": "assumption",
+      "note": "Placeholder +/-5 % output-accuracy budget. Not taken from any specification."
+    },
+    {
+      "id": "inductor_saturation",
+      "signal": "i(l1)", "field": "max",
+      "op": "max", "limit": 12.0, "unit": "A",
+      "source": "assumption",
+      "note": "Placeholder saturation current for the inductor. Describes no real part."
+    },
+    {
+      "id": "switch_blocking_derating",
+      "signal": "v(q1)", "field": "max",
+      "op": "max", "limit": 30.0, "unit": "V",
+      "source": "assumption",
+      "note": "Placeholder blocking-voltage derating limit, standing in for an ECSS-Q-ST-30-11C style derating rule. The actual rule and the device rating must both come from documents, not from here."
+    }
+  ]
+}

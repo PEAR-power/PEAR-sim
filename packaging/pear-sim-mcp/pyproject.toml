@@ -1,0 +1,25 @@
+# A launcher distribution: `uvx pear-sim-mcp` starts the PEARSim MCP server.
+# It holds no code; it pins pear-sim with its MCP extra and exposes the command.
+# Keep its version equal to pear-sim's (the release workflow checks it).
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pear-sim-mcp"
+version = "0.1.0.dev0"
+description = "Launcher for the PEARSim power-electronics simulator's MCP server"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "PEAR Power and the PEARSim contributors" }]
+dependencies = ["pear-sim[mcp]==0.1.0.dev0"]
+
+[project.scripts]
+pear-sim-mcp = "pear_sim.mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/PEAR-power/pear-sim"
+
+[tool.hatch.build.targets.wheel]
+bypass-selection = true

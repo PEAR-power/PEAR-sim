@@ -1,0 +1,1101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PEAR-power/pear-sim/main/schema/model.schema.json",
+  "title": "PEARSim model v0.1",
+  "type": "object",
+  "required": [
+    "schema",
+    "circuit",
+    "analysis",
+    "outputs"
+  ],
+  "properties": {
+    "schema": {
+      "const": "pear-sim/v0.1"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "parameters": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?![\\s\\S])"
+      },
+      "additionalProperties": {
+        "description": "Either a nominal value (number or unit-bearing string) or a drift-envelope object {nominal, source, note, corners?, distribution?, life?}. The envelope's own rules are enforced by the loader, not here: a oneOf over the two forms reports 'not of type string, number' when a required envelope field is missing, which names the wrong problem. The loader names the offending field.",
+        "type": [
+          "string",
+          "number",
+          "object"
+        ]
+      }
+    },
+    "circuit": {
+      "type": "object",
+      "required": [
+        "components"
+      ],
+      "properties": {
+        "ground": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "default": "gnd"
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "id",
+                  "type",
+                  "p",
+                  "n"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "type": {
+                    "enum": [
+                      "resistor",
+                      "capacitor",
+                      "inductor",
+                      "sat_inductor",
+                      "voltage_source",
+                      "current_source",
+                      "ideal_switch",
+                      "diode",
+                      "thyristor",
+                      "voltage_probe"
+                    ]
+                  },
+                  "p": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "n": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "value": {},
+                  "waveform": {
+                    "type": "object",
+                    "required": [
+                      "type"
+                    ],
+                    "oneOf": [
+                      {
+                        "properties": {
+                          "type": {
+                            "const": "sine"
+                          },
+                          "offset": {},
+                          "amplitude": {},
+                          "frequency": {},
+                          "phase_deg": {}
+                        },
+                        "required": [
+                          "type",
+                          "amplitude",
+                          "frequency"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "properties": {
+                          "type": {
+                            "const": "step"
+                          },
+                          "initial": {},
+                          "final": {},
+                          "at": {}
+                        },
+                        "required": [
+                          "type",
+                          "initial",
+                          "final",
+                          "at"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "properties": {
+                          "type": {
+                            "const": "pulse"
+                          },
+                          "low": {},
+                          "high": {},
+                          "frequency": {},
+                          "duty": {},
+                          "phase": {}
+                        },
+                        "required": [
+                          "type",
+                          "low",
+                          "high",
+                          "frequency",
+                          "duty"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "properties": {
+                          "type": {
+                            "const": "pwl"
+                          },
+                          "points": {
+                            "type": "array",
+                            "minItems": 2,
+                            "items": {
+                              "type": "array",
+                              "minItems": 2,
+                              "maxItems": 2
+                            }
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "points"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "properties": {
+                          "type": {
+                            "const": "double_exponential"
+                          },
+                          "amplitude": {},
+                          "tau_rise": {},
+                          "tau_fall": {},
+                          "at": {}
+                        },
+                        "required": [
+                          "type",
+                          "amplitude",
+                          "tau_rise",
+                          "tau_fall",
+                          "at"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "l_sat": {},
+                  "i_sat": {},
+                  "control": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "initial": {
+                    "oneOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "initial_voltage": {},
+                  "initial_current": {},
+                  "on_resistance": {},
+                  "forward_voltage": {},
+                  "model_meta": {
+                    "type": "object",
+                    "required": [
+                      "version"
+                    ],
+                    "properties": {
+                      "version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "validity": {
+                        "type": "object",
+                        "properties": {
+                          "frequency_max_hz": {},
+                          "temperature_min_c": {},
+                          "temperature_max_c": {},
+                          "dvdt_max_v_per_s": {}
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "id",
+                  "type",
+                  "ref",
+                  "ports"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "type": {
+                    "const": "subcircuit"
+                  },
+                  "ref": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "ports": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "additionalProperties": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "params": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": [
+                        "string",
+                        "number"
+                      ]
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "couplings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "inductors"
+            ],
+            "properties": {
+              "inductors": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "mutual": {},
+              "coupling": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "controls": {
+      "oneOf": [
+        {
+          "type": "object",
+          "maxProperties": 256,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "type",
+                  "frequency",
+                  "duty"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "pwm"
+                  },
+                  "frequency": {},
+                  "duty": {},
+                  "phase": {}
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type",
+                  "frequency",
+                  "duty",
+                  "dead_time"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "complementary_pwm"
+                  },
+                  "frequency": {},
+                  "duty": {},
+                  "phase": {},
+                  "dead_time": {}
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": ["type", "frequency", "alpha_signal", "beta_signal",
+                             "dc_link_voltage"],
+                "properties": {
+                  "type": {"const": "signal_svpwm"},
+                  "frequency": {},
+                  "alpha_signal": {},
+                  "beta_signal": {},
+                  "dc_link_voltage": {},
+                  "dead_time": {}
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type",
+                  "frequency",
+                  "duty_signal"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "signal_pwm"
+                  },
+                  "frequency": {},
+                  "duty_signal": {},
+                  "duty_min": {},
+                  "duty_max": {}
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type",
+                  "frequency",
+                  "sense",
+                  "reference",
+                  "kp",
+                  "ki",
+                  "duty_min",
+                  "duty_max"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "sampled_pi_pwm"
+                  },
+                  "frequency": {},
+                  "sense": {},
+                  "reference": {},
+                  "kp": {},
+                  "ki": {},
+                  "duty_min": {},
+                  "duty_max": {}
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type",
+                  "frequency",
+                  "sense_currents",
+                  "sense_voltages",
+                  "id_ref",
+                  "iq_ref",
+                  "current_kp",
+                  "current_ki",
+                  "voltage_scale",
+                  "pll_nominal_frequency"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "sampled_dq_current_pwm"
+                  },
+                  "frequency": {},
+                  "dead_time": {},
+                  "sense_currents": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "sense_voltages": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "id_ref": {},
+                  "iq_ref": {},
+                  "current_kp": {},
+                  "current_ki": {},
+                  "voltage_scale": {},
+                  "pll_nominal_frequency": {},
+                  "pll_bandwidth": {},
+                  "pll_damping": {},
+                  "theta0_deg": {},
+                  "injection": {
+                    "enum": [
+                      "none",
+                      "min_max"
+                    ]
+                  },
+                  "duty_min": {},
+                  "duty_max": {}
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "type",
+              "carrier_frequency",
+              "fundamental_frequency",
+              "modulation_index",
+              "dead_time"
+            ],
+            "properties": {
+              "type": {
+                "const": "three_phase_spwm"
+              },
+              "carrier_frequency": {},
+              "fundamental_frequency": {},
+              "modulation_index": {},
+              "dead_time": {},
+              "carrier_phase": {},
+              "reference_phase": {},
+              "sequence": {
+                "enum": [
+                  "abc",
+                  "acb"
+                ]
+              },
+              "injection": {
+                "enum": [
+                  "none",
+                  "min_max"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "type",
+              "carrier_frequency",
+              "fundamental_frequency",
+              "modulation_index",
+              "dead_time"
+            ],
+            "properties": {
+              "type": {
+                "const": "three_phase_npc_spwm"
+              },
+              "carrier_frequency": {},
+              "fundamental_frequency": {},
+              "modulation_index": {},
+              "dead_time": {},
+              "carrier_phase": {},
+              "reference_phase": {},
+              "sequence": {
+                "enum": [
+                  "abc",
+                  "acb"
+                ]
+              },
+              "injection": {
+                "enum": [
+                  "none",
+                  "min_max"
+                ]
+              },
+              "levels": {
+                "enum": [
+                  3,
+                  5
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "analysis": {
+      "type": "object",
+      "required": [
+        "transient"
+      ],
+      "properties": {
+        "transient": {
+          "type": "object",
+          "properties": {
+            "rtol": {
+              "type": "number",
+              "minimum": 2.220446049250313e-14
+            },
+            "atol": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": true
+        },
+        "harmonics": {
+          "type": "object",
+          "required": [
+            "start",
+            "stop",
+            "fundamental_frequency",
+            "max_harmonic",
+            "signals"
+          ],
+          "properties": {
+            "start": {},
+            "stop": {},
+            "fundamental_frequency": {},
+            "max_harmonic": {
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 256
+            },
+            "signals": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "required": [
+                  "signal",
+                  "semantic"
+                ],
+                "properties": {
+                  "signal": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[vi]\\([A-Za-z_][A-Za-z0-9_.:-]*\\)(?![\\s\\S])"
+                  },
+                  "semantic": {
+                    "enum": [
+                      "line_voltage_ab",
+                      "line_voltage_bc",
+                      "line_voltage_ca",
+                      "phase_voltage_a",
+                      "phase_voltage_b",
+                      "phase_voltage_c",
+                      "phase_current_a",
+                      "phase_current_b",
+                      "phase_current_c",
+                      "generic"
+                    ]
+                  }
+                },
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "signal": {
+                          "pattern": "^v\\("
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "semantic": {
+                          "enum": [
+                            "line_voltage_ab",
+                            "line_voltage_bc",
+                            "line_voltage_ca",
+                            "phase_voltage_a",
+                            "phase_voltage_b",
+                            "phase_voltage_c",
+                            "generic"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "signal": {
+                          "pattern": "^i\\("
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "semantic": {
+                          "enum": [
+                            "phase_current_a",
+                            "phase_current_b",
+                            "phase_current_c",
+                            "generic"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "pattern": "^(v|i|s|torque|speed_mech|speed_elec|angle_mech|angle_elec)\\([A-Za-z_][A-Za-z0-9_.:-]*\\)(?![\\s\\S])"
+      }
+    },
+    "device_cards": {
+      "type": "object"
+    },
+    "cooling": {
+      "type": "object"
+    },
+    "loss_analysis": {
+      "type": "object"
+    },
+    "machines": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 4,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "type",
+          "terminals",
+          "neutral",
+          "pole_pairs",
+          "stator_resistance_ohm"
+        ],
+        "properties": {
+          "type": {
+            "const": "pmsm"
+          },
+          "terminals": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "neutral": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "pole_pairs": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "stator_resistance_ohm": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "stator_inductance_h": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "d_axis_inductance_h": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "q_axis_inductance_h": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "flux_linkage_wb": {
+            "description": "Magnet flux linkage. Zero is legal and means a machine with no magnets (synchronous reluctance); the loader then requires saliency, so that a machine with neither is still refused.",
+            "type": "number",
+            "minimum": 0
+          },
+          "inertia_kg_m2": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "viscous_friction_nm_s": {
+            "type": "number",
+            "minimum": 0
+          },
+          "load_torque_nm": {
+            "type": "number"
+          },
+          "initial_speed_rad_s": {
+            "type": "number"
+          },
+          "initial_angle_rad": {
+            "type": "number"
+          },
+          "flux_map": {
+            "description": "Saturating flux linkage psi_d(i_d,i_q) and psi_q(i_d,i_q) on a declared current grid. Replaces flux_linkage_wb and the axis inductances, which the loader then refuses as duplicate statements of the same quantity.",
+            "type": "object",
+            "required": ["id_axis", "iq_axis", "psi_d", "psi_q"],
+            "properties": {
+              "id_axis": {"type": "array", "minItems": 2},
+              "iq_axis": {"type": "array", "minItems": 2},
+              "psi_d": {"type": "array", "minItems": 2},
+              "psi_q": {"type": "array", "minItems": 2}
+            },
+            "additionalProperties": false
+          },
+          "driven_speed": {
+            "description": "Imposed mechanical speed: the shaft is turned from outside and the mechanical loop is NOT integrated, so the torque is the measurement. Declaring it forbids inertia_kg_m2, viscous_friction_nm_s, load_torque_nm and initial_speed_rad_s, which would have no effect (loader-enforced).",
+            "type": "object",
+            "required": [
+              "initial_rad_s"
+            ],
+            "properties": {
+              "initial_rad_s": {
+                "type": "number"
+              },
+              "final_rad_s": {
+                "type": "number"
+              },
+              "ramp_start_s": {
+                "type": "number"
+              },
+              "ramp_stop_s": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "signals": {
+      "description": "Discrete signal blocks: the executable control layer. One periodic task; blocks are pure functions of their inputs plus, for unit_delay only, one sample of memory; a 'pi' block is expanded at load time into gain, sum, saturate and unit_delay blocks. Execution order is derived from the graph; an algebraic loop is a load-time error. Comparison and logic blocks carry the declared unit 'bool' and nothing else may feed a condition input. This schema is structural only: per-operator input arity (one for 'not', at least two for 'and', 'or', 'sum' and 'product') is enforced by the loader.",
+      "type": "object",
+      "required": [
+        "task",
+        "blocks"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "type": "object",
+          "required": [
+            "period"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "period": {},
+            "offset": {}
+          }
+        },
+        "blocks": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 256,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "type",
+              "unit"
+            ],
+            "properties": {
+              "type": {
+                "enum": [
+                  "constant",
+                  "probe",
+                  "time_source",
+                  "gain",
+                  "sum",
+                  "product",
+                  "saturate",
+                  "unit_delay",
+                  "pi",
+                  "switch",
+                  "lookup_1d",
+                  "compare",
+                  "logic",
+                  "select",
+                  "quantize",
+                  "noise",
+                  "delay",
+                  "park",
+                  "inverse_park",
+                  "lookup_2d",
+                  "hypot",
+                  "divide",
+                  "sine"
+                ]
+              },
+              "unit": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              },
+              "value": {},
+              "source": {},
+              "shape": {},
+              "initial": {},
+              "final": {},
+              "start": {},
+              "stop": {},
+              "gain": {},
+              "kp": {},
+              "ki": {},
+              "kaw": {},
+              "input": {},
+              "inputs": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16
+              },
+              "signs": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 16
+              },
+              "min": {},
+              "max": {},
+              "flag": {
+                "type": "boolean"
+              },
+              "if_true": {},
+              "if_false": {},
+              "condition": {},
+              "left": {},
+              "right": {},
+              "op": {
+                "enum": [
+                  "lt",
+                  "le",
+                  "gt",
+                  "ge",
+                  "and",
+                  "or",
+                  "not"
+                ]
+              },
+              "axis": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 1024
+              },
+              "values": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 1024
+              },
+              "step": {},
+              "mode": {},
+              "stddev": {},
+              "seed": {},
+              "samples": {},
+              "axis": {},
+              "x": {},
+              "numerator": {},
+              "denominator": {},
+              "y": {},
+              "x_axis": {"type": "array", "minItems": 2, "maxItems": 1024},
+              "y_axis": {"type": "array", "minItems": 2, "maxItems": 1024},
+              "a": {},
+              "b": {},
+              "c": {},
+              "d": {},
+              "q": {},
+              "angle": {},
+              "extrapolation": {
+                "enum": [
+                  "hold",
+                  "error"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    "perturbations": {
+      "description": "Run-level overrides materialized by the perturbation layer from a request file. Normally generated, not hand-written; declaring one by hand is legitimate (a stuck gate is a real fault) and is validated by the loader.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "forced_gate_windows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "required": [
+              "control",
+              "from",
+              "to",
+              "level"
+            ],
+            "properties": {
+              "control": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "from": {},
+              "to": {},
+              "level": {
+                "enum": [
+                  "on",
+                  "off"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    "subcircuits": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 64,
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "ports",
+          "components"
+        ],
+        "properties": {
+          "ports": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "parameters": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "components": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object"
+            }
+          },
+          "couplings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "inductors"
+              ],
+              "properties": {
+                "inductors": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "mutual": {},
+                "coupling": {}
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

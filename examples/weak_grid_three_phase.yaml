@@ -1,0 +1,61 @@
+# Grid interface: three-phase Thevenin weak grid —
+# sine EMF sources behind explicit series R+L per phase, feeding a resistive
+# PCC load. Expressible entirely with the sine/step/pulse/PWL waveform sources; "stiff"
+# vs "weak" is just the declared impedance. Post-process the recorded PCC
+# voltages with pear_sim.api.srf_pll (offline SRF-PLL: recovered angle/frequency
+# + honest lock diagnostics) and pear_sim.api.instantaneous_power for P/Q.
+# An in-the-loop PLL (feeding a controller during simulation) is a future
+# kernel capability and is deliberately not claimed here.
+schema: pear-sim/v0.1
+name: weak_grid_three_phase
+
+parameters:
+  amp: 325 V
+  f: 50 Hz
+  r_grid: 0.5 ohm
+  l_grid: 2 mH
+
+circuit:
+  ground: gnd
+  components:
+    - id: ea
+      type: voltage_source
+      p: sa
+      n: gnd
+      waveform: {type: sine, amplitude: "${amp}", frequency: "${f}", phase_deg: 90}
+    - id: eb
+      type: voltage_source
+      p: sb
+      n: gnd
+      waveform: {type: sine, amplitude: "${amp}", frequency: "${f}", phase_deg: -30}
+    - id: ec
+      type: voltage_source
+      p: sc
+      n: gnd
+      waveform: {type: sine, amplitude: "${amp}", frequency: "${f}", phase_deg: 210}
+    - {id: rga, type: resistor, p: sa, n: ga, value: "${r_grid}"}
+    - {id: lga, type: inductor, p: ga, n: pa, value: "${l_grid}", initial_current: 0 A}
+    - {id: rgb, type: resistor, p: sb, n: gb, value: "${r_grid}"}
+    - {id: lgb, type: inductor, p: gb, n: pb, value: "${l_grid}", initial_current: 0 A}
+    - {id: rgc, type: resistor, p: sc, n: gc, value: "${r_grid}"}
+    - {id: lgc, type: inductor, p: gc, n: pc, value: "${l_grid}", initial_current: 0 A}
+    - {id: loada, type: resistor, p: pa, n: gnd, value: 20 ohm}
+    - {id: loadb, type: resistor, p: pb, n: gnd, value: 20 ohm}
+    - {id: loadc, type: resistor, p: pc, n: gnd, value: 20 ohm}
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 400 ms
+    output_step: 100 us
+    solver: dopri5
+    rtol: 1.0e-9
+    atol: 1.0e-11
+
+outputs:
+  - v(pa)
+  - v(pb)
+  - v(pc)
+  - i(lga)
+  - i(lgb)
+  - i(lgc)

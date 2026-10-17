@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PEAR-power/pear-sim/main/schema/platform-evidence.schema.json",
+  "title": "PEARSim canonical-buck platform numerical evidence v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "kind",
+    "status",
+    "claim",
+    "profile",
+    "source",
+    "platform",
+    "oracle",
+    "cross_platform_policy",
+    "configurations",
+    "cells",
+    "studies",
+    "summary",
+    "artifacts"
+  ],
+  "properties": {
+    "schema": {"const": "pear-sim/platform-evidence/canonical-buck-numerical/v0.1"},
+    "kind": {"const": "canonical-buck-full-numerical-evidence-matrix"},
+    "status": {"$ref": "#/$defs/status"},
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "classification",
+        "validation_claim",
+        "hardware_sign_off_allowed",
+        "scope"
+      ],
+      "properties": {
+        "classification": {"const": "verification"},
+        "validation_claim": {"const": false},
+        "hardware_sign_off_allowed": {"const": false},
+        "scope": {"type": "string", "minLength": 1, "maxLength": 2048}
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sha256", "load_ratios", "point_count", "configuration_count", "cell_count", "studies"],
+      "properties": {
+        "id": {"const": "full-v1"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}(?![\\s\\S])"},
+        "load_ratios": {"type": "array", "minItems": 9, "maxItems": 9},
+        "point_count": {"const": 9},
+        "configuration_count": {"const": 16},
+        "cell_count": {"const": 144},
+        "studies": {"type": "object", "minProperties": 4, "maxProperties": 4}
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["revision", "revision_method", "pear_sim_version", "model_file", "model_hashes"]
+    },
+    "platform": {
+      "type": "object",
+      "required": ["id", "system", "release", "machine", "python_implementation", "python", "numpy", "scipy"]
+    },
+    "oracle": {"type": "object", "required": ["schema", "sha256", "boundary_load_ohm"]},
+    "cross_platform_policy": {"type": "object"},
+    "configurations": {"type": "array", "minItems": 16, "maxItems": 16},
+    "cells": {
+      "type": "array",
+      "minItems": 144,
+      "maxItems": 144,
+      "items": {
+        "type": "object",
+        "required": ["id", "point_id", "configuration_id", "expected_regime", "status", "gates", "semantic_signature", "numerics", "run", "error"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "point_id": {"type": "string", "minLength": 1},
+          "configuration_id": {"type": "string", "minLength": 1},
+          "expected_regime": {"enum": ["CCM", "BCM", "DCM"]},
+          "status": {"$ref": "#/$defs/status"},
+          "gates": {
+            "type": "array",
+            "minItems": 11,
+            "maxItems": 11,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "actual", "limit", "status"],
+              "properties": {
+                "id": {"type": "string", "minLength": 1, "maxLength": 256},
+                "metric": {"type": "string", "minLength": 1, "maxLength": 256},
+                "actual": {"type": ["number", "string", "null"]},
+                "reference": {"type": ["number", "string", "null"]},
+                "operator": {"const": "<="},
+                "limit": {"type": ["number", "boolean", "null"]},
+                "status": {"$ref": "#/$defs/status"},
+                "reason": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "expected_regime": {"enum": ["CCM", "BCM", "DCM"]}
+              }
+            }
+          },
+          "semantic_signature": {"$ref": "#/$defs/semantic_signature"}
+        }
+      }
+    },
+    "studies": {"type": "object", "minProperties": 1},
+    "summary": {"type": "object", "required": ["status", "cell_count", "gate_count", "family_gate_count"]},
+    "artifacts": {"type": "object"}
+  },
+  "$defs": {
+    "status": {"enum": ["pass", "fail", "not-run"]},
+    "signature_field": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["quantity", "unit", "policy_id", "value", "cross_platform_tolerance"],
+          "properties": {
+            "quantity": {"type": "string", "minLength": 1, "maxLength": 256},
+            "unit": {"type": "string", "minLength": 1, "maxLength": 64},
+            "policy_id": {"type": "string", "minLength": 1, "maxLength": 256},
+            "value": {"type": ["string", "integer", "boolean"]},
+            "cross_platform_tolerance": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "policy_id"],
+              "properties": {
+                "kind": {"const": "exact"},
+                "policy_id": {"type": "string", "minLength": 1, "maxLength": 256}
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["quantity", "unit", "policy_id", "value", "cross_platform_tolerance"],
+          "properties": {
+            "quantity": {"type": "string", "minLength": 1, "maxLength": 256},
+            "unit": {"type": "string", "minLength": 1, "maxLength": 64},
+            "policy_id": {"type": "string", "minLength": 1, "maxLength": 256},
+            "value": {"type": "number"},
+            "cross_platform_tolerance": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "policy_id", "absolute", "relative"],
+              "properties": {
+                "kind": {"const": "numeric"},
+                "policy_id": {"type": "string", "minLength": 1, "maxLength": 256},
+                "absolute": {"type": "number", "minimum": 0},
+                "relative": {"type": "number", "minimum": 0}
+              }
+            }
+          }
+        }
+      ]
+    },
+    "semantic_signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "status", "fields"],
+      "properties": {
+        "schema": {"const": "pear-sim/numerical-semantic-signature/canonical-buck/v0.1"},
+        "status": {"enum": ["available", "not-run"]},
+        "fields": {
+          "type": "object",
+          "maxProperties": 22,
+          "additionalProperties": {"$ref": "#/$defs/signature_field"}
+        },
+        "reason": {"type": "string", "minLength": 1, "maxLength": 4096}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "status": {"const": "available"},
+            "fields": {"minProperties": 22, "maxProperties": 22}
+          },
+          "not": {"required": ["reason"]}
+        },
+        {
+          "required": ["reason"],
+          "properties": {
+            "status": {"const": "not-run"},
+            "fields": {"maxProperties": 0}
+          }
+        }
+      ]
+    }
+  }
+}

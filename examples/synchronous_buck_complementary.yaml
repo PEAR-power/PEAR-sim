@@ -1,0 +1,52 @@
+schema: pear-sim/v0.1
+name: synchronous_buck_complementary
+
+# Synchronous buck with complementary PWM and 500 ns dead time: 100 V in, 40 % duty, 20 kHz.
+
+parameters:
+  vin: 100 V
+  fsw: 20 kHz
+  duty: 40 %
+  dead_time: 500 ns
+  load: 10 ohm
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+    - {id: qh, type: ideal_switch, p: in, n: sw, control: leg.high}
+    - {id: ql, type: ideal_switch, p: sw, n: gnd, control: leg.low}
+    - {id: dh, type: diode, p: sw, n: in, initial: off}
+    - {id: dl, type: diode, p: gnd, n: sw, initial: off}
+    # User-declared warm-start seeds; this source does not claim their derivation.
+    - {id: l1, type: inductor, p: sw, n: out, value: 1 mH, initial_current: 4 A}
+    - {id: c1, type: capacitor, p: out, n: gnd, value: 100 uF, initial_voltage: 40 V}
+    - {id: load, type: resistor, p: out, n: gnd, value: "${load}"}
+
+controls:
+  leg:
+    type: complementary_pwm
+    frequency: "${fsw}"
+    duty: "${duty}"
+    phase: 0 s
+    dead_time: "${dead_time}"
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 500 us
+    output_step: 250 ns
+    solver: dop853
+    rtol: 1.0e-9
+    atol: 1.0e-11
+
+outputs:
+  - v(out)
+  - v(sw)
+  - i(l1)
+  - v(qh)
+  - v(ql)
+  - i(qh)
+  - i(ql)
+  - i(dl)
+  - i(vin)

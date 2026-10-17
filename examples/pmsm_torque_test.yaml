@@ -1,0 +1,107 @@
+schema: pear-sim/v0.1
+name: pmsm_torque_test
+
+# DYNAMOMETER TORQUE TEST: shaft driven externally, torque measured.
+#
+# This asks a different question from `pmsm_inverter_drive.yaml`. There the
+# mechanics are free, so the run answers "what speed will the machine
+# reach". Here the speed is IMPOSED by a ramp and the answer is TORQUE —
+# exactly as on a dynamometer test bench, where the load machine does not
+# care what the machine under test is doing.
+#
+# WHY THIS IS MORE THAN A CONVENIENCE. Imposing the speed REMOVES the
+# mechanical loop from the response: the electrical side and the torque no
+# longer depend on the inertia/friction model or on how the speed
+# trajectory settles. The torque test therefore isolates the
+# electromagnetic model, and that is its main advantage, not a side effect.
+#
+# STARTING FROM ZERO IS POSSIBLE HERE, whereas with free mechanics it is
+# not: a synchronous machine fed at a fixed frequency will not start on its
+# own from standstill. The speed ramp avoids that because speed is not an
+# output.
+#
+# Ramp: 0 -> 157.08 rad/s (1500 rpm) in 30 ms, then constant until 40 ms.
+# The modulator runs at a fixed 100 Hz fundamental, so the load angle changes
+# during the ramp and the torque sweeps its full range — the point of a
+# pull-out test.
+#
+# READING NOTE: near zero speed the back-EMF is near zero and almost the
+# whole voltage command drops across R_s + j*omega_e*L_s. Currents at the
+# start of the ramp are therefore LARGE; that is physics, not a model error.
+# The modulation index is set low (5 %) so the run is not just a short
+# circuit.
+
+parameters:
+  udc_half: 300 V
+  fsw: 10 kHz
+  ffund: 100 Hz
+  mi: 5 %
+  # ZERO ON PURPOSE, NOT FOR CONVENIENCE. When starting from standstill the
+  # phase currents cross zero, and the v0.1 kernel explicitly refuses to
+  # compute dead-time freewheeling at near-zero current with a floating star
+  # point ("Natural-commutation livelock ... use zero dead time or tie the
+  # load neutral" — observed on this model at 1 us, t = 125 us). That limit
+  # belongs to the kernel, not to this example; the torque test does not
+  # study dead time, so there is none here.
+  dead_time: 0 s
+
+circuit:
+  ground: mid
+  components:
+    - {id: vp, type: voltage_source, p: dcp, n: mid, value: "${udc_half}"}
+    - {id: vn, type: voltage_source, p: mid, n: dcn, value: "${udc_half}"}
+    - {id: qah, type: ideal_switch, p: dcp, n: ta, control: bridge.a.high}
+    - {id: qal, type: ideal_switch, p: ta, n: dcn, control: bridge.a.low}
+    - {id: dah, type: diode, p: ta, n: dcp, initial: off}
+    - {id: dal, type: diode, p: dcn, n: ta, initial: off}
+    - {id: qbh, type: ideal_switch, p: dcp, n: tb, control: bridge.b.high}
+    - {id: qbl, type: ideal_switch, p: tb, n: dcn, control: bridge.b.low}
+    - {id: dbh, type: diode, p: tb, n: dcp, initial: off}
+    - {id: dbl, type: diode, p: dcn, n: tb, initial: off}
+    - {id: qch, type: ideal_switch, p: dcp, n: tc, control: bridge.c.high}
+    - {id: qcl, type: ideal_switch, p: tc, n: dcn, control: bridge.c.low}
+    - {id: dch, type: diode, p: tc, n: dcp, initial: off}
+    - {id: dcl, type: diode, p: dcn, n: tc, initial: off}
+
+machines:
+  motor:
+    type: pmsm
+    terminals: [ta, tb, tc]
+    neutral: nstar
+    pole_pairs: 4
+    stator_resistance_ohm: 0.05
+    stator_inductance_h: 0.002
+    flux_linkage_wb: 0.1
+    initial_angle_rad: 0.0
+    # Shaft driven externally. Inertia, friction, load torque and initial
+    # speed are FORBIDDEN here — they would have no effect, so accepting them
+    # would make the reader believe they do something.
+    driven_speed:
+      initial_rad_s: 0.0
+      final_rad_s: 157.0796
+      ramp_start_s: 0.0
+      ramp_stop_s: 0.03
+
+controls:
+  bridge:
+    type: three_phase_spwm
+    carrier_frequency: "${fsw}"
+    fundamental_frequency: "${ffund}"
+    modulation_index: "${mi}"
+    dead_time: "${dead_time}"
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 40 ms
+    output_step: 10 us
+    solver: dopri5
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs:
+  - v(ta)
+  - i(motor.a.l)
+  - torque(motor)
+  - speed_mech(motor)
+  - angle_elec(motor)

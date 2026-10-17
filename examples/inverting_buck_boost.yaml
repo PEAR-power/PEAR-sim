@@ -1,0 +1,36 @@
+schema: pear-sim/v0.1
+name: inverting_buck_boost_ccm
+
+# Ideal inverting buck-boost in CCM: 24 V in, 50 % duty, 20 kHz, negative output across a 24 ohm load.
+
+parameters:
+  vin: 24 V
+  fsw: 20 kHz
+  duty: 50 %
+  load: 24 ohm
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+    # Strict ideal inverting buck-boost: the capacitor state is
+    # v(gnd)-v(out), hence positive while the requested v(out) is negative.
+    - {id: q1, type: ideal_switch, p: in, n: sw, control: pwm, initial: on}
+    - {id: l1, type: inductor, p: sw, n: gnd, value: 500 uH, initial_current: 1.39789949 A}
+    - {id: d1, type: diode, p: out, n: sw, initial: off}
+    - {id: c1, type: capacitor, p: gnd, n: out, value: 100 uF, initial_voltage: 24.09964547 V}
+    - {id: load, type: resistor, p: gnd, n: out, value: "${load}"}
+
+controls:
+  pwm: {type: pwm, frequency: "${fsw}", duty: "${duty}", phase: 0 s}
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 2 ms
+    output_step: 1 us
+    solver: dopri5
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs: [v(out), i(l1), v(q1), i(d1)]

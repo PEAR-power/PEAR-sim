@@ -1,0 +1,121 @@
+# The SAME regulator as in buck_closed_loop.yaml, but ASSEMBLED FROM SIGNAL
+# BLOCKS — no controller-specific code in src/. It is checked against the
+# strictest available reference: the built-in `sampled_pi_pwm` control type,
+# whose law is implemented directly in Python.
+#
+# The law, block by block:
+#   err      = vref - v(out)
+#   int      = int(z^-1) + err * T          <- loop closed through unit_delay
+#   u        = kp*err + ki*int
+#   duty     = saturate(u, 5 %, 95 %)
+#
+# THE LOOP THROUGH z^-1 IS THE WHOLE POINT. The accumulator reads its own
+# output from the PREVIOUS tick, so the graph has no algebraic loop — which is
+# exactly what a difference equation is. This model has no anti-windup: the
+# scenario deliberately never drives the limiter. See
+# buck_closed_loop_antiwindup.yaml for conditional integration built from
+# compare/logic/select blocks.
+#
+# Scenario: closed-loop buck with a load step.
+# The sampled PI gains were chosen with a loop-gain analysis: at this
+# operating point kp=0.002/ki=30 gives PM ~92 deg @ 115 Hz, GM ~9 dB.
+# (kp=0.08/ki=150 gives PM ~2 deg and reproduces a ~4 kHz limit cycle in
+# this very simulator — the averaged model and the switching kernel agree.)
+# The load step is a step-waveform current sink at the output.
+schema: pear-sim/v0.1
+name: buck_closed_loop_signal_blocks
+
+parameters:
+  vin: 24 V
+  fsw: 50 kHz
+  # The 12 V reference is the `vref` constant block in signals.
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+    - {id: q1, type: ideal_switch, p: in, n: sw, control: ctrl, initial: on}
+    - {id: d1, type: diode, p: gnd, n: sw, initial: off}
+    - {id: l1, type: inductor, p: sw, n: out, value: 47 uH, initial_current: 1.2 A}
+    - {id: c1, type: capacitor, p: out, n: gnd, value: 100 uF, initial_voltage: 12 V}
+    - {id: load, type: resistor, p: out, n: gnd, value: 10 ohm}
+    - id: istep
+      type: current_source
+      p: out
+      n: gnd
+      waveform: {type: step, initial: 0 A, final: 1 A, at: 25 ms}
+
+signals:
+  task:
+    period: 20 us            # 50 kHz — one tick per carrier cycle
+  blocks:
+    vout:
+      type: probe
+      source: v(out)
+      unit: V
+    vref:
+      type: constant
+      value: 12.0
+      unit: V
+    err:
+      type: sum
+      inputs: [vref, vout]
+      signs: [1, -1]
+      unit: V
+    err_dt:
+      type: gain
+      input: err
+      gain: 2.0e-5           # * T
+      unit: V
+    int_prev:
+      type: unit_delay
+      input: integral
+      initial: 0.0
+      unit: V
+    integral:
+      type: sum
+      inputs: [int_prev, err_dt]
+      unit: V
+    kp_term:
+      type: gain
+      input: err
+      gain: 0.002
+      unit: V
+    ki_term:
+      type: gain
+      input: integral
+      gain: 30.0
+      unit: V
+    u:
+      type: sum
+      inputs: [kp_term, ki_term]
+      unit: V
+    duty:
+      type: saturate
+      input: u
+      min: 0.05
+      max: 0.95
+      unit: V
+
+controls:
+  ctrl:
+    type: signal_pwm
+    frequency: "${fsw}"
+    duty_signal: s(duty)
+    duty_min: 5 %
+    duty_max: 95 %
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 45 ms
+    output_step: 2 us
+    solver: dopri5
+    rtol: 1.0e-9
+    atol: 1.0e-11
+
+outputs:
+  - v(out)
+  - i(l1)
+  - s(duty)
+  - s(integral)

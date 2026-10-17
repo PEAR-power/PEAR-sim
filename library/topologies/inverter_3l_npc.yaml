@@ -1,0 +1,570 @@
+# Topology library entry. Data, not code.
+#
+# The mode sequence below is NOT documentation prose: it deserializes into the
+# exact ModeSequence dataclass the gradient engine consumes, and it was
+# extracted from a live run of the referenced model. The suite re-extracts it
+# from a fresh run on every commit and fails if the stored cycle stops matching
+# reality (tests/test_topology_library.py).
+
+schema: pear-sim/topology-entry/v0.1
+id: inverter_3l_npc
+name: Three-level neutral-point-clamped three-phase inverter
+prerequisites:
+  isolation: none
+  direction: bidirectional
+  voltage:
+    min_v: 400.0
+    max_v: 1500.0
+  power:
+    min_w: 10000.0
+    max_w: 5000000.0
+mode_sequences:
+- label: level_shifted_pd
+  source_model: examples/npc_three_phase_midpoint.yaml
+  sequence:
+    schema: pear-sim/mode-sequence/v0.1
+    period_s: 0.0005
+    source_run_sha256: c874aae9a429160c24c1f408aea279f6d773e4722e5d3285bbc45e2531ae7024
+    extraction_tolerance_s: 1.0e-12
+    steps:
+    - signature: gates[mod.a.inner_high=off,mod.a.inner_low=on,mod.a.outer_high=off,mod.a.outer_low=on,mod.b.inner_high=off,mod.b.inner_low=on,mod.b.outer_high=off,mod.b.outer_low=on,mod.c.inner_high=on,mod.c.inner_low=on,mod.c.outer_high=off,mod.c.outer_low=off];diodes[d1a=off,d1b=off,d1c=off,d2a=off,d2b=off,d2c=off,d3a=off,d3b=off,d3c=off,d4a=off,d4b=off,d4c=off,d5a=on,d5b=on,d5c=on,d6a=off,d6b=off,d6c=off];constrained_inductors[none]
+      gates:
+        mod.a.inner_high: false
+        mod.a.inner_low: true
+        mod.a.outer_high: false
+        mod.a.outer_low: true
+        mod.b.inner_high: false
+        mod.b.inner_low: true
+        mod.b.outer_high: false
+        mod.b.outer_low: true
+        mod.c.inner_high: true
+        mod.c.inner_low: true
+        mod.c.outer_high: false
+        mod.c.outer_low: false
+      diodes:
+        d1a: false
+        d1b: false
+        d1c: false
+        d2a: false
+        d2b: false
+        d2c: false
+        d3a: false
+        d3b: false
+        d3c: false
+        d4a: false
+        d4b: false
+        d4c: false
+        d5a: true
+        d5b: true
+        d5c: true
+        d6a: false
+        d6b: false
+        d6c: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: mod.a.outer_low
+        guard_is_current: false
+      nominal_duration_s: 1.7653296538765184e-05
+    - signature: gates[mod.a.inner_high=off,mod.a.inner_low=on,mod.a.outer_high=off,mod.a.outer_low=off,mod.b.inner_high=off,mod.b.inner_low=on,mod.b.outer_high=off,mod.b.outer_low=on,mod.c.inner_high=on,mod.c.inner_low=on,mod.c.outer_high=off,mod.c.outer_low=off];diodes[d1a=off,d1b=off,d1c=off,d2a=off,d2b=off,d2c=off,d3a=off,d3b=off,d3c=off,d4a=off,d4b=off,d4c=off,d5a=on,d5b=on,d5c=on,d6a=on,d6b=off,d6c=off];constrained_inductors[none]
+      gates:
+        mod.a.inner_high: false
+        mod.a.inner_low: true
+        mod.a.outer_high: false
+        mod.a.outer_low: false
+        mod.b.inner_high: false
+        mod.b.inner_low: true
+        mod.b.outer_high: false
+        mod.b.outer_low: true
+        mod.c.inner_high: true
+        mod.c.inner_low: true
+        mod.c.outer_high: false
+        mod.c.outer_low: false
+      diodes:
+        d1a: false
+        d1b: false
+        d1c: false
+        d2a: false
+        d2b: false
+        d2c: false
+        d3a: false
+        d3b: false
+        d3c: false
+        d4a: false
+        d4b: false
+        d4c: false
+        d5a: true
+        d5b: true
+        d5c: true
+        d6a: true
+        d6b: false
+        d6c: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: mod.a.inner_high
+        guard_is_current: false
+      nominal_duration_s: 3.0000000000030003e-06
+    - signature: gates[mod.a.inner_high=on,mod.a.inner_low=on,mod.a.outer_high=off,mod.a.outer_low=off,mod.b.inner_high=off,mod.b.inner_low=on,mod.b.outer_high=off,mod.b.outer_low=on,mod.c.inner_high=on,mod.c.inner_low=on,mod.c.outer_high=off,mod.c.outer_low=off];diodes[d1a=off,d1b=off,d1c=off,d2a=off,d2b=off,d2c=off,d3a=off,d3b=off,d3c=off,d4a=off,d4b=off,d4c=off,d5a=off,d5b=on,d5c=on,d6a=on,d6b=off,d6c=off];constrained_inductors[none]
+      gates:
+        mod.a.inner_high: true
+        mod.a.inner_low: true
+        mod.a.outer_high: false
+        mod.a.outer_low: false
+        mod.b.inner_high: false
+        mod.b.inner_low: true
+        mod.b.outer_high: false
+        mod.b.outer_low: true
+        mod.c.inner_high: true
+        mod.c.inner_low: true
+        mod.c.outer_high: false
+        mod.c.outer_low: false
+      diodes:
+        d1a: false
+        d1b: false
+        d1c: false
+        d2a: false
+        d2b: false
+        d2c: false
+        d3a: false
+        d3b: false
+        d3c: false
+        d4a: false
+        d4b: false
+        d4c: false
+        d5a: false
+        d5b: true
+        d5c: true
+        d6a: true
+        d6b: false
+        d6c: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: mod.c.inner_low
+        guard_is_current: false
+      nominal_duration_s: 2.6265014482509952e-05
+    - signature: gates[mod.a.inner_high=on,mod.a.inner_low=on,mod.a.outer_high=off,mod.a.outer_low=off,mod.b.inner_high=off,mod.b.inner_low=on,mod.b.outer_high=off,mod.b.outer_low=on,mod.c.inner_high=on,mod.c.inner_low=off,mod.c.outer_high=off,mod.c.outer_low=off];diodes[d1a=off,d1b=off,d1c=off,d2a=off,d2b=off,d2c=off,d3a=off,d3b=off,d3c=off,d4a=off,d4b=off,d4c=off,d5a=off,d5b=on,d5c=on,d6a=on,d6b=off,d6c=on];constrained_inductors[none]
+      gates:
+        mod.a.inner_high: true
+        mod.a.inner_low: true
+        mod.a.outer_high: false
+        mod.a.outer_low: false
+        mod.b.inner_high: false
+        mod.b.inner_low: true
+        mod.b.outer_high: false
+        mod.b.outer_low: true
+        mod.c.inner_high: true
+        mod.c.inner_low: false
+        mod.c.outer_high: false
+        mod.c.outer_low: false
+      diodes:
+        d1a: false
+        d1b: false
+        d1c: false
+        d2a: false
+        d2b: false
+        d2c: false
+        d3a: false
+        d3b: false
+        d3c: false
+        d4a: false
+        d4b: false
+        d4c: false
+        d5a: false
+        d5b: true
+        d5c: true
+        d6a: true
+        d6b: false
+        d6c: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: mod.c.outer_high
+        guard_is_current: false
+      nominal_duration_s: 3.0000000000030003e-06
+    - signature: gates[mod.a.inner_high=on,mod.a.inner_low=on,mod.a.outer_high=off,mod.a.outer_low=off,mod.b.inner_high=off,mod.b.inner_low=on,mod.b.outer_high=off,mod.b.outer_low=on,mod.c.inner_high=on,mod.c.inner_low=off,mod.c.outer_high=on,mod.c.outer_low=off];diodes[d1a=off,d1b=off,d1c=off,d2a=off,d2b=off,d2c=off,d3a=off,d3b=off,d3c=off,d4a=off,d4b=off,d4c=off,d5a=off,d5b=on,d5c=off,d6a=on,d6b=off,d6c=on];constrained_inductors[none]
+      gates:
+        mod.a.inner_high: true
+        mod.a.inner_low: true
+        mod.a.outer_high: false
+        mod.a.outer_low: false
+        mod.b.inner_high: false
+        mod.b.inner_low: true
+        mod.b.outer_high: false
+        mod.b.outer_low: true
+        mod.c.inner_high: true
+        mod.c.inner_low: false
+        mod.c.outer_high: true
+        mod.c.outer_low: false
+      diodes:
+        d1a: false
+        d1b: false
+        d1c: false
+        d2a: false
+        d2b: false
+        d2c: false
+        d3a: false
+        d3b: false
+        d3c: false
+        d4a: false
+        d4b: false
+        d4c: false
+        d5a: false
+        d5b: true
+        d5c: false
+        d6a: true
+        d6b: false
+        d6c: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: mod.b.outer_low
+        guard_is_current: false
+      nominal_duration_s: 0.00013551008141867577
+    - signature: gates[mod.a.inner_high=on,mod.a.inner_low=on,mod.a.outer_high=off,mod.a.outer_low=off,mod.b.inner_high=off,mod.b.inner_low=on,mod.b.outer_high=off,mod.b.outer_low=off,mod.c.inner_high=on,mod.c.inner_low=off,mod.c.outer_high=on,mod.c.outer_low=off];diodes[d1a=off,d1b=off,d1c=off,d2a=off,d2b=off,d2c=off,d3a=off,d3b=off,d3c=off,d4a=off,d4b=off,d4c=off,d5a=off,d5b=on,d5c=off,d6a=on,d6b=on,d6c=on];constrained_inductors[none]
+      gates:
+        mod.a.inner_high: true
+        mod.a.inner_low: true
+        mod.a.outer_high: false
+        mod.a.outer_low: false
+        mod.b.inner_high: false
+        mod.b.inner_low: true
+        mod.b.outer_high: false
+        mod.b.outer_low: false
+        mod.c.inner_high: true
+        mod.c.inner_low: false
+        mod.c.outer_high: true
+        mod.c.outer_low: false
+      diodes:
+        d1a: false
+        d1b: false
+        d1c: false
+        d2a: false
+        d2b: false
+        d2c: false
+        d3a: false
+        d3b: false
+        d3c: false
+        d4a: false
+        d4b: false
+        d4c: false
+        d5a: false
+        d5b: true
+        d5c: false
+        d6a: true
+        d6b: true
+        d6c: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: mod.b.inner_high
+        guard_is_current: false
+      nominal_duration_s: 3.0000000000030003e-06
+    - signature: gates[mod.a.inner_high=on,mod.a.inner_low=on,mod.a.outer_high=off,mod.a.outer_low=off,mod.b.inner_high=on,mod.b.inner_low=on,mod.b.outer_high=off,mod.b.outer_low=off,mod.c.inner_high=on,mod.c.inner_low=off,mod.c.outer_high=on,mod.c.outer_low=off];diodes[d1a=off,d1b=off,d1c=off,d2a=off,d2b=off,d2c=off,d3a=off,d3b=off,d3c=off,d4a=off,d4b=off,d4c=off,d5a=off,d5b=off,d5c=off,d6a=on,d6b=on,d6c=on];constrained_inductors[none]
+      gates:
+        mod.a.inner_high: true
+        mod.a.inner_low: true
+        mod.a.outer_high: false
+        mod.a.outer_low: false
+        mod.b.inner_high: true
+        mod.b.inner_low: true
+        mod.b.outer_high: false
+        mod.b.outer_low: false
+        mod.c.inner_high: true
+        mod.c.inner_low: false
+        mod.c.outer_high: true
+        mod.c.outer_low: false
+      diodes:
+        d1a: false
+        d1b: false
+        d1c: false
+        d2a: false
+        d2b: false
+        d2c: false
+        d3a: false
+        d3b: false
+        d3c: false
+        d4a: false
+        d4b: false
+        d4c: false
+        d5a: false
+        d5b: false
+        d5c: false
+        d6a: true
+        d6b: true
+        d6c: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: mod.b.inner_high
+        guard_is_current: false
+      nominal_duration_s: 0.00012614321512008364
+    - signature: gates[mod.a.inner_high=on,mod.a.inner_low=on,mod.a.outer_high=off,mod.a.outer_low=off,mod.b.inner_high=off,mod.b.inner_low=on,mod.b.outer_high=off,mod.b.outer_low=off,mod.c.inner_high=on,mod.c.inner_low=off,mod.c.outer_high=on,mod.c.outer_low=off];diodes[d1a=off,d1b=off,d1c=off,d2a=off,d2b=off,d2c=off,d3a=off,d3b=off,d3c=off,d4a=off,d4b=off,d4c=off,d5a=off,d5b=on,d5c=off,d6a=on,d6b=on,d6c=on];constrained_inductors[none]
+      gates:
+        mod.a.inner_high: true
+        mod.a.inner_low: true
+        mod.a.outer_high: false
+        mod.a.outer_low: false
+        mod.b.inner_high: false
+        mod.b.inner_low: true
+        mod.b.outer_high: false
+        mod.b.outer_low: false
+        mod.c.inner_high: true
+        mod.c.inner_low: false
+        mod.c.outer_high: true
+        mod.c.outer_low: false
+      diodes:
+        d1a: false
+        d1b: false
+        d1c: false
+        d2a: false
+        d2b: false
+        d2c: false
+        d3a: false
+        d3b: false
+        d3c: false
+        d4a: false
+        d4b: false
+        d4c: false
+        d5a: false
+        d5b: true
+        d5c: false
+        d6a: true
+        d6b: true
+        d6c: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: mod.b.outer_low
+        guard_is_current: false
+      nominal_duration_s: 3.0000000000030003e-06
+    - signature: gates[mod.a.inner_high=on,mod.a.inner_low=on,mod.a.outer_high=off,mod.a.outer_low=off,mod.b.inner_high=off,mod.b.inner_low=on,mod.b.outer_high=off,mod.b.outer_low=on,mod.c.inner_high=on,mod.c.inner_low=off,mod.c.outer_high=on,mod.c.outer_low=off];diodes[d1a=off,d1b=off,d1c=off,d2a=off,d2b=off,d2c=off,d3a=off,d3b=off,d3c=off,d4a=off,d4b=off,d4c=off,d5a=off,d5b=on,d5c=off,d6a=on,d6b=off,d6c=on];constrained_inductors[none]
+      gates:
+        mod.a.inner_high: true
+        mod.a.inner_low: true
+        mod.a.outer_high: false
+        mod.a.outer_low: false
+        mod.b.inner_high: false
+        mod.b.inner_low: true
+        mod.b.outer_high: false
+        mod.b.outer_low: true
+        mod.c.inner_high: true
+        mod.c.inner_low: false
+        mod.c.outer_high: true
+        mod.c.outer_low: false
+      diodes:
+        d1a: false
+        d1b: false
+        d1c: false
+        d2a: false
+        d2b: false
+        d2c: false
+        d3a: false
+        d3b: false
+        d3c: false
+        d4a: false
+        d4b: false
+        d4c: false
+        d5a: false
+        d5b: true
+        d5c: false
+        d6a: true
+        d6b: false
+        d6c: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: mod.c.outer_high
+        guard_is_current: false
+      nominal_duration_s: 0.00013551008141866883
+    - signature: gates[mod.a.inner_high=on,mod.a.inner_low=on,mod.a.outer_high=off,mod.a.outer_low=off,mod.b.inner_high=off,mod.b.inner_low=on,mod.b.outer_high=off,mod.b.outer_low=on,mod.c.inner_high=on,mod.c.inner_low=off,mod.c.outer_high=off,mod.c.outer_low=off];diodes[d1a=off,d1b=off,d1c=off,d2a=off,d2b=off,d2c=off,d3a=off,d3b=off,d3c=off,d4a=off,d4b=off,d4c=off,d5a=off,d5b=on,d5c=on,d6a=on,d6b=off,d6c=on];constrained_inductors[none]
+      gates:
+        mod.a.inner_high: true
+        mod.a.inner_low: true
+        mod.a.outer_high: false
+        mod.a.outer_low: false
+        mod.b.inner_high: false
+        mod.b.inner_low: true
+        mod.b.outer_high: false
+        mod.b.outer_low: true
+        mod.c.inner_high: true
+        mod.c.inner_low: false
+        mod.c.outer_high: false
+        mod.c.outer_low: false
+      diodes:
+        d1a: false
+        d1b: false
+        d1c: false
+        d2a: false
+        d2b: false
+        d2c: false
+        d3a: false
+        d3b: false
+        d3c: false
+        d4a: false
+        d4b: false
+        d4c: false
+        d5a: false
+        d5b: true
+        d5c: true
+        d6a: true
+        d6b: false
+        d6c: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: mod.c.inner_low
+        guard_is_current: false
+      nominal_duration_s: 3.0000000000030003e-06
+    - signature: gates[mod.a.inner_high=on,mod.a.inner_low=on,mod.a.outer_high=off,mod.a.outer_low=off,mod.b.inner_high=off,mod.b.inner_low=on,mod.b.outer_high=off,mod.b.outer_low=on,mod.c.inner_high=on,mod.c.inner_low=on,mod.c.outer_high=off,mod.c.outer_low=off];diodes[d1a=off,d1b=off,d1c=off,d2a=off,d2b=off,d2c=off,d3a=off,d3b=off,d3c=off,d4a=off,d4b=off,d4c=off,d5a=off,d5b=on,d5c=on,d6a=on,d6b=off,d6c=off];constrained_inductors[none]
+      gates:
+        mod.a.inner_high: true
+        mod.a.inner_low: true
+        mod.a.outer_high: false
+        mod.a.outer_low: false
+        mod.b.inner_high: false
+        mod.b.inner_low: true
+        mod.b.outer_high: false
+        mod.b.outer_low: true
+        mod.c.inner_high: true
+        mod.c.inner_low: true
+        mod.c.outer_high: false
+        mod.c.outer_low: false
+      diodes:
+        d1a: false
+        d1b: false
+        d1c: false
+        d2a: false
+        d2b: false
+        d2c: false
+        d3a: false
+        d3b: false
+        d3c: false
+        d4a: false
+        d4b: false
+        d4c: false
+        d5a: false
+        d5b: true
+        d5c: true
+        d6a: true
+        d6b: false
+        d6c: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: mod.a.inner_high
+        guard_is_current: false
+      nominal_duration_s: 2.626501448251689e-05
+    - signature: gates[mod.a.inner_high=off,mod.a.inner_low=on,mod.a.outer_high=off,mod.a.outer_low=off,mod.b.inner_high=off,mod.b.inner_low=on,mod.b.outer_high=off,mod.b.outer_low=on,mod.c.inner_high=on,mod.c.inner_low=on,mod.c.outer_high=off,mod.c.outer_low=off];diodes[d1a=off,d1b=off,d1c=off,d2a=off,d2b=off,d2c=off,d3a=off,d3b=off,d3c=off,d4a=off,d4b=off,d4c=off,d5a=on,d5b=on,d5c=on,d6a=on,d6b=off,d6c=off];constrained_inductors[none]
+      gates:
+        mod.a.inner_high: false
+        mod.a.inner_low: true
+        mod.a.outer_high: false
+        mod.a.outer_low: false
+        mod.b.inner_high: false
+        mod.b.inner_low: true
+        mod.b.outer_high: false
+        mod.b.outer_low: true
+        mod.c.inner_high: true
+        mod.c.inner_low: true
+        mod.c.outer_high: false
+        mod.c.outer_low: false
+      diodes:
+        d1a: false
+        d1b: false
+        d1c: false
+        d2a: false
+        d2b: false
+        d2c: false
+        d3a: false
+        d3b: false
+        d3c: false
+        d4a: false
+        d4b: false
+        d4c: false
+        d5a: true
+        d5b: true
+        d5c: true
+        d6a: true
+        d6b: false
+        d6c: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: mod.a.outer_low
+        guard_is_current: false
+      nominal_duration_s: 3.0000000000030003e-06
+    - signature: gates[mod.a.inner_high=off,mod.a.inner_low=on,mod.a.outer_high=off,mod.a.outer_low=on,mod.b.inner_high=off,mod.b.inner_low=on,mod.b.outer_high=off,mod.b.outer_low=on,mod.c.inner_high=on,mod.c.inner_low=on,mod.c.outer_high=off,mod.c.outer_low=off];diodes[d1a=off,d1b=off,d1c=off,d2a=off,d2b=off,d2c=off,d3a=off,d3b=off,d3c=off,d4a=off,d4b=off,d4c=off,d5a=on,d5b=on,d5c=on,d6a=off,d6b=off,d6c=off];constrained_inductors[none]
+      gates:
+        mod.a.inner_high: false
+        mod.a.inner_low: true
+        mod.a.outer_high: false
+        mod.a.outer_low: true
+        mod.b.inner_high: false
+        mod.b.inner_low: true
+        mod.b.outer_high: false
+        mod.b.outer_low: true
+        mod.c.inner_high: true
+        mod.c.inner_low: true
+        mod.c.outer_high: false
+        mod.c.outer_low: false
+      diodes:
+        d1a: false
+        d1b: false
+        d1c: false
+        d2a: false
+        d2b: false
+        d2c: false
+        d3a: false
+        d3b: false
+        d3c: false
+        d4a: false
+        d4b: false
+        d4c: false
+        d5a: true
+        d5b: true
+        d5c: true
+        d6a: false
+        d6b: false
+        d6c: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: period_end
+        target: ''
+        guard_is_current: false
+      nominal_duration_s: 1.4653296538762184e-05
+kernel_support:
+  status: simulated
+  note: Runs on the reference kernel with the level-shifted PD modulator and a capacitive
+    split link. No comparison against an independent simulation engine exists for this entry.
+known_limitations:
+- 'Midpoint balance is an OPEN claim: this entry models the split link and measures the drift,
+  but ships no active balancing control, so long-run midpoint behaviour is not guaranteed.'
+- Loss distribution between outer and inner devices is uneven — the outer devices switch while
+  the inner ones conduct — so thermal design cannot assume symmetry.
+- 'Twice the switch count of a two-level bridge plus the clamp diodes: more gate drives, more
+  failure modes, more cost.'
+- Requires a split DC link; a single stiff source is not a valid substitute once midpoint
+  current matters.
+- Clamp-path conduction adds losses that grow with switching frequency, which is why this
+  topology is usually a low-f_sw, high-power choice.
+template:
+  model: examples/npc_three_phase_midpoint.yaml
+notes: Alternative for the inverter slot when bus voltage or output quality rules out two
+  levels. Together with a three-level boost stage this is the 1500 V string-inverter architecture
+  named as the first complete end-to-end product in the non-isolated DC-DC review; that boost
+  stage is NOT yet in the library. Ranges are the entry author's judgement.

@@ -1,0 +1,512 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PEAR-power/pear-sim/main/schema/boost-boundary-evidence.schema.json",
+  "title": "PEARSim canonical ideal boost boundary evidence v0.1",
+  "oneOf": [
+    {"$ref": "#/$defs/spec"},
+    {"$ref": "#/$defs/oracle"},
+    {"$ref": "#/$defs/point"},
+    {"$ref": "#/$defs/runner_result"},
+    {"$ref": "#/$defs/summary"},
+    {"$ref": "#/$defs/confidence"}
+  ],
+  "$defs": {
+    "status": {"enum": ["pass", "fail", "not-run"]},
+    "regime": {"enum": ["CCM", "BCM", "DCM"]},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}(?![\\s\\S])"},
+    "verification_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "validation_claim", "scope", "statement"],
+      "properties": {
+        "classification": {"const": "verification"},
+        "validation_claim": {"const": false},
+        "scope": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "statement": {"type": "string", "minLength": 1, "maxLength": 4096}
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capacitance_f",
+        "duty",
+        "inductance_h",
+        "period_s",
+        "switching_frequency_hz",
+        "vin_v"
+      ],
+      "properties": {
+        "capacitance_f": {"type": "number", "exclusiveMinimum": 0},
+        "duty": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        "inductance_h": {"type": "number", "exclusiveMinimum": 0},
+        "period_s": {"type": "number", "exclusiveMinimum": 0},
+        "switching_frequency_hz": {"type": "number", "exclusiveMinimum": 0},
+        "vin_v": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "model_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_sha256", "model_sha256", "request_sha256"],
+      "properties": {
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "model_sha256": {"$ref": "#/$defs/sha256"},
+        "request_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inductor_current_a", "output_voltage_v"],
+      "properties": {
+        "inductor_current_a": {"type": "number"},
+        "output_voltage_v": {"type": "number"}
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "actual", "limit", "status"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "metric": {"type": "string", "minLength": 1, "maxLength": 256},
+        "actual": {
+          "type": ["number", "string", "boolean", "array", "null"],
+          "items": {"type": "string", "maxLength": 1024}
+        },
+        "reference": {
+          "type": ["number", "string", "boolean", "array", "null"],
+          "items": {"type": "string", "maxLength": 1024}
+        },
+        "operator": {"enum": ["<=", "=="]},
+        "limit": {"type": ["number", "boolean", "null"]},
+        "status": {"$ref": "#/$defs/status"},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "expected_regime": {"$ref": "#/$defs/regime"},
+        "observed_mode_sequence": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {"type": "string", "maxLength": 1024}
+        },
+        "reference_mode_sequence": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {"type": "string", "maxLength": 1024}
+        },
+        "observed_event_sequence": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"type": "string", "maxLength": 1024}
+        },
+        "reference_event_sequence": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"type": "string", "maxLength": 1024}
+        }
+      }
+    },
+    "gate_contract_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "metric", "limit", "scope"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "metric": {"type": "string", "minLength": 1, "maxLength": 256},
+        "operator": {"enum": ["<=", "=="]},
+        "limit": {"type": ["number", "boolean"]},
+        "scope": {"type": "string", "minLength": 1, "maxLength": 2048}
+      }
+    },
+    "gate_contract": {
+      "type": "array",
+      "minItems": 13,
+      "maxItems": 13,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "regime"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "boundary_state_nonzero"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "boundary_state_zero"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "natural_event_time"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "reverse_current"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "cycle_mean_output"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "state_ripple"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "mode_fractions"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "event_semantics"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "energy_balance"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "cycle_periodicity"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "unclassified_fraction"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "mode_fraction_sum"}}}]}
+      ],
+      "items": false
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 13,
+      "maxItems": 13,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "regime"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "boundary_state_nonzero"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "boundary_state_zero"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "natural_event_time"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "reverse_current"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "cycle_mean_output"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "state_ripple"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "mode_fractions"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "event_semantics"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "energy_balance"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "cycle_periodicity"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "unclassified_fraction"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "mode_fraction_sum"}}}]}
+      ],
+      "items": false
+    },
+    "oracle_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "point_id",
+        "load_ratio_to_bcm",
+        "load_ohm",
+        "regime",
+        "states",
+        "events",
+        "metrics",
+        "oracle_gates"
+      ],
+      "properties": {
+        "point_id": {"type": "string", "pattern": "^load-ratio-[a-z0-9]+(?![\\s\\S])"},
+        "load_ratio_to_bcm": {"type": "number", "exclusiveMinimum": 0},
+        "load_ohm": {"type": "number", "exclusiveMinimum": 0},
+        "regime": {"$ref": "#/$defs/regime"},
+        "states": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cycle_start", "switch_off", "diode_zero", "cycle_end"],
+          "properties": {
+            "cycle_start": {"$ref": "#/$defs/state"},
+            "switch_off": {"$ref": "#/$defs/state"},
+            "diode_zero": {"oneOf": [{"$ref": "#/$defs/state"}, {"type": "null"}]},
+            "cycle_end": {"$ref": "#/$defs/state"}
+          }
+        },
+        "events": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["switch_off_s", "diode_zero_s", "mode_sequence", "event_sequence"],
+          "properties": {
+            "switch_off_s": {"type": "number", "minimum": 0},
+            "diode_zero_s": {"type": ["number", "null"], "minimum": 0},
+            "mode_sequence": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 3,
+              "items": {"enum": ["on", "freewheel", "idle"]}
+            },
+            "event_sequence": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 4,
+              "items": {"type": "string", "minLength": 1, "maxLength": 1024}
+            }
+          }
+        },
+        "metrics": {"type": "object"},
+        "oracle_gates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {"$ref": "#/$defs/gate"}
+        }
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "required": [
+        "point_id",
+        "load_ratio_to_bcm",
+        "load_ohm",
+        "expected_regime",
+        "status",
+        "gates"
+      ],
+      "properties": {
+        "point_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "load_ratio_to_bcm": {"type": "number", "exclusiveMinimum": 0},
+        "load_ohm": {"type": "number", "exclusiveMinimum": 0},
+        "regime": {"$ref": "#/$defs/regime"},
+        "expected_regime": {"$ref": "#/$defs/regime"},
+        "observed_regime": {"$ref": "#/$defs/regime"},
+        "status": {"$ref": "#/$defs/status"},
+        "metrics": {"type": "object"},
+        "reference_metrics": {"type": "object"},
+        "events": {"type": "object"},
+        "gates": {"$ref": "#/$defs/gates"}
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "benchmark_id",
+        "claim",
+        "source_model",
+        "parameters_si",
+        "load_ratios",
+        "initial_conditions",
+        "simulation",
+        "limits",
+        "oracle_schema",
+        "comparison_schema"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/benchmark-spec/ideal-boost-boundary/v0.1"},
+        "benchmark_id": {"const": "VAL-003:canonical-boost-boundary-sweep"},
+        "claim": {"$ref": "#/$defs/verification_claim"},
+        "source_model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["file", "hashes"],
+          "properties": {
+            "file": {"type": "string", "minLength": 1, "maxLength": 1024},
+            "hashes": {"$ref": "#/$defs/model_hashes"}
+          }
+        },
+        "parameters_si": {"$ref": "#/$defs/parameters"},
+        "load_ratios": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {"type": "number", "exclusiveMinimum": 0}
+        },
+        "initial_conditions": {"type": "object"},
+        "simulation": {"type": "object"},
+        "limits": {"type": "object"},
+        "oracle_schema": {"const": "pear-sim/benchmark-oracle/ideal-boost-boundary/v0.1"},
+        "comparison_schema": {"const": "pear-sim/benchmark-result/ideal-boost-boundary/v0.1"}
+      }
+    },
+    "oracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "claim",
+        "method",
+        "parameters_si",
+        "boundary",
+        "load_ratios",
+        "comparison_gate_contract",
+        "oracle_health",
+        "points"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/benchmark-oracle/ideal-boost-boundary/v0.1"},
+        "kind": {"const": "independent-periodic-affine-boost-boundary-verification"},
+        "claim": {"$ref": "#/$defs/verification_claim"},
+        "method": {"type": "object"},
+        "parameters_si": {"$ref": "#/$defs/parameters"},
+        "boundary": {
+          "type": "object",
+          "required": ["load_ohm", "definition", "coincidence_fraction_tolerance"]
+        },
+        "load_ratios": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {"type": "number", "exclusiveMinimum": 0}
+        },
+        "comparison_gate_contract": {"$ref": "#/$defs/gate_contract"},
+        "oracle_health": {
+          "type": "object",
+          "required": ["status", "point_count", "failed_gate_count"]
+        },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {"$ref": "#/$defs/oracle_point"}
+        }
+      }
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "index",
+        "point_id",
+        "status",
+        "initial_conditions",
+        "reference",
+        "observation",
+        "comparison",
+        "error",
+        "run"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/benchmark-point/ideal-boost-boundary/v0.1"},
+        "index": {"type": "integer", "minimum": 0, "maximum": 63},
+        "point_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "status": {"$ref": "#/$defs/status"},
+        "initial_conditions": {"type": "object"},
+        "reference": {"$ref": "#/$defs/oracle_point"},
+        "observation": {"type": ["object", "null"]},
+        "comparison": {"$ref": "#/$defs/comparison"},
+        "error": {"type": ["object", "null"]},
+        "run": {"type": ["object", "null"]}
+      }
+    },
+    "runner_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "benchmark_id",
+        "oracle_schema",
+        "comparison_schema",
+        "claim",
+        "parameters_si",
+        "boundary_load_ohm",
+        "summary",
+        "points"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/benchmark-runner-result/ideal-boost-boundary/v0.1"},
+        "benchmark_id": {"const": "VAL-003:canonical-boost-boundary-sweep"},
+        "oracle_schema": {"const": "pear-sim/benchmark-oracle/ideal-boost-boundary/v0.1"},
+        "comparison_schema": {"const": "pear-sim/benchmark-result/ideal-boost-boundary/v0.1"},
+        "claim": {"$ref": "#/$defs/verification_claim"},
+        "parameters_si": {"$ref": "#/$defs/parameters"},
+        "boundary_load_ohm": {"type": "number", "exclusiveMinimum": 0},
+        "summary": {
+          "type": "object",
+          "required": ["status", "point_count", "gate_count", "gate_status_counts"]
+        },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {"$ref": "#/$defs/comparison"}
+        }
+      }
+    },
+    "summary_point": {
+      "type": "object",
+      "required": [
+        "index",
+        "point_id",
+        "load_ratio_to_bcm",
+        "load_ohm",
+        "expected_regime",
+        "status",
+        "runtime_s",
+        "metrics",
+        "gates",
+        "artifacts"
+      ],
+      "properties": {
+        "index": {"type": "integer", "minimum": 0, "maximum": 63},
+        "point_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "load_ratio_to_bcm": {"type": "number", "exclusiveMinimum": 0},
+        "load_ohm": {"type": "number", "exclusiveMinimum": 0},
+        "expected_regime": {"$ref": "#/$defs/regime"},
+        "observed_regime": {"$ref": "#/$defs/regime"},
+        "regime": {"$ref": "#/$defs/regime"},
+        "status": {"$ref": "#/$defs/status"},
+        "runtime_s": {"type": ["number", "null"], "minimum": 0},
+        "metrics": {"type": "object"},
+        "gates": {"$ref": "#/$defs/gates"},
+        "artifacts": {"type": "object"}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "benchmark_id",
+        "overall_status",
+        "claim",
+        "bcm",
+        "summary",
+        "points",
+        "worst_gates",
+        "failures",
+        "artifacts",
+        "provenance"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/sweep-summary/ideal-boost-boundary/v0.1"},
+        "benchmark_id": {"const": "VAL-003:canonical-boost-boundary-sweep"},
+        "overall_status": {"$ref": "#/$defs/status"},
+        "claim": {"$ref": "#/$defs/verification_claim"},
+        "bcm": {
+          "type": "object",
+          "required": ["r_bcm_ohm", "method"]
+        },
+        "summary": {
+          "type": "object",
+          "required": ["status", "point_count", "point_status_counts", "gate_status_counts"]
+        },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {"$ref": "#/$defs/summary_point"}
+        },
+        "worst_gates": {"type": "array", "minItems": 13, "maxItems": 13},
+        "failures": {"type": "array", "maxItems": 832},
+        "artifacts": {"type": "object"},
+        "provenance": {"type": "object"}
+      }
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "level",
+        "acceptance",
+        "envelope",
+        "related_regression_coverage",
+        "claim"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/confidence/boost-boundary-sweep/v0.1"},
+        "level": {"const": "EXPLORATORY"},
+        "acceptance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "sweep_summary_sha256", "benchmark_result_sha256"],
+          "properties": {
+            "status": {"$ref": "#/$defs/status"},
+            "sweep_summary_sha256": {"$ref": "#/$defs/sha256"},
+            "benchmark_result_sha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "envelope": {"type": "object"},
+        "related_regression_coverage": {"type": "object"},
+        "claim": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "validation_claim",
+            "compatibility_claim",
+            "hardware_sign_off_allowed",
+            "general_dae_support_claimed"
+          ],
+          "properties": {
+            "validation_claim": {"const": false},
+            "compatibility_claim": {"const": false},
+            "hardware_sign_off_allowed": {"const": false},
+            "general_dae_support_claimed": {"const": false}
+          }
+        }
+      }
+    }
+  }
+}

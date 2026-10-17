@@ -1,0 +1,30 @@
+{
+  "schema": "pear-sim/perturbation-campaign-request/v0.1",
+  "label": "D — tolerable-drift boundary on the voltage reference",
+  "nominal": {"vout_v": 12.0, "recovery_band_percent": 2.0},
+  "axes": [
+    {
+      "id": "anchor", "kind": "parameter_values", "parameter": "vin",
+      "values": ["24 V"],
+      "source": "assumption",
+      "note": "Single nominal anchor point. This campaign exists for the bisection below, not for its product."
+    }
+  ],
+  "criteria": [
+    {
+      "id": "vout_regulation",
+      "signal": "v(out)", "field": "mean_last_half",
+      "op": "abs_deviation_max", "reference": 12.0, "limit": 0.3, "unit": "V",
+      "source": "assumption",
+      "note": "Placeholder +/-2.5 % output-accuracy budget. The real budget comes from the system requirement, not from here."
+    }
+  ],
+  "boundary_search": {
+    "parameter": "vref",
+    "from": "12 V",
+    "to": "16 V",
+    "iterations": 7,
+    "source": "assumption",
+    "note": "Bracket chosen to contain the failure of the accuracy criterion. The answer is a REQUIREMENT — how far the reference may drift before the design misses its accuracy budget — not a prediction that any reference drifts that far."
+  }
+}

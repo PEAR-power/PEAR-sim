@@ -1,0 +1,357 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PEAR-power/pear-sim/main/schema/run-comparison.schema.json",
+  "title": "PEARSim verified-run numerical comparison v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "kind",
+    "status",
+    "claim",
+    "generator",
+    "profile",
+    "sources",
+    "compatibility",
+    "alignment",
+    "signals",
+    "summary"
+  ],
+  "properties": {
+    "schema": {"const": "pear-sim/run-comparison/v0.1"},
+    "kind": {"const": "verified-run-numerical-comparison"},
+    "status": {"$ref": "#/$defs/status"},
+    "claim": {"$ref": "#/$defs/claim"},
+    "generator": {"$ref": "#/$defs/generator"},
+    "profile": {"$ref": "#/$defs/profile"},
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference", "candidate"],
+      "properties": {
+        "reference": {"$ref": "#/$defs/source"},
+        "candidate": {"$ref": "#/$defs/source"}
+      }
+    },
+    "compatibility": {"$ref": "#/$defs/compatibility"},
+    "alignment": {"$ref": "#/$defs/alignment"},
+    "signals": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {"$ref": "#/$defs/signal"}
+    },
+    "summary": {"$ref": "#/$defs/summary"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}(?![\\s\\S])"},
+    "status": {"enum": ["pass", "fail", "not_comparable"]},
+    "status_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pass", "fail", "not_comparable"],
+      "properties": {
+        "pass": {"type": "integer", "minimum": 0},
+        "fail": {"type": "integer", "minimum": 0},
+        "not_comparable": {"type": "integer", "minimum": 0}
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "classification",
+        "validation_claim",
+        "compatibility_claim",
+        "hardware_sign_off_allowed",
+        "statement"
+      ],
+      "properties": {
+        "classification": {"const": "numerical-equivalence-evidence"},
+        "validation_claim": {"const": false},
+        "compatibility_claim": {"const": false},
+        "hardware_sign_off_allowed": {"const": false},
+        "statement": {"type": "string", "minLength": 1, "maxLength": 4096}
+      }
+    },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"const": "pear-sim"},
+        "version": {"type": "string", "minLength": 1, "maxLength": 256}
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sha256"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "file_digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "bytes"],
+      "properties": {
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "bytes": {"type": "integer", "minimum": 0},
+        "verified": {"type": "boolean"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_sha256",
+        "model_sha256",
+        "request_sha256",
+        "structural_topology_sha256",
+        "run_manifest",
+        "artifact_manifest",
+        "bundle_sha256",
+        "platform"
+      ],
+      "properties": {
+        "run_sha256": {"$ref": "#/$defs/sha256"},
+        "model_sha256": {"$ref": "#/$defs/sha256"},
+        "request_sha256": {"$ref": "#/$defs/sha256"},
+        "structural_topology_sha256": {"$ref": "#/$defs/sha256"},
+        "run_manifest": {"$ref": "#/$defs/file_digest"},
+        "artifact_manifest": {
+          "allOf": [
+            {"$ref": "#/$defs/file_digest"},
+            {"required": ["verified"], "properties": {"verified": {"const": true}}}
+          ]
+        },
+        "bundle_sha256": {"$ref": "#/$defs/sha256"},
+        "platform": {"type": ["object", "null"]}
+      }
+    },
+    "compatibility_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "operator", "reference", "candidate"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "status": {"enum": ["pass", "not_comparable"]},
+        "operator": {"const": "=="},
+        "reference": {},
+        "candidate": {}
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "gates"],
+      "properties": {
+        "status": {"enum": ["pass", "not_comparable"]},
+        "gates": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": {"$ref": "#/$defs/compatibility_gate"}
+        }
+      }
+    },
+    "event_timing_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "metric",
+        "actual",
+        "limit",
+        "operator",
+        "matched_group_count"
+      ],
+      "properties": {
+        "id": {"const": "event_timing"},
+        "status": {"$ref": "#/$defs/status"},
+        "metric": {"const": "maximum_absolute_matched_event_time_delta_s"},
+        "actual": {"type": ["number", "null"], "minimum": 0},
+        "limit": {"type": "number", "minimum": 0},
+        "operator": {"const": "<="},
+        "matched_group_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "valid_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_s", "stop_s", "duration_s"],
+      "properties": {
+        "start_s": {"type": "number"},
+        "stop_s": {"type": "number"},
+        "duration_s": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "invalid_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason"],
+      "properties": {
+        "status": {"const": "not_comparable"},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 2048}
+      }
+    },
+    "exclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_s", "stop_s"],
+      "properties": {
+        "start_s": {"type": "number"},
+        "stop_s": {"type": "number"}
+      }
+    },
+    "exclusions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy_edge_before_s",
+        "policy_edge_after_s",
+        "merged_interval_count",
+        "excluded_duration_s",
+        "included_duration_s",
+        "coverage_fraction",
+        "intervals"
+      ],
+      "properties": {
+        "policy_edge_before_s": {"type": "number", "minimum": 0},
+        "policy_edge_after_s": {"type": "number", "minimum": 0},
+        "merged_interval_count": {"type": "integer", "minimum": 0},
+        "excluded_duration_s": {"type": "number", "minimum": 0},
+        "included_duration_s": {"type": "number", "minimum": 0},
+        "coverage_fraction": {"type": "number", "minimum": 0, "maximum": 1},
+        "intervals": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {"$ref": "#/$defs/exclusion"}
+        }
+      }
+    },
+    "alignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "event_groups", "event_timing_gate", "window", "exclusions"],
+      "properties": {
+        "mode": {"enum": ["absolute", "matching_events_piecewise"]},
+        "event_groups": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reference_count",
+            "candidate_count",
+            "semantics_exact",
+            "maximum_absolute_time_delta_s"
+          ],
+          "properties": {
+            "reference_count": {"type": "integer", "minimum": 0},
+            "candidate_count": {"type": "integer", "minimum": 0},
+            "semantics_exact": {"type": "boolean"},
+            "maximum_absolute_time_delta_s": {"type": ["number", "null"], "minimum": 0}
+          }
+        },
+        "event_timing_gate": {"$ref": "#/$defs/event_timing_gate"},
+        "window": {
+          "oneOf": [
+            {"$ref": "#/$defs/valid_window"},
+            {"$ref": "#/$defs/invalid_window"}
+          ]
+        },
+        "exclusions": {
+          "oneOf": [
+            {"$ref": "#/$defs/exclusions"},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "signal_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "metric", "actual", "limit", "operator"],
+      "properties": {
+        "id": {"enum": ["coverage", "max_absolute_error", "mean_absolute_error", "nrmse"]},
+        "status": {"$ref": "#/$defs/status"},
+        "metric": {"type": "string", "minLength": 1, "maxLength": 256},
+        "actual": {"type": ["number", "null"]},
+        "limit": {"type": "number", "minimum": 0},
+        "operator": {"enum": ["<=", ">="]}
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maximum_absolute_error",
+        "mean_absolute_error",
+        "root_mean_square_error",
+        "reference_rms",
+        "reference_maximum_absolute",
+        "normalization",
+        "nrmse",
+        "included_duration_s",
+        "interval_count",
+        "integration"
+      ],
+      "properties": {
+        "maximum_absolute_error": {"type": "number", "minimum": 0},
+        "mean_absolute_error": {"type": "number", "minimum": 0},
+        "root_mean_square_error": {"type": "number", "minimum": 0},
+        "reference_rms": {"type": "number", "minimum": 0},
+        "reference_maximum_absolute": {"type": "number", "minimum": 0},
+        "normalization": {"const": "reference_rms"},
+        "nrmse": {"type": ["number", "null"], "minimum": 0},
+        "included_duration_s": {"type": "number", "exclusiveMinimum": 0},
+        "interval_count": {"type": "integer", "minimum": 1},
+        "integration": {"const": "exact_integrals_of_piecewise_linear_recorded_samples"}
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "unit", "status", "metrics", "gates", "reason"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 256},
+        "unit": {"enum": ["V", "A"]},
+        "status": {"$ref": "#/$defs/status"},
+        "metrics": {
+          "oneOf": [
+            {"$ref": "#/$defs/metrics"},
+            {"type": "null"}
+          ]
+        },
+        "gates": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {"$ref": "#/$defs/signal_gate"}
+        },
+        "reason": {"type": ["string", "null"], "minLength": 1, "maxLength": 2048}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "signal_count",
+        "signal_status_counts",
+        "gate_count",
+        "gate_status_counts",
+        "coverage_fraction"
+      ],
+      "properties": {
+        "status": {"$ref": "#/$defs/status"},
+        "signal_count": {"type": "integer", "minimum": 1, "maximum": 256},
+        "signal_status_counts": {"$ref": "#/$defs/status_counts"},
+        "gate_count": {"type": "integer", "minimum": 7},
+        "gate_status_counts": {"$ref": "#/$defs/status_counts"},
+        "coverage_fraction": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
+      }
+    }
+  }
+}

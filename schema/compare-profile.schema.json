@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PEAR-power/pear-sim/main/schema/compare-profile.schema.json",
+  "title": "PEARSim verified-run comparison profile v0.1",
+  "oneOf": [
+    {"$ref": "#/$defs/source_profile"},
+    {"$ref": "#/$defs/resolved_profile"}
+  ],
+  "$defs": {
+    "nonnegative": {"type": "number", "minimum": 0},
+    "error_tolerance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["absolute", "relative"],
+      "properties": {
+        "absolute": {"$ref": "#/$defs/nonnegative"},
+        "relative": {"$ref": "#/$defs/nonnegative"}
+      }
+    },
+    "tolerances": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_absolute_error", "mean_absolute_error", "nrmse"],
+      "properties": {
+        "max_absolute_error": {"$ref": "#/$defs/error_tolerance"},
+        "mean_absolute_error": {"$ref": "#/$defs/error_tolerance"},
+        "nrmse": {"$ref": "#/$defs/nonnegative"}
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "unit", "tolerances"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[vi]\\([A-Za-z_][A-Za-z0-9_.:-]*\\)(?![\\s\\S])",
+          "maxLength": 256
+        },
+        "unit": {"enum": ["V", "A"]},
+        "tolerances": {"$ref": "#/$defs/tolerances"}
+      }
+    },
+    "alignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "event_time_tolerance_s"],
+      "properties": {
+        "mode": {"enum": ["absolute", "matching_events_piecewise"]},
+        "event_time_tolerance_s": {"$ref": "#/$defs/nonnegative"}
+      }
+    },
+    "source_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "start_s": {"type": "number"},
+        "stop_s": {"type": "number"}
+      }
+    },
+    "resolved_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_s", "stop_s", "selection"],
+      "properties": {
+        "start_s": {"type": ["number", "null"]},
+        "stop_s": {"type": ["number", "null"]},
+        "selection": {
+          "const": "declared_or_full_reference_window_without_silent_clipping"
+        }
+      }
+    },
+    "source_edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["before_s", "after_s"],
+      "properties": {
+        "before_s": {"$ref": "#/$defs/nonnegative"},
+        "after_s": {"$ref": "#/$defs/nonnegative"}
+      }
+    },
+    "resolved_edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["before_s", "after_s", "sample_barrier_policy"],
+      "properties": {
+        "before_s": {"$ref": "#/$defs/nonnegative"},
+        "after_s": {"$ref": "#/$defs/nonnegative"},
+        "sample_barrier_policy": {
+          "const": "exclude_adjacent_sample_span_at_every_event"
+        }
+      }
+    },
+    "source_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum_fraction"],
+      "properties": {
+        "minimum_fraction": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "resolved_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum_fraction", "denominator"],
+      "properties": {
+        "minimum_fraction": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "denominator": {"const": "selected_reference_time_window"}
+      }
+    },
+    "source_record": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "sha256"],
+          "properties": {
+            "kind": {"const": "inline"},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}(?![\\s\\S])"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "file", "sha256", "bytes"],
+          "properties": {
+            "kind": {"const": "file"},
+            "file": {"type": "string", "minLength": 1, "maxLength": 1024},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}(?![\\s\\S])"},
+            "bytes": {"type": "integer", "minimum": 0}
+          }
+        }
+      ]
+    },
+    "source_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "id",
+        "alignment",
+        "edge_exclusion",
+        "coverage",
+        "signals"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/compare-profile/v0.1"},
+        "id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "alignment": {"$ref": "#/$defs/alignment"},
+        "window": {"$ref": "#/$defs/source_window"},
+        "edge_exclusion": {"$ref": "#/$defs/source_edge"},
+        "coverage": {"$ref": "#/$defs/source_coverage"},
+        "signals": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {"$ref": "#/$defs/signal"}
+        }
+      }
+    },
+    "resolved_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "id",
+        "alignment",
+        "window",
+        "edge_exclusion",
+        "coverage",
+        "signals",
+        "source",
+        "sha256"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/compare-profile/v0.1"},
+        "id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "alignment": {"$ref": "#/$defs/alignment"},
+        "window": {"$ref": "#/$defs/resolved_window"},
+        "edge_exclusion": {"$ref": "#/$defs/resolved_edge"},
+        "coverage": {"$ref": "#/$defs/resolved_coverage"},
+        "signals": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {"$ref": "#/$defs/signal"}
+        },
+        "source": {"$ref": "#/$defs/source_record"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}(?![\\s\\S])"}
+      }
+    }
+  }
+}

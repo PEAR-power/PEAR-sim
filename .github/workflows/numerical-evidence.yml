@@ -1,0 +1,105 @@
+name: numerical-evidence
+
+# Cost policy (2026-07-21): this workflow produces the retained canonical-buck numerical evidence
+# matrix on three OSes (30-minute jobs, macOS at a 10x billing multiplier). It
+# is evidence *production*, not regression — a configured workflow was never a
+# claim that a bundle passed — so it runs only on demand.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: numerical-evidence-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BLIS_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  NUMEXPR_NUM_THREADS: "1"
+  OMP_NUM_THREADS: "1"
+  OPENBLAS_NUM_THREADS: "1"
+  PYTHONHASHSEED: "0"
+  PEAR_SIM_UV_VERSION: "0.11.28"
+  VECLIB_MAXIMUM_THREADS: "1"
+
+jobs:
+  platform-evidence:
+    name: m22-${{ matrix.artifact_system }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            artifact_system: Linux
+          - os: macos-15
+            artifact_system: macOS
+          - os: windows-2025
+            artifact_system: Windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.PEAR_SIM_UV_VERSION }}
+          python-version: "3.12.13"
+          enable-cache: true
+      - name: Install locked environment
+        run: uv sync --locked --extra dev
+      - name: Run full canonical-buck numerical evidence profile
+        run: uv run pear-sim verify numerics buck-boundary examples/buck_dcm.yaml --profile full-v1 --source-revision "${{ github.sha }}" --out numerical-evidence --json
+      - name: Upload native numerical evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m22-${{ matrix.artifact_system }}
+          path: numerical-evidence/
+          if-no-files-found: warn
+          retention-days: 30
+
+  aggregate-platforms:
+    name: m22-cross-platform-aggregate
+    needs: platform-evidence
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.PEAR_SIM_UV_VERSION }}
+          python-version: "3.12.13"
+          enable-cache: true
+      - name: Install locked environment
+        run: uv sync --locked --extra dev
+      - name: Download Linux evidence
+        if: always()
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m22-Linux
+          path: platform-inputs/Linux
+      - name: Download macOS evidence
+        if: always()
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m22-macOS
+          path: platform-inputs/Darwin
+      - name: Download Windows evidence
+        if: always()
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m22-Windows
+          path: platform-inputs/Windows
+      - name: Aggregate native platform evidence
+        if: always()
+        run: uv run pear-sim verify platforms platform-inputs/Linux platform-inputs/Darwin platform-inputs/Windows --require Linux,Darwin,Windows --out cross-platform-evidence --json
+      - name: Upload cross-platform aggregate
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m22-cross-platform
+          path: cross-platform-evidence/
+          if-no-files-found: warn
+          retention-days: 30

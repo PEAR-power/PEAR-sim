@@ -1,0 +1,164 @@
+schema: pear-sim/v0.1
+name: rectifier_12pulse_yyd
+
+# Twelve-pulse diode rectifier on a three-winding transformer — the first model
+# that needs magnetically coupled GROUPS rather than pairs, and therefore the
+# case that motivated them.
+#
+# Per phase, ONE primary winding is coupled to TWO secondaries: one feeding a
+# star-connected six-pulse bridge, one feeding a delta-connected six-pulse
+# bridge. Three phases give three coupling groups of three windings each, all
+# nine mutuals declared. The 30-degree shift between the two bridges is not a
+# parameter anywhere in this file: it FALLS OUT of the delta connection, which
+# is how a real twelve-pulse supply produces it.
+#
+# Turns matter. A delta winding must carry sqrt(3) times the turns of the star
+# winding for the two bridges to see equal line voltages, and since L scales
+# with N^2 that is a factor of three in inductance (12.5 mH vs 37.5 mH). Get
+# this wrong and the bridges contribute unequally, the six-pulse harmonics stop
+# cancelling, and the model quietly behaves like a bad six-pulse rectifier
+# instead of a good twelve-pulse one — verified in tests/test_rectifier_12pulse.py.
+#
+# Measured with these values (last full grid period of an 80 ms run):
+#   U_dc = 915 V, I_load = 45.8 A, ripple 27.9 V peak-to-peak
+#   DC ripple spectrum: 300 Hz 0.000 V, 600 Hz 12.29 V, 900 Hz 0.000 V,
+#                       1200 Hz 2.03 V   -> only multiples of 12*f_grid survive
+#   primary current:    5th and 7th 0.00 %, 11th 6.86 %, 13th 4.65 %,
+#                       17th and 19th 0.00 %, 23rd 2.15 %, 25th 1.74 %
+# That is the textbook 12k+-1 signature on both sides.
+#
+# DECLARED WORKAROUND — read before trusting this model. The winding shunt
+# resistors (rma..rmc, rna..rnc and the two neutral ties) are NOT decoration.
+# The kernel freezes an inductor branch at zero current only for PLAIN
+# inductors; a COUPLED winding whose branch is opened by a non-conducting diode
+# has no such reduction in v0.1, so a transformer-fed bridge would refuse to
+# start with "no algebraic support". A real transformer has a magnetizing
+# branch and a real rectifier has snubbers, so representing that support
+# explicitly is physical rather than a fudge — but it IS a declared modelling
+# choice, and its size is bounded: each shunt carries at most 5.6 mA against a
+# 45.8 A load current, i.e. 0.012 %. A zero-current reduction for coupled
+# windings in the kernel would remove the need.
+#
+# CLAIM BOUNDARY: ideal diodes (no forward drop, no reverse recovery), no core
+# saturation or loss, no cable impedance, and a stiff grid. The harmonic
+# cancellation demonstrated here is therefore the IDEAL cancellation; real
+# installations degrade it with winding asymmetry and grid unbalance, neither of
+# which this model carries.
+
+# HIERARCHY. The two six-pulse bridges are the same declared subcircuit
+# instantiated twice — the poster case for reusable subcircuits. Expansion is
+# deterministic and happens at load time: instance `y` produces components
+# `y.d1`..`y.d6`, instance `z` produces `z.d1`..`z.d6`, and the flattened model
+# is what gets validated, hashed and solved. The oracle record for this file
+# was regenerated after the rewrite and matches the flat original byte for
+# byte — hierarchy is presentation, never physics.
+
+subcircuits:
+  three_phase_diode_bridge:
+    ports: [a, b, c, dcp, dcn]
+    components:
+      - {id: d1, type: diode, p: a, n: dcp, initial: off}
+      - {id: d2, type: diode, p: b, n: dcp, initial: off}
+      - {id: d3, type: diode, p: c, n: dcp, initial: off}
+      - {id: d4, type: diode, p: dcn, n: a, initial: off}
+      - {id: d5, type: diode, p: dcn, n: b, initial: off}
+      - {id: d6, type: diode, p: dcn, n: c, initial: off}
+
+parameters:
+  vph: 563 V          # phase amplitude, 400 V class grid referred to the primary
+  fgrid: 50 Hz
+  lp: 50 mH           # primary winding per phase
+  lsec_y: 12.5 mH     # star secondary: half the primary turns
+  lsec_d: 37.5 mH     # delta secondary: sqrt(3) x the star turns -> 3 x the L
+  k: 0.99             # winding-to-winding coupling on a shared core
+  rshunt: 50 kohm     # declared magnetizing/snubber support (see above)
+  rneutral: 500 kohm
+  rload: 20 ohm
+  lfilt: 5 mH
+
+circuit:
+  ground: gnd
+  components:
+    # Stiff three-phase grid, primary star grounded.
+    - id: vga
+      type: voltage_source
+      p: ga
+      n: gnd
+      waveform: {type: sine, amplitude: "${vph}", frequency: "${fgrid}", phase_deg: 0}
+    - id: vgb
+      type: voltage_source
+      p: gb
+      n: gnd
+      waveform: {type: sine, amplitude: "${vph}", frequency: "${fgrid}", phase_deg: -120}
+    - id: vgc
+      type: voltage_source
+      p: gc
+      n: gnd
+      waveform: {type: sine, amplitude: "${vph}", frequency: "${fgrid}", phase_deg: 120}
+    - {id: lpa, type: inductor, p: ga, n: gnd, value: "${lp}", initial_current: 0 A}
+    - {id: lpb, type: inductor, p: gb, n: gnd, value: "${lp}", initial_current: 0 A}
+    - {id: lpc, type: inductor, p: gc, n: gnd, value: "${lp}", initial_current: 0 A}
+
+    # Star secondary (feeds bridge Y).
+    - {id: lya, type: inductor, p: ya, n: yn, value: "${lsec_y}", initial_current: 0 A}
+    - {id: lyb, type: inductor, p: yb, n: yn, value: "${lsec_y}", initial_current: 0 A}
+    - {id: lyc, type: inductor, p: yc, n: yn, value: "${lsec_y}", initial_current: 0 A}
+
+    # Delta secondary (feeds bridge D) — the 30 degree shift comes from here.
+    - {id: lda, type: inductor, p: da, n: db, value: "${lsec_d}", initial_current: 0 A}
+    - {id: ldb, type: inductor, p: db, n: dc, value: "${lsec_d}", initial_current: 0 A}
+    - {id: ldc, type: inductor, p: dc, n: da, value: "${lsec_d}", initial_current: 0 A}
+
+    # Declared winding support (magnetizing branch + damping network).
+    - {id: rma, type: resistor, p: ya, n: yn, value: "${rshunt}"}
+    - {id: rmb, type: resistor, p: yb, n: yn, value: "${rshunt}"}
+    - {id: rmc, type: resistor, p: yc, n: yn, value: "${rshunt}"}
+    - {id: rmn, type: resistor, p: yn, n: gnd, value: "${rneutral}"}
+    - {id: rna, type: resistor, p: da, n: dn, value: "${rshunt}"}
+    - {id: rnb, type: resistor, p: db, n: dn, value: "${rshunt}"}
+    - {id: rnc, type: resistor, p: dc, n: dn, value: "${rshunt}"}
+    - {id: rnn, type: resistor, p: dn, n: gnd, value: "${rneutral}"}
+
+    # Bridge Y: ytop is the positive rail, dcmid the series junction.
+    - {id: y, type: subcircuit, ref: three_phase_diode_bridge,
+       ports: {a: ya, b: yb, c: yc, dcp: ytop, dcn: dcmid}}
+
+    # Bridge D, its DC side stacked in series below bridge Y.
+    - {id: z, type: subcircuit, ref: three_phase_diode_bridge,
+       ports: {a: da, b: db, c: dc, dcp: dcmid, dcn: dbot}}
+
+    # DC filter and load across the stacked bridges.
+    - {id: lf, type: inductor, p: ytop, n: dcp, value: "${lfilt}", initial_current: 0 A}
+    - {id: rl, type: resistor, p: dcp, n: dbot, value: "${rload}"}
+    - {id: rtie, type: resistor, p: dcmid, n: gnd, value: "${rneutral}"}
+
+  # Nine declared mutuals: three groups of three windings sharing a core leg.
+  couplings:
+    - {inductors: [lpa, lya], coupling: "${k}"}
+    - {inductors: [lpa, lda], coupling: "${k}"}
+    - {inductors: [lya, lda], coupling: "${k}"}
+    - {inductors: [lpb, lyb], coupling: "${k}"}
+    - {inductors: [lpb, ldb], coupling: "${k}"}
+    - {inductors: [lyb, ldb], coupling: "${k}"}
+    - {inductors: [lpc, lyc], coupling: "${k}"}
+    - {inductors: [lpc, ldc], coupling: "${k}"}
+    - {inductors: [lyc, ldc], coupling: "${k}"}
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 80 ms
+    output_step: 20 us
+    solver: radau
+    rtol: 1.0e-7
+    atol: 1.0e-9
+
+outputs:
+  - v(dcp)
+  - v(dbot)
+  - v(dcmid)
+  - i(rl)
+  - i(lf)
+  - i(vga)
+  - i(rma)
+  - i(rna)

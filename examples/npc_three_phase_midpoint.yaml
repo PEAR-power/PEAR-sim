@@ -1,0 +1,105 @@
+schema: pear-sim/v0.1
+name: npc_three_phase_midpoint
+
+# DC-link midpoint balance. Unlike npc_three_phase.yaml (stiff
+# +-600 V sources), the half-links are real capacitors and the midpoint is a
+# free node: every clamp-diode conduction interval moves charge into or out
+# of the midpoint, which is the physical NPC balance problem. The load star
+# is three-wire and floating (floating-star DAE reduction), so midpoint current flows
+# ONLY through the clamp path — no 4-wire return masks the drift.
+#
+# Ground is the negative rail; the balanced midpoint sits at udc/2. The DC
+# source feeds the link through a supply resistance — a stiff source
+# directly across the capacitor pair would form a source-capacitor loop
+# (dependent states), which the kernel rejects as a documented kernel boundary.
+# CLAIM BOUNDARY: this example MEASURES and GATES the drift envelope
+# (expectations file npc_midpoint_expectations.json). Active balancing
+# through redundant-state selection is future work on the
+# sampled-controller machinery; until then the gate is the evidence.
+
+parameters:
+  udc: 1200 V
+  rsupply: 50 mohm
+  cdc: 2 mF
+  fsw: 2 kHz
+  ffund: 50 Hz
+  mi: 90 %
+  dead_time: 3 us
+  rload: 1.2 ohm
+  lload: 1 mH
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vdc, type: voltage_source, p: supply, n: gnd, value: "${udc}"}
+    - {id: rdc, type: resistor, p: supply, n: dcp, value: "${rsupply}"}
+    - {id: cdc_top, type: capacitor, p: dcp, n: mid, value: "${cdc}", initial_voltage: 600 V}
+    - {id: cdc_bot, type: capacitor, p: mid, n: gnd, value: "${cdc}", initial_voltage: 600 V}
+    # Leg A
+    - {id: q1a, type: ideal_switch, p: dcp, n: n1a, control: mod.a.outer_high}
+    - {id: q2a, type: ideal_switch, p: n1a, n: pa, control: mod.a.inner_high}
+    - {id: q3a, type: ideal_switch, p: pa, n: n2a, control: mod.a.inner_low}
+    - {id: q4a, type: ideal_switch, p: n2a, n: gnd, control: mod.a.outer_low}
+    - {id: d1a, type: diode, p: n1a, n: dcp, initial: off}
+    - {id: d2a, type: diode, p: pa, n: n1a, initial: off}
+    - {id: d3a, type: diode, p: n2a, n: pa, initial: off}
+    - {id: d4a, type: diode, p: gnd, n: n2a, initial: off}
+    - {id: d5a, type: diode, p: mid, n: n1a, initial: off}
+    - {id: d6a, type: diode, p: n2a, n: mid, initial: off}
+    - {id: ra, type: resistor, p: pa, n: ma, value: "${rload}"}
+    - {id: la, type: inductor, p: ma, n: star, value: "${lload}", initial_current: 0 A}
+    # Leg B
+    - {id: q1b, type: ideal_switch, p: dcp, n: n1b, control: mod.b.outer_high}
+    - {id: q2b, type: ideal_switch, p: n1b, n: pb, control: mod.b.inner_high}
+    - {id: q3b, type: ideal_switch, p: pb, n: n2b, control: mod.b.inner_low}
+    - {id: q4b, type: ideal_switch, p: n2b, n: gnd, control: mod.b.outer_low}
+    - {id: d1b, type: diode, p: n1b, n: dcp, initial: off}
+    - {id: d2b, type: diode, p: pb, n: n1b, initial: off}
+    - {id: d3b, type: diode, p: n2b, n: pb, initial: off}
+    - {id: d4b, type: diode, p: gnd, n: n2b, initial: off}
+    - {id: d5b, type: diode, p: mid, n: n1b, initial: off}
+    - {id: d6b, type: diode, p: n2b, n: mid, initial: off}
+    - {id: rb, type: resistor, p: pb, n: mb, value: "${rload}"}
+    - {id: lb, type: inductor, p: mb, n: star, value: "${lload}", initial_current: 0 A}
+    # Leg C
+    - {id: q1c, type: ideal_switch, p: dcp, n: n1c, control: mod.c.outer_high}
+    - {id: q2c, type: ideal_switch, p: n1c, n: pc, control: mod.c.inner_high}
+    - {id: q3c, type: ideal_switch, p: pc, n: n2c, control: mod.c.inner_low}
+    - {id: q4c, type: ideal_switch, p: n2c, n: gnd, control: mod.c.outer_low}
+    - {id: d1c, type: diode, p: n1c, n: dcp, initial: off}
+    - {id: d2c, type: diode, p: pc, n: n1c, initial: off}
+    - {id: d3c, type: diode, p: n2c, n: pc, initial: off}
+    - {id: d4c, type: diode, p: gnd, n: n2c, initial: off}
+    - {id: d5c, type: diode, p: mid, n: n1c, initial: off}
+    - {id: d6c, type: diode, p: n2c, n: mid, initial: off}
+    - {id: rc, type: resistor, p: pc, n: mc, value: "${rload}"}
+    - {id: lc, type: inductor, p: mc, n: star, value: "${lload}", initial_current: 0 A}
+
+controls:
+  mod:
+    type: three_phase_npc_spwm
+    carrier_frequency: "${fsw}"
+    fundamental_frequency: "${ffund}"
+    modulation_index: "${mi}"
+    dead_time: "${dead_time}"
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 40 ms
+    output_step: 2 us
+    solver: dopri5
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs:
+  - v(mid)
+  - v(pa)
+  - v(star)
+  - i(la)
+  - i(lb)
+  - i(lc)
+  - i(d5a)
+  - i(d6a)
+  - v(cdc_top)
+  - v(cdc_bot)

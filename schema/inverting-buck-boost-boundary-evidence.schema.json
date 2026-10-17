@@ -1,0 +1,947 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PEAR-power/pear-sim/main/schema/inverting-buck-boost-boundary-evidence.schema.json",
+  "title": "PEARSim canonical ideal inverting buck-boost boundary evidence v0.1",
+  "oneOf": [
+    {"$ref": "#/$defs/spec"},
+    {"$ref": "#/$defs/oracle"},
+    {"$ref": "#/$defs/point"},
+    {"$ref": "#/$defs/runner_result"},
+    {"$ref": "#/$defs/summary"},
+    {"$ref": "#/$defs/confidence"}
+  ],
+  "$defs": {
+    "status": {"enum": ["pass", "fail", "not-run"]},
+    "regime": {"enum": ["CCM", "BCM", "DCM"]},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}(?![\\s\\S])"},
+    "verification_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "validation_claim", "scope", "statement"],
+      "properties": {
+        "classification": {"const": "verification"},
+        "validation_claim": {"const": false},
+        "scope": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "statement": {"type": "string", "minLength": 1, "maxLength": 4096}
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capacitance_f",
+        "duty",
+        "inductance_h",
+        "period_s",
+        "switching_frequency_hz",
+        "vin_v"
+      ],
+      "properties": {
+        "capacitance_f": {"type": "number", "exclusiveMinimum": 0},
+        "duty": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        "inductance_h": {"type": "number", "exclusiveMinimum": 0},
+        "period_s": {"type": "number", "exclusiveMinimum": 0},
+        "switching_frequency_hz": {"type": "number", "exclusiveMinimum": 0},
+        "vin_v": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "load_ratio_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum_inclusive", "maximum_inclusive", "basis"],
+      "properties": {
+        "minimum_inclusive": {"const": 0.25},
+        "maximum_inclusive": {"const": 200.0},
+        "basis": {
+          "const": "bounded retained-run evidence, solver-work envelope, and derived regime-separation contract"
+        }
+      }
+    },
+    "solver_work_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["definition", "actual", "maximum_inclusive"],
+      "properties": {
+        "definition": {"enum": ["T/(R_min*C)", "T/sqrt(L*C)"]},
+        "actual": {"type": "number", "minimum": 0, "maximum": 20.0},
+        "maximum_inclusive": {"const": 20.0}
+      }
+    },
+    "solver_work_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum_requested_load_ohm",
+        "dimensionless_capacitor_decay",
+        "dimensionless_resonant_frequency"
+      ],
+      "properties": {
+        "minimum_requested_load_ohm": {"type": "number", "exclusiveMinimum": 0},
+        "dimensionless_capacitor_decay": {"$ref": "#/$defs/solver_work_metric"},
+        "dimensionless_resonant_frequency": {"$ref": "#/$defs/solver_work_metric"}
+      }
+    },
+    "regime_separation_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum_exclusive",
+        "ccm_metric",
+        "minimum_requested_ccm_margin_normalized",
+        "dcm_metric",
+        "minimum_requested_dcm_margin_normalized",
+        "bcm_load_ratio_exact"
+      ],
+      "properties": {
+        "minimum_exclusive": {"const": 1e-8},
+        "ccm_metric": {"const": "minimum_inductor_current_a/current_base_a"},
+        "minimum_requested_ccm_margin_normalized": {
+          "type": "number",
+          "exclusiveMinimum": 1e-8
+        },
+        "dcm_metric": {"const": "idle_fraction"},
+        "minimum_requested_dcm_margin_normalized": {
+          "type": "number",
+          "exclusiveMinimum": 1e-8
+        },
+        "bcm_load_ratio_exact": {"const": 1.0}
+      }
+    },
+    "source_work": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_model_bytes",
+        "component_count",
+        "voltage_probe_count",
+        "output_count"
+      ],
+      "properties": {
+        "source_model_bytes": {"type": "integer", "minimum": 1, "maximum": 2097152},
+        "component_count": {"type": "integer", "minimum": 6, "maximum": 38},
+        "voltage_probe_count": {"type": "integer", "minimum": 0, "maximum": 32},
+        "output_count": {"type": "integer", "minimum": 0, "maximum": 60}
+      }
+    },
+    "observation_parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capacitance_f",
+        "duty",
+        "inductance_h",
+        "switching_frequency_hz",
+        "vin_v"
+      ],
+      "properties": {
+        "capacitance_f": {"type": "number", "exclusiveMinimum": 0},
+        "duty": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        "inductance_h": {"type": "number", "exclusiveMinimum": 0},
+        "switching_frequency_hz": {"type": "number", "exclusiveMinimum": 0},
+        "vin_v": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "model_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_sha256", "model_sha256", "request_sha256"],
+      "properties": {
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "model_sha256": {"$ref": "#/$defs/sha256"},
+        "request_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inductor_current_a", "output_magnitude_voltage_v"],
+      "properties": {
+        "inductor_current_a": {"type": "number"},
+        "output_magnitude_voltage_v": {"type": "number", "minimum": 0}
+      }
+    },
+    "observation_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inductor_current_a", "output_magnitude_voltage_v"],
+      "properties": {
+        "inductor_current_a": {"type": "number"},
+        "output_magnitude_voltage_v": {"type": "number"}
+      }
+    },
+    "mode_fractions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["on", "freewheel", "idle", "unclassified"],
+      "properties": {
+        "on": {"type": "number", "minimum": 0, "maximum": 1},
+        "freewheel": {"type": "number", "minimum": 0, "maximum": 1},
+        "idle": {"type": "number", "minimum": 0, "maximum": 1},
+        "unclassified": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "actual", "limit", "status"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "metric": {"type": "string", "minLength": 1, "maxLength": 256},
+        "actual": {
+          "type": ["number", "string", "boolean", "array", "null"],
+          "items": {"type": "string", "maxLength": 1024}
+        },
+        "reference": {
+          "type": ["number", "string", "boolean", "array", "null"],
+          "items": {"type": "string", "maxLength": 1024}
+        },
+        "operator": {"enum": ["<=", "=="]},
+        "limit": {"type": ["number", "boolean", "null"]},
+        "status": {"$ref": "#/$defs/status"},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "expected_regime": {"$ref": "#/$defs/regime"},
+        "observed_mode_sequence": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {"type": "string", "maxLength": 1024}
+        },
+        "reference_mode_sequence": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {"type": "string", "maxLength": 1024}
+        },
+        "observed_event_sequence": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"type": "string", "maxLength": 1024}
+        },
+        "reference_event_sequence": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"type": "string", "maxLength": 1024}
+        }
+      }
+    },
+    "gate_contract_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "metric", "operator", "limit", "scope"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "metric": {"type": "string", "minLength": 1, "maxLength": 256},
+        "operator": {"enum": ["<=", "=="]},
+        "limit": {"type": ["number", "boolean"]},
+        "scope": {"type": "string", "minLength": 1, "maxLength": 2048}
+      }
+    },
+    "gate_contract": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "regime"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "boundary_state_nonzero"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "boundary_state_zero"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "natural_event_time"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "reverse_current"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "signed_cycle_mean_output"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "signed_output_polarity"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "state_ripple"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "mode_fractions"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "event_semantics"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "energy_balance"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "cycle_periodicity"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "unclassified_fraction"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate_contract_item"}, {"properties": {"id": {"const": "mode_fraction_sum"}}}]}
+      ],
+      "items": false
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "regime"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "boundary_state_nonzero"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "boundary_state_zero"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "natural_event_time"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "reverse_current"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "signed_cycle_mean_output"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "signed_output_polarity"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "state_ripple"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "mode_fractions"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "event_semantics"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "energy_balance"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "cycle_periodicity"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "unclassified_fraction"}}}]},
+        {"allOf": [{"$ref": "#/$defs/gate"}, {"properties": {"id": {"const": "mode_fraction_sum"}}}]}
+      ],
+      "items": false
+    },
+    "oracle_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "signed_mean_output_voltage_v",
+        "maximum_signed_output_voltage_v",
+        "minimum_inductor_current_a",
+        "inductor_current_peak_to_peak_a",
+        "output_voltage_peak_to_peak_v",
+        "conduction_fraction",
+        "fraction_by_mode",
+        "periodicity_residual_normalized"
+      ],
+      "properties": {
+        "signed_mean_output_voltage_v": {"type": "number", "exclusiveMaximum": 0},
+        "maximum_signed_output_voltage_v": {"type": "number"},
+        "minimum_inductor_current_a": {"type": "number"},
+        "inductor_current_peak_to_peak_a": {"type": "number", "minimum": 0},
+        "output_voltage_peak_to_peak_v": {"type": "number", "minimum": 0},
+        "conduction_fraction": {"type": "number", "minimum": 0, "maximum": 1},
+        "fraction_by_mode": {"$ref": "#/$defs/mode_fractions"},
+        "periodicity_residual_normalized": {"type": "number", "minimum": 0}
+      }
+    },
+    "oracle_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "point_id",
+        "load_ratio_to_bcm",
+        "load_ohm",
+        "regime",
+        "states",
+        "events",
+        "metrics",
+        "oracle_gates"
+      ],
+      "properties": {
+        "point_id": {"type": "string", "pattern": "^load-ratio-[a-z0-9]+(?![\\s\\S])"},
+        "load_ratio_to_bcm": {"type": "number", "minimum": 0.25, "maximum": 200.0},
+        "load_ohm": {"type": "number", "exclusiveMinimum": 0},
+        "regime": {"$ref": "#/$defs/regime"},
+        "states": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "coordinate_definition",
+            "cycle_start",
+            "switch_off",
+            "diode_zero",
+            "cycle_end"
+          ],
+          "properties": {
+            "coordinate_definition": {"const": "x=[iL,u], u=v(gnd)-v(out)=-v(out)"},
+            "cycle_start": {"$ref": "#/$defs/state"},
+            "switch_off": {"$ref": "#/$defs/state"},
+            "diode_zero": {"oneOf": [{"$ref": "#/$defs/state"}, {"type": "null"}]},
+            "cycle_end": {"$ref": "#/$defs/state"}
+          }
+        },
+        "events": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["switch_off_s", "diode_zero_s", "mode_sequence", "event_sequence"],
+          "properties": {
+            "switch_off_s": {"type": "number", "minimum": 0},
+            "diode_zero_s": {"type": ["number", "null"], "minimum": 0},
+            "mode_sequence": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 3,
+              "items": {"enum": ["on", "freewheel", "idle"]}
+            },
+            "event_sequence": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 4,
+              "items": {"type": "string", "minLength": 1, "maxLength": 1024}
+            }
+          }
+        },
+        "metrics": {"$ref": "#/$defs/oracle_metrics"},
+        "oracle_gates": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {"$ref": "#/$defs/gate"}
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "point_id",
+        "parameters",
+        "load_ratio_to_bcm",
+        "load_ohm",
+        "regime",
+        "start_state",
+        "switch_off_state",
+        "diode_zero_state",
+        "end_state",
+        "diode_zero_s",
+        "signed_mean_output_voltage_v",
+        "maximum_signed_output_voltage_v",
+        "minimum_inductor_current_a",
+        "inductor_current_peak_to_peak_a",
+        "output_voltage_peak_to_peak_v",
+        "fraction_by_mode",
+        "mode_sequence",
+        "event_sequence",
+        "energy_balance_relative"
+      ],
+      "properties": {
+        "point_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "parameters": {"$ref": "#/$defs/observation_parameters"},
+        "load_ratio_to_bcm": {"type": "number", "minimum": 0.25, "maximum": 200.0},
+        "load_ohm": {"type": "number", "exclusiveMinimum": 0},
+        "regime": {"$ref": "#/$defs/regime"},
+        "start_state": {"$ref": "#/$defs/observation_state"},
+        "switch_off_state": {"$ref": "#/$defs/observation_state"},
+        "diode_zero_state": {"oneOf": [{"$ref": "#/$defs/observation_state"}, {"type": "null"}]},
+        "end_state": {"$ref": "#/$defs/observation_state"},
+        "diode_zero_s": {"type": ["number", "null"], "minimum": 0},
+        "signed_mean_output_voltage_v": {"type": "number"},
+        "maximum_signed_output_voltage_v": {"type": "number"},
+        "minimum_inductor_current_a": {"type": "number"},
+        "inductor_current_peak_to_peak_a": {"type": "number", "minimum": 0},
+        "output_voltage_peak_to_peak_v": {"type": "number", "minimum": 0},
+        "fraction_by_mode": {"$ref": "#/$defs/mode_fractions"},
+        "mode_sequence": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {"type": "string", "minLength": 1, "maxLength": 1024}
+        },
+        "event_sequence": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"type": "string", "minLength": 1, "maxLength": 1024}
+        },
+        "energy_balance_relative": {"type": "number", "minimum": 0}
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "point_id",
+        "load_ratio_to_bcm",
+        "load_ohm",
+        "expected_regime",
+        "status",
+        "gates"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/benchmark-result/ideal-inverting-buck-boost-boundary/v0.1"},
+        "point_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "load_ratio_to_bcm": {"type": "number", "minimum": 0.25, "maximum": 200.0},
+        "load_ohm": {"type": "number", "exclusiveMinimum": 0},
+        "regime": {"$ref": "#/$defs/regime"},
+        "expected_regime": {"$ref": "#/$defs/regime"},
+        "observed_regime": {"$ref": "#/$defs/regime"},
+        "status": {"$ref": "#/$defs/status"},
+        "metrics": {"type": "object"},
+        "reference_metrics": {"type": "object"},
+        "events": {"type": "object"},
+        "gates": {"$ref": "#/$defs/gates"}
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "benchmark_id",
+        "claim",
+        "source_model",
+        "parameters_si",
+        "load_ratios",
+        "coordinate_convention",
+        "initial_conditions",
+        "simulation",
+        "source_work",
+        "solver_work",
+        "regime_separation",
+        "limits",
+        "oracle_schema",
+        "comparison_schema"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/benchmark-spec/ideal-inverting-buck-boost-boundary/v0.1"},
+        "benchmark_id": {"const": "VAL-003:canonical-inverting-buck-boost-boundary-sweep"},
+        "claim": {"$ref": "#/$defs/verification_claim"},
+        "source_model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["file", "hashes"],
+          "properties": {
+            "file": {"type": "string", "minLength": 1, "maxLength": 1024},
+            "hashes": {"$ref": "#/$defs/model_hashes"}
+          }
+        },
+        "parameters_si": {"$ref": "#/$defs/parameters"},
+        "load_ratios": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {"type": "number", "minimum": 0.25, "maximum": 200.0},
+          "allOf": [
+            {"contains": {"type": "number", "exclusiveMaximum": 1.0}, "minContains": 1},
+            {"contains": {"const": 1.0}, "minContains": 1, "maxContains": 1},
+            {"contains": {"type": "number", "exclusiveMinimum": 1.0}, "minContains": 1}
+          ]
+        },
+        "coordinate_convention": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["oracle_state", "reported_output"],
+          "properties": {
+            "oracle_state": {"const": "x=[iL,u], u=v(gnd)-v(out)=-v(out)"},
+            "reported_output": {"const": "v(out) is negative in the supported operating envelope"}
+          }
+        },
+        "initial_conditions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "applied_per_point", "source_model_initial_conditions_used"],
+          "properties": {
+            "source": {"const": "independent periodic affine oracle"},
+            "applied_per_point": {"const": true},
+            "source_model_initial_conditions_used": {"const": false}
+          }
+        },
+        "simulation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cycles", "solver", "rtol", "atol", "max_step_over_period", "output_step_over_period"],
+          "properties": {
+            "cycles": {"const": 1},
+            "solver": {"const": "dopri5"},
+            "rtol": {"type": "number", "exclusiveMinimum": 0},
+            "atol": {"type": "number", "exclusiveMinimum": 0},
+            "max_step_over_period": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+            "output_step_over_period": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}
+          }
+        },
+        "source_work": {"$ref": "#/$defs/source_work"},
+        "solver_work": {"$ref": "#/$defs/solver_work_contract"},
+        "regime_separation": {"$ref": "#/$defs/regime_separation_contract"},
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "maximum_points",
+            "minimum_load_ratio_to_bcm",
+            "maximum_load_ratio_to_bcm",
+            "maximum_dimensionless_capacitor_decay",
+            "maximum_dimensionless_resonant_frequency",
+            "minimum_regime_separation_normalized_exclusive",
+            "maximum_source_model_bytes",
+            "maximum_components",
+            "maximum_voltage_probes",
+            "maximum_source_outputs",
+            "maximum_point_outputs",
+            "retain_failed_points",
+            "network_access"
+          ],
+          "properties": {
+            "maximum_points": {"const": 64},
+            "minimum_load_ratio_to_bcm": {"const": 0.25},
+            "maximum_load_ratio_to_bcm": {"const": 200.0},
+            "maximum_dimensionless_capacitor_decay": {"const": 20.0},
+            "maximum_dimensionless_resonant_frequency": {"const": 20.0},
+            "minimum_regime_separation_normalized_exclusive": {"const": 1e-8},
+            "maximum_source_model_bytes": {"const": 2097152},
+            "maximum_components": {"const": 38},
+            "maximum_voltage_probes": {"const": 32},
+            "maximum_source_outputs": {"const": 60},
+            "maximum_point_outputs": {"const": 64},
+            "retain_failed_points": {"const": true},
+            "network_access": {"const": false}
+          }
+        },
+        "oracle_schema": {"const": "pear-sim/benchmark-oracle/ideal-inverting-buck-boost-boundary/v0.1"},
+        "comparison_schema": {"const": "pear-sim/benchmark-result/ideal-inverting-buck-boost-boundary/v0.1"}
+      }
+    },
+    "oracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "claim",
+        "method",
+        "parameters_si",
+        "boundary",
+        "load_ratio_contract",
+        "solver_work_contract",
+        "regime_separation_contract",
+        "load_ratios",
+        "comparison_gate_contract",
+        "oracle_health",
+        "points"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/benchmark-oracle/ideal-inverting-buck-boost-boundary/v0.1"},
+        "kind": {"const": "independent-periodic-affine-inverting-buck-boost-boundary-verification"},
+        "claim": {"$ref": "#/$defs/verification_claim"},
+        "method": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["coordinates", "periodic_ccm", "bcm_boundary", "periodic_dcm", "integrals", "pear_sim_circuit_or_solver_imported"],
+          "properties": {
+            "coordinates": {"type": "string", "minLength": 1},
+            "periodic_ccm": {"type": "string", "minLength": 1},
+            "bcm_boundary": {"type": "string", "minLength": 1},
+            "periodic_dcm": {"type": "string", "minLength": 1},
+            "integrals": {"type": "string", "minLength": 1},
+            "pear_sim_circuit_or_solver_imported": {"const": false}
+          }
+        },
+        "parameters_si": {"$ref": "#/$defs/parameters"},
+        "boundary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["load_ohm", "definition", "coincidence_fraction_tolerance"],
+          "properties": {
+            "load_ohm": {"type": "number", "exclusiveMinimum": 0},
+            "definition": {"type": "string", "minLength": 1},
+            "coincidence_fraction_tolerance": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        "load_ratio_contract": {"$ref": "#/$defs/load_ratio_contract"},
+        "solver_work_contract": {"$ref": "#/$defs/solver_work_contract"},
+        "regime_separation_contract": {"$ref": "#/$defs/regime_separation_contract"},
+        "load_ratios": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {"type": "number", "minimum": 0.25, "maximum": 200.0},
+          "allOf": [
+            {"contains": {"type": "number", "exclusiveMaximum": 1.0}, "minContains": 1},
+            {"contains": {"const": 1.0}, "minContains": 1, "maxContains": 1},
+            {"contains": {"type": "number", "exclusiveMinimum": 1.0}, "minContains": 1}
+          ]
+        },
+        "comparison_gate_contract": {"$ref": "#/$defs/gate_contract"},
+        "oracle_health": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "point_count", "failed_gate_count"],
+          "properties": {
+            "status": {"const": "pass"},
+            "point_count": {"type": "integer", "minimum": 1, "maximum": 64},
+            "failed_gate_count": {"const": 0}
+          }
+        },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {"$ref": "#/$defs/oracle_point"}
+        }
+      }
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "index",
+        "point_id",
+        "status",
+        "initial_conditions",
+        "reference",
+        "observation",
+        "comparison",
+        "error",
+        "run"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/benchmark-point/ideal-inverting-buck-boost-boundary/v0.1"},
+        "index": {"type": "integer", "minimum": 0, "maximum": 63},
+        "point_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "status": {"$ref": "#/$defs/status"},
+        "initial_conditions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "inductor_current_a", "output_magnitude_voltage_v", "signed_output_voltage_v"],
+          "properties": {
+            "source": {"const": "independent periodic affine oracle"},
+            "inductor_current_a": {"type": "number"},
+            "output_magnitude_voltage_v": {"type": "number", "minimum": 0},
+            "signed_output_voltage_v": {"type": "number", "maximum": 0}
+          }
+        },
+        "reference": {"$ref": "#/$defs/oracle_point"},
+        "observation": {"oneOf": [{"$ref": "#/$defs/observation"}, {"type": "null"}]},
+        "comparison": {"$ref": "#/$defs/comparison"},
+        "error": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "message"],
+              "properties": {
+                "type": {"type": "string", "minLength": 1, "maxLength": 256},
+                "message": {"type": "string", "maxLength": 1024}
+              }
+            },
+            {"type": "null"}
+          ]
+        },
+        "run": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "run_sha256"],
+              "properties": {
+                "path": {"type": "string", "minLength": 1, "maxLength": 2048},
+                "run_sha256": {"$ref": "#/$defs/sha256"}
+              }
+            },
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "runner_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "benchmark_id",
+        "oracle_schema",
+        "comparison_schema",
+        "claim",
+        "parameters_si",
+        "boundary_load_ohm",
+        "summary",
+        "points"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/benchmark-runner-result/ideal-inverting-buck-boost-boundary/v0.1"},
+        "benchmark_id": {"const": "VAL-003:canonical-inverting-buck-boost-boundary-sweep"},
+        "oracle_schema": {"const": "pear-sim/benchmark-oracle/ideal-inverting-buck-boost-boundary/v0.1"},
+        "comparison_schema": {"const": "pear-sim/benchmark-result/ideal-inverting-buck-boost-boundary/v0.1"},
+        "claim": {"$ref": "#/$defs/verification_claim"},
+        "parameters_si": {"$ref": "#/$defs/parameters"},
+        "boundary_load_ohm": {"type": "number", "exclusiveMinimum": 0},
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "point_count", "gate_count", "gate_status_counts"],
+          "properties": {
+            "status": {"$ref": "#/$defs/status"},
+            "point_count": {"type": "integer", "minimum": 1, "maximum": 64},
+            "gate_count": {"type": "integer", "minimum": 14, "maximum": 896},
+            "gate_status_counts": {"type": "object"}
+          }
+        },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {"$ref": "#/$defs/comparison"}
+        }
+      }
+    },
+    "summary_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index",
+        "point_id",
+        "load_ratio_to_bcm",
+        "load_ohm",
+        "expected_regime",
+        "status",
+        "runtime_s",
+        "metrics",
+        "gates",
+        "artifacts"
+      ],
+      "properties": {
+        "index": {"type": "integer", "minimum": 0, "maximum": 63},
+        "point_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "load_ratio_to_bcm": {"type": "number", "minimum": 0.25, "maximum": 200.0},
+        "load_ohm": {"type": "number", "exclusiveMinimum": 0},
+        "expected_regime": {"$ref": "#/$defs/regime"},
+        "observed_regime": {"$ref": "#/$defs/regime"},
+        "regime": {"$ref": "#/$defs/regime"},
+        "status": {"$ref": "#/$defs/status"},
+        "runtime_s": {"type": ["number", "null"], "minimum": 0},
+        "metrics": {"type": "object"},
+        "gates": {"$ref": "#/$defs/gates"},
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["benchmark_point"],
+          "properties": {
+            "benchmark_point": {"$ref": "#/$defs/artifact_with_hash"},
+            "run": {"$ref": "#/$defs/artifact_with_hash"}
+          }
+        }
+      }
+    },
+    "artifact_with_hash": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "benchmark_id",
+        "overall_status",
+        "claim",
+        "bcm",
+        "summary",
+        "points",
+        "worst_gates",
+        "failures",
+        "artifacts",
+        "provenance"
+      ],
+      "properties": {
+        "schema": {"const": "pear-sim/sweep-summary/ideal-inverting-buck-boost-boundary/v0.1"},
+        "benchmark_id": {"const": "VAL-003:canonical-inverting-buck-boost-boundary-sweep"},
+        "overall_status": {"$ref": "#/$defs/status"},
+        "claim": {"$ref": "#/$defs/verification_claim"},
+        "bcm": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["r_bcm_ohm", "method"],
+          "properties": {
+            "r_bcm_ohm": {"type": "number", "exclusiveMinimum": 0},
+            "method": {"type": "string", "minLength": 1, "maxLength": 2048}
+          }
+        },
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "point_count", "point_status_counts", "gate_status_counts"],
+          "properties": {
+            "status": {"$ref": "#/$defs/status"},
+            "point_count": {"type": "integer", "minimum": 1, "maximum": 64},
+            "point_status_counts": {"type": "object"},
+            "gate_status_counts": {"type": "object"}
+          }
+        },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {"$ref": "#/$defs/summary_point"}
+        },
+        "worst_gates": {"type": "array", "minItems": 14, "maxItems": 14},
+        "failures": {"type": "array", "maxItems": 896},
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["benchmark_spec", "oracle", "benchmark_result", "confidence", "human_report", "schematic", "artifact_manifest"],
+          "properties": {
+            "benchmark_spec": {"$ref": "#/$defs/artifact_with_hash"},
+            "oracle": {"$ref": "#/$defs/artifact_with_hash"},
+            "benchmark_result": {"$ref": "#/$defs/artifact_with_hash"},
+            "confidence": {"type": "object"},
+            "human_report": {"type": "object"},
+            "schematic": {"type": "object"},
+            "artifact_manifest": {"type": "object"}
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pear_sim_version", "source_model_hashes", "spec_sha256", "oracle_sha256", "benchmark_result_sha256", "network_access"],
+          "properties": {
+            "pear_sim_version": {"type": "string", "minLength": 1, "maxLength": 256},
+            "source_model_hashes": {"$ref": "#/$defs/model_hashes"},
+            "spec_sha256": {"$ref": "#/$defs/sha256"},
+            "oracle_sha256": {"$ref": "#/$defs/sha256"},
+            "benchmark_result_sha256": {"$ref": "#/$defs/sha256"},
+            "network_access": {"const": false}
+          }
+        }
+      }
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "level", "acceptance", "envelope", "related_regression_coverage", "claim"],
+      "properties": {
+        "schema": {"const": "pear-sim/confidence/inverting-buck-boost-boundary-sweep/v0.1"},
+        "level": {"const": "EXPLORATORY"},
+        "acceptance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "sweep_summary_sha256", "benchmark_result_sha256"],
+          "properties": {
+            "status": {"$ref": "#/$defs/status"},
+            "sweep_summary_sha256": {"$ref": "#/$defs/sha256"},
+            "benchmark_result_sha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "envelope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["topology", "requested_regimes", "completed_regimes", "load_ratio_to_bcm", "supported_load_ratio_to_bcm", "parameters_si", "output_polarity", "source_work", "solver_work", "regime_separation", "cross_platform_evidence", "convergence_sweep", "output_grid_independence_study"],
+          "properties": {
+            "topology": {"const": "canonical single-switch ideal inverting buck-boost"},
+            "requested_regimes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/regime"}},
+            "completed_regimes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/regime"}},
+            "load_ratio_to_bcm": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number", "minimum": 0.25, "maximum": 200.0}},
+            "supported_load_ratio_to_bcm": {
+              "type": "array",
+              "prefixItems": [{"const": 0.25}, {"const": 200.0}],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "parameters_si": {"$ref": "#/$defs/parameters"},
+            "output_polarity": {"const": "v(out) < 0"},
+            "source_work": {"$ref": "#/$defs/source_work"},
+            "solver_work": {"$ref": "#/$defs/solver_work_contract"},
+            "regime_separation": {"$ref": "#/$defs/regime_separation_contract"},
+            "cross_platform_evidence": {"const": "not-run"},
+            "convergence_sweep": {"const": "not-run"},
+            "output_grid_independence_study": {"const": "not-run"}
+          }
+        },
+        "related_regression_coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["binding", "canonical_fixture_selected_solver_settings", "canonical_fixture_output_grid_independence"],
+          "properties": {
+            "binding": {"type": "string", "minLength": 1},
+            "canonical_fixture_selected_solver_settings": {"type": "string", "minLength": 1},
+            "canonical_fixture_output_grid_independence": {"type": "string", "minLength": 1}
+          }
+        },
+        "claim": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["validation_claim", "compatibility_claim", "hardware_sign_off_allowed", "general_dae_support_claimed"],
+          "properties": {
+            "validation_claim": {"const": false},
+            "compatibility_claim": {"const": false},
+            "hardware_sign_off_allowed": {"const": false},
+            "general_dae_support_claimed": {"const": false}
+          }
+        }
+      }
+    }
+  }
+}

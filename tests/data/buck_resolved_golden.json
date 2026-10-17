@@ -1,0 +1,183 @@
+{
+  "conventions": {
+    "component_current": {
+      "definition": "i(component)>0 means current flows p->n",
+      "positive_direction": "p->n"
+    },
+    "component_voltage": {
+      "definition": "v(component)=V(p)-V(n)",
+      "negative_terminal": "n",
+      "positive_terminal": "p"
+    }
+  },
+  "hashes": {
+    "model_sha256": "1423749ba5cce42c67b00a05d50d346fd0c146c5815bf10c6cced19fde30f852",
+    "request_sha256": "829eb76c92639d2b8ba5d338736c2e9b05700ee276c837c3d3ccfffdf15c4f26",
+    "source_sha256": "7db59e52b2321fa99e39820a30b6a82a3670f84132125504c3d76f61097b87e8"
+  },
+  "initial_conditions": {
+    "analytic_initialization_claimed": false,
+    "origin_policy": "user_declared when the IC field is present; default_zero when omitted; otherwise unknown",
+    "states": [
+      {
+        "analytic_derivation": "not_claimed",
+        "component_id": "l1",
+        "component_type": "inductor",
+        "origin": "user_declared",
+        "seed_strategy": "explicit_numeric_seed",
+        "source_field": "initial_current",
+        "state_expression": "i(l1)",
+        "state_kind": "current",
+        "unit": "A",
+        "value_class": "nonzero",
+        "value_si": 3.39970055
+      },
+      {
+        "analytic_derivation": "not_claimed",
+        "component_id": "c1",
+        "component_type": "capacitor",
+        "origin": "user_declared",
+        "seed_strategy": "explicit_numeric_seed",
+        "source_field": "initial_voltage",
+        "state_expression": "v(c1)",
+        "state_kind": "voltage",
+        "unit": "V",
+        "value_class": "nonzero",
+        "value_si": 39.98969319
+      }
+    ],
+    "strategy": "explicit_seeded_values",
+    "summary": {
+      "default_zero_count": 0,
+      "nonzero_count": 2,
+      "state_count": 2,
+      "unknown_origin_count": 0,
+      "user_declared_count": 2,
+      "warm_start": true,
+      "warm_start_components": [
+        "l1",
+        "c1"
+      ],
+      "zero_count": 0
+    },
+    "warm_start": {
+      "definition": "one or more L/C initial-state seeds are nonzero",
+      "enabled": true,
+      "provenance_claim": "seed values only; no analytic, periodic-steady-state, or previous-run origin is inferred"
+    }
+  },
+  "name": "buck_ccm",
+  "parameters": {
+    "c": {
+      "dimension": "capacitance",
+      "value_si": 9.999999999999999e-05
+    },
+    "duty": {
+      "dimension": "dimensionless",
+      "value_si": 0.4
+    },
+    "fsw": {
+      "dimension": "frequency",
+      "value_si": 20000.0
+    },
+    "l": {
+      "dimension": "inductance",
+      "value_si": 0.001
+    },
+    "load": {
+      "dimension": "resistance",
+      "value_si": 10.0
+    },
+    "vin": {
+      "dimension": "voltage",
+      "value_si": 100.0
+    }
+  },
+  "physics": {
+    "components": [
+      {
+        "dimension": "capacitance",
+        "id": "c1",
+        "initial_voltage_si": 39.98969319,
+        "n": "gnd",
+        "p": "out",
+        "type": "capacitor",
+        "value_si": 9.999999999999999e-05
+      },
+      {
+        "id": "d1",
+        "initial": false,
+        "n": "sw",
+        "p": "gnd",
+        "type": "diode"
+      },
+      {
+        "dimension": "inductance",
+        "id": "l1",
+        "initial_current_si": 3.39970055,
+        "n": "out",
+        "p": "sw",
+        "type": "inductor",
+        "value_si": 0.001
+      },
+      {
+        "dimension": "resistance",
+        "id": "load",
+        "n": "gnd",
+        "p": "out",
+        "type": "resistor",
+        "value_si": 10.0
+      },
+      {
+        "control": "pwm",
+        "id": "q1",
+        "initial": true,
+        "n": "sw",
+        "p": "in",
+        "type": "ideal_switch"
+      },
+      {
+        "dimension": "voltage",
+        "id": "vin",
+        "n": "gnd",
+        "p": "in",
+        "type": "voltage_source",
+        "value_si": 100.0
+      }
+    ],
+    "controls": [
+      {
+        "duty": 0.4,
+        "frequency_hz": 20000.0,
+        "id": "pwm",
+        "phase_s": 0.0,
+        "type": "pwm"
+      }
+    ],
+    "ground": "gnd",
+    "schema": "pear-sim/physics-model/v0.1"
+  },
+  "request": {
+    "analysis": "transient",
+    "atol": 1e-10,
+    "max_step_s": null,
+    "output_step_s": 1e-06,
+    "outputs": [
+      "v(out)",
+      "i(l1)",
+      "v(q1)",
+      "i(q1)",
+      "i(d1)",
+      "i(vin)",
+      "i(load)"
+    ],
+    "rtol": 1e-08,
+    "schema": "pear-sim/simulation-request/v0.1",
+    "solver": "dopri5",
+    "start_s": 0.0,
+    "stop_s": 0.002
+  },
+  "schema": "pear-sim/resolved-model/v0.1",
+  "source_file": "buck.yaml",
+  "source_schema": "pear-sim/v0.1"
+}

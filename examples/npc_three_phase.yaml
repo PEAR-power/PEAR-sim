@@ -1,0 +1,184 @@
+schema: pear-sim/v0.1
+name: npc_three_phase
+
+# Three-phase three-level NPC inverter driven by the native level-shifted (PD)
+# modulator over whole fundamental periods, so the device losses integrate
+# from ONE run. 18 ideal diodes (12 antiparallel + 6 clamps).
+#
+# Design point (illustrative, not a specific product): DC link 800 V
+# (+-400 V, midpoint = ground), m = 0.90, fsw = 5 kHz, 50 Hz fundamental,
+# per-phase RL load to the midpoint (1.5 ohm + 1 mH), about 160 A rms per
+# phase. Stiff link sources: midpoint balance is a separate example
+# (npc_three_phase_midpoint.yaml).
+#
+# Loss cards: REPRESENTATIVE 1200 V module-class values (datasheet-shaped,
+# not a specific vendor part) — provenance declared on every table.
+
+parameters:
+  udc_half: 400 V
+  fsw: 5 kHz
+  ffund: 50 Hz
+  mi: 90 %
+  dead_time: 3 us
+  rload: 1.5 ohm
+  lload: 1 mH
+
+circuit:
+  ground: mid
+  components:
+    - {id: vp, type: voltage_source, p: dcp, n: mid, value: "${udc_half}"}
+    - {id: vn, type: voltage_source, p: mid, n: dcn, value: "${udc_half}"}
+    # Leg A: dcp -q1- n1 -q2- pole -q3- n2 -q4- dcn; clamps d5/d6 to midpoint.
+    - {id: q1a, type: ideal_switch, p: dcp, n: n1a, control: mod.a.outer_high}
+    - {id: q2a, type: ideal_switch, p: n1a, n: pa, control: mod.a.inner_high}
+    - {id: q3a, type: ideal_switch, p: pa, n: n2a, control: mod.a.inner_low}
+    - {id: q4a, type: ideal_switch, p: n2a, n: dcn, control: mod.a.outer_low}
+    - {id: d1a, type: diode, p: n1a, n: dcp, initial: off}
+    - {id: d2a, type: diode, p: pa, n: n1a, initial: off}
+    - {id: d3a, type: diode, p: n2a, n: pa, initial: off}
+    - {id: d4a, type: diode, p: dcn, n: n2a, initial: off}
+    - {id: d5a, type: diode, p: mid, n: n1a, initial: off}
+    - {id: d6a, type: diode, p: n2a, n: mid, initial: off}
+    - {id: la, type: inductor, p: pa, n: loada, value: "${lload}", initial_current: 0 A}
+    - {id: ra, type: resistor, p: loada, n: mid, value: "${rload}"}
+    # Leg B
+    - {id: q1b, type: ideal_switch, p: dcp, n: n1b, control: mod.b.outer_high}
+    - {id: q2b, type: ideal_switch, p: n1b, n: pb, control: mod.b.inner_high}
+    - {id: q3b, type: ideal_switch, p: pb, n: n2b, control: mod.b.inner_low}
+    - {id: q4b, type: ideal_switch, p: n2b, n: dcn, control: mod.b.outer_low}
+    - {id: d1b, type: diode, p: n1b, n: dcp, initial: off}
+    - {id: d2b, type: diode, p: pb, n: n1b, initial: off}
+    - {id: d3b, type: diode, p: n2b, n: pb, initial: off}
+    - {id: d4b, type: diode, p: dcn, n: n2b, initial: off}
+    - {id: d5b, type: diode, p: mid, n: n1b, initial: off}
+    - {id: d6b, type: diode, p: n2b, n: mid, initial: off}
+    - {id: lb, type: inductor, p: pb, n: loadb, value: "${lload}", initial_current: 0 A}
+    - {id: rb, type: resistor, p: loadb, n: mid, value: "${rload}"}
+    # Leg C
+    - {id: q1c, type: ideal_switch, p: dcp, n: n1c, control: mod.c.outer_high}
+    - {id: q2c, type: ideal_switch, p: n1c, n: pc, control: mod.c.inner_high}
+    - {id: q3c, type: ideal_switch, p: pc, n: n2c, control: mod.c.inner_low}
+    - {id: q4c, type: ideal_switch, p: n2c, n: dcn, control: mod.c.outer_low}
+    - {id: d1c, type: diode, p: n1c, n: dcp, initial: off}
+    - {id: d2c, type: diode, p: pc, n: n1c, initial: off}
+    - {id: d3c, type: diode, p: n2c, n: pc, initial: off}
+    - {id: d4c, type: diode, p: dcn, n: n2c, initial: off}
+    - {id: d5c, type: diode, p: mid, n: n1c, initial: off}
+    - {id: d6c, type: diode, p: n2c, n: mid, initial: off}
+    - {id: lc, type: inductor, p: pc, n: loadc, value: "${lload}", initial_current: 0 A}
+    - {id: rc, type: resistor, p: loadc, n: mid, value: "${rload}"}
+    - {id: vdcp, type: voltage_probe, p: dcp, n: mid}
+
+controls:
+  mod:
+    type: three_phase_npc_spwm
+    carrier_frequency: "${fsw}"
+    fundamental_frequency: "${ffund}"
+    modulation_index: "${mi}"
+    dead_time: "${dead_time}"
+
+device_cards:
+  igbt_1200v_900a:
+    kind: switch
+    provenance: {source: "Representative 1200V/900A IGBT module class (datasheet-shaped, NOT a vendor part)"}
+    validity: {tj_min_c: 25, tj_max_c: 150, current_max_a: 1800}
+    conduction:
+      current_axis_a: [0, 100, 300, 600, 900, 1200]
+      temperature_axis_c: [25, 125]
+      voltage_table_v:
+        - [0.8, 1.15, 1.55, 1.95, 2.30, 2.65]
+        - [0.7, 1.20, 1.70, 2.20, 2.65, 3.10]
+      provenance: {source: "Representative class values", figure: "Vce(Ic)"}
+    switching:
+      test_voltage_v: 600
+      test_temperature_c: 125
+      current_axis_a: [0, 100, 300, 600, 900, 1200]
+      e_on_j: [0.0, 18.0e-3, 55.0e-3, 120.0e-3, 195.0e-3, 285.0e-3]
+      e_off_j: [0.0, 25.0e-3, 72.0e-3, 150.0e-3, 235.0e-3, 330.0e-3]
+      voltage_scaling: linear
+      provenance: {source: "Representative class values", figure: "E(Ic) @600V/125C"}
+    thermal:
+      foster_stages:
+        - {resistance_k_per_w: 0.004, time_constant_s: 0.001}
+        - {resistance_k_per_w: 0.012, time_constant_s: 0.02}
+        - {resistance_k_per_w: 0.014, time_constant_s: 0.12}
+        - {resistance_k_per_w: 0.003, time_constant_s: 0.6}
+      provenance: {source: "Representative class values", figure: "Zth_jc"}
+  diode_1200v_900a:
+    kind: diode
+    provenance: {source: "Representative 1200V/900A clamp/freewheel diode class (datasheet-shaped)"}
+    validity: {tj_min_c: 25, tj_max_c: 150, current_max_a: 1800}
+    conduction:
+      current_axis_a: [0, 100, 300, 600, 900, 1200]
+      temperature_axis_c: [25, 125]
+      voltage_table_v:
+        - [0.8, 1.10, 1.45, 1.80, 2.10, 2.40]
+        - [0.7, 1.05, 1.45, 1.85, 2.20, 2.55]
+      provenance: {source: "Representative class values", figure: "Vf(If)"}
+    switching:
+      test_voltage_v: 600
+      test_temperature_c: 125
+      current_axis_a: [0, 100, 300, 600, 900, 1200]
+      e_rec_j: [0.0, 12.0e-3, 32.0e-3, 62.0e-3, 90.0e-3, 118.0e-3]
+      voltage_scaling: linear
+      provenance: {source: "Representative class values", figure: "Erec(If) @600V/125C"}
+    thermal:
+      foster_stages:
+        - {resistance_k_per_w: 0.008, time_constant_s: 0.001}
+        - {resistance_k_per_w: 0.022, time_constant_s: 0.03}
+        - {resistance_k_per_w: 0.020, time_constant_s: 0.15}
+      provenance: {source: "Representative class values", figure: "Zth_jc diode"}
+
+cooling:
+  tims:
+    tim_grease: {rth_k_per_w: 0.010, provenance: {source: "Representative thermal grease layer"}}
+  heatsinks:
+    hs_forced_air:
+      airflow_axis_m3_per_h: [0, 100, 200, 400]
+      rth_k_per_w: [0.50, 0.12, 0.060, 0.035]
+      pressure_drop_pa: [0, 30, 90, 300]
+      provenance: {source: "Representative forced-air plate for one module"}
+  fans:
+    fan_module:
+      flow_axis_m3_per_h: [0, 150, 300, 450]
+      pressure_pa: [250, 180, 90, 0]
+      provenance: {source: "Representative axial fan PQ"}
+
+loss_analysis:
+  ambient_c: 45
+  tj_evaluation_c: 125
+  devices:
+    q1a:
+      card: igbt_1200v_900a
+      commutation_voltage: v(vdcp)
+      cooling: {tim: tim_grease, heatsink: hs_forced_air, fan: fan_module}
+    q2a:
+      card: igbt_1200v_900a
+      commutation_voltage: v(vdcp)
+      cooling: {tim: tim_grease, heatsink: hs_forced_air, fan: fan_module}
+    d5a:
+      card: diode_1200v_900a
+      commutation_voltage: v(vdcp)
+      cooling: {tim: tim_grease, heatsink: hs_forced_air, fan: fan_module}
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 40 ms
+    output_step: 2 us
+    solver: dopri5
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs:
+  - v(pa)
+  - v(pb)
+  - v(pc)
+  - i(la)
+  - i(lb)
+  - i(lc)
+  - i(q1a)
+  - i(q2a)
+  - i(d5a)
+  - i(d2a)
+  - v(vdcp)

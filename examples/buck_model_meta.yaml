@@ -1,0 +1,65 @@
+schema: pear-sim/v0.1
+name: buck_ccm_model_meta
+
+# Same canonical buck as examples/buck.yaml, with declared device-model
+# metadata (version + validity envelope) on the switch and inductor.
+# The declaration is recorded in model.resolved.json and flagged as
+# not-evaluated in warnings.json; the reference kernel still simulates
+# ideal elements.
+
+parameters:
+  vin: 100 V
+  fsw: 20 kHz
+  duty: 40 %
+  load: 10 ohm
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+    - id: q1
+      type: ideal_switch
+      p: in
+      n: sw
+      control: pwm
+      initial: on
+      model_meta:
+        version: "ideal-switch-datasheet-stub/1.0"
+        validity:
+          frequency_max_hz: 250000
+          temperature_min_c: -40
+          temperature_max_c: 125
+          dvdt_max_v_per_s: 5.0e+9
+    - {id: d1, type: diode, p: gnd, n: sw, initial: off}
+    - id: l1
+      type: inductor
+      p: sw
+      n: out
+      value: 1 mH
+      initial_current: 3.39970055 A
+      model_meta:
+        version: "ideal-inductor-datasheet-stub/1.0"
+        validity:
+          frequency_max_hz: 100000
+    - {id: c1, type: capacitor, p: out, n: gnd, value: 100 uF, initial_voltage: 39.98969319 V}
+    - {id: load, type: resistor, p: out, n: gnd, value: "${load}"}
+
+controls:
+  pwm:
+    type: pwm
+    frequency: "${fsw}"
+    duty: "${duty}"
+    phase: 0 s
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 2 ms
+    output_step: 1 us
+    solver: dopri5
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs:
+  - v(out)
+  - i(l1)

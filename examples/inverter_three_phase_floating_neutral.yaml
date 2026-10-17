@@ -1,0 +1,94 @@
+# Six-switch bridge into a THREE-WIRE RL load with a floating star point.
+# The star node has only inductors incident, so its degenerate KCL row is
+# replaced by the exact invariant derivative (sum of di/dt = 0) and the
+# star-point voltage becomes algebraic. ia+ib+ic = 0 is validated at t=0 and
+# preserved exactly by the integrator (linear conservation law).
+# Phase order is R first, then L into the star, so the star sees inductors only.
+schema: pear-sim/v0.1
+name: inverter_three_phase_floating_neutral
+
+parameters:
+  half_bus: 200 V
+  fundamental: 500 Hz
+  carrier: 21 kHz
+  modulation_index: 80 %
+  # Dead-time freewheeling at the floating star is supported —
+  # a leg whose current reaches zero during dead time is frozen through the
+  # multi-inductor zero-current reduction, and the star reduces over the
+  # remaining live legs.
+  dead_time: 500 ns
+  phase_r: 10 ohm
+  phase_l: 5 mH
+
+circuit:
+  ground: dc_minus
+  components:
+    - {id: vlow, type: voltage_source, p: midpoint, n: dc_minus, value: "${half_bus}"}
+    - {id: vhigh, type: voltage_source, p: dc_plus, n: midpoint, value: "${half_bus}"}
+
+    - {id: qah, type: ideal_switch, p: dc_plus, n: a, control: bridge.a.high}
+    - {id: qal, type: ideal_switch, p: a, n: dc_minus, control: bridge.a.low}
+    - {id: qbh, type: ideal_switch, p: dc_plus, n: b, control: bridge.b.high}
+    - {id: qbl, type: ideal_switch, p: b, n: dc_minus, control: bridge.b.low}
+    - {id: qch, type: ideal_switch, p: dc_plus, n: c, control: bridge.c.high}
+    - {id: qcl, type: ideal_switch, p: c, n: dc_minus, control: bridge.c.low}
+
+    - {id: dah, type: diode, p: a, n: dc_plus, initial: off}
+    - {id: dal, type: diode, p: dc_minus, n: a, initial: off}
+    - {id: dbh, type: diode, p: b, n: dc_plus, initial: off}
+    - {id: dbl, type: diode, p: dc_minus, n: b, initial: off}
+    - {id: dch, type: diode, p: c, n: dc_plus, initial: off}
+    - {id: dcl, type: diode, p: dc_minus, n: c, initial: off}
+
+    - {id: ra, type: resistor, p: a, n: am, value: "${phase_r}"}
+    - {id: la, type: inductor, p: am, n: star, value: "${phase_l}", initial_current: 0 A}
+    - {id: rb, type: resistor, p: b, n: bm, value: "${phase_r}"}
+    - {id: lb, type: inductor, p: bm, n: star, value: "${phase_l}", initial_current: 0 A}
+    - {id: rc, type: resistor, p: c, n: cm, value: "${phase_r}"}
+    - {id: lc, type: inductor, p: cm, n: star, value: "${phase_l}", initial_current: 0 A}
+
+    - {id: vab, type: voltage_probe, p: a, n: b}
+    - {id: vbc, type: voltage_probe, p: b, n: c}
+    - {id: vca, type: voltage_probe, p: c, n: a}
+    - {id: vsn, type: voltage_probe, p: star, n: midpoint}
+
+controls:
+  bridge:
+    type: three_phase_spwm
+    carrier_frequency: "${carrier}"
+    fundamental_frequency: "${fundamental}"
+    modulation_index: "${modulation_index}"
+    carrier_phase: 0 s
+    reference_phase: 0 s
+    sequence: abc
+    dead_time: "${dead_time}"
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 12 ms
+    output_step: 1 us
+    solver: dop853
+    rtol: 1.0e-9
+    atol: 1.0e-11
+  harmonics:
+    start: 8 ms
+    stop: 12 ms
+    fundamental_frequency: "${fundamental}"
+    max_harmonic: 42
+    signals:
+      - {signal: v(vab), semantic: line_voltage_ab}
+      - {signal: v(vbc), semantic: line_voltage_bc}
+      - {signal: v(vca), semantic: line_voltage_ca}
+      - {signal: i(la), semantic: phase_current_a}
+      - {signal: i(lb), semantic: phase_current_b}
+      - {signal: i(lc), semantic: phase_current_c}
+
+outputs:
+  - v(vab)
+  - v(vbc)
+  - v(vca)
+  - v(vsn)
+  - i(la)
+  - i(lb)
+  - i(lc)

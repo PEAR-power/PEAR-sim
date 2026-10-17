@@ -1,0 +1,34 @@
+{
+  "schema": "pear-sim/perturbation-campaign-request/v0.1",
+  "label": "C — injected transient vs load current and ESR (literature cross-check)",
+  "nominal": {"vout_v": 12.0, "recovery_band_percent": 2.0},
+  "events": [
+    {
+      "id": "inj", "type": "analog_transient", "target": "node:out",
+      "at": "4 ms", "amplitude": "2 A", "tau_rise": "100 ns", "tau_fall": "20 us"
+    }
+  ],
+  "axes": [
+    {
+      "id": "load", "kind": "parameter_values", "parameter": "load",
+      "values": ["12 ohm", "6 ohm", "3 ohm", "1.5 ohm"],
+      "source": "assumption",
+      "note": "Load resistance spanning a decade of load current (1 A to 8 A at 12 V). Chosen to mirror the load-current axis of the NASA LDO measurement; see the report for why the comparison does not transfer."
+    },
+    {
+      "id": "esr", "kind": "parameter_values", "parameter": "esr",
+      "values": ["5 mohm", "10 mohm", "20 mohm", "40 mohm"],
+      "source": "assumption",
+      "note": "Output-capacitor ESR spanning a decade. Placeholder values; describe no real capacitor."
+    }
+  ],
+  "criteria": [
+    {
+      "id": "vout_excursion",
+      "signal": "v(out)", "field": "min",
+      "op": "min", "limit": 10.0, "unit": "V",
+      "source": "assumption",
+      "note": "Placeholder undervoltage floor. Present so the table has a pass/fail column; it is not a specification."
+    }
+  ]
+}

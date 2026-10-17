@@ -1,0 +1,42 @@
+# Screening-only entry — see flyback.yaml for why an entry this kernel
+# cannot run still belongs in the library.
+
+schema: pear-sim/topology-entry/v0.1
+id: forward
+name: "Forward — isolated single-switch converter with output inductor"
+
+prerequisites:
+  isolation: provided
+  direction: unidirectional
+  voltage:
+    min_v: 5.0
+    max_v: 1000.0
+  power:
+    min_w: 10.0
+    max_w: 1000.0
+
+kernel_support:
+  status: not_simulated
+  note: >-
+    Same coupled-winding gap as the flyback: the secondary and
+    the reset winding are open for part of the cycle, which the kernel
+    refuses without declared support. Screening only.
+
+known_limitations:
+  - "Needs an explicit core reset (third winding, RCD clamp or active clamp);
+    without it the transformer walks into saturation. The reset mechanism,
+    not the conversion ratio, usually bounds the duty cycle to about 0.5."
+  - "Two magnetic components — transformer and output inductor — so it is
+    bulkier than a flyback at low power, which is why it starts paying off
+    only above roughly 100 W."
+  - "The switch sees input voltage plus the reset winding's reflected
+    voltage, so device stress is well above V_in."
+  - "Output inductor current is continuous, which helps output ripple, but
+    the input current stays pulsed and needs filtering."
+  - "Single-switch forward loses to two-switch and half-bridge variants as
+    power rises; this entry describes the single-switch form only."
+
+template:
+  subcircuit: forward
+
+notes: "Screening-only until the coupled-winding gap closes."

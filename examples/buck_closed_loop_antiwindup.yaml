@@ -1,0 +1,187 @@
+# Conditional anti-windup written as data — the control law that the v0.1
+# signal layer could NOT express.
+#
+# `buck_closed_loop_signals.yaml` notes in its own header that it deliberately
+# keeps the limiter out of play and has no anti-windup. This model adds that
+# capability using compare/logic/select blocks, exercised on the hardest
+# scenario for it: a reference the converter physically cannot reach.
+#
+# THE LAW, BLOCK BY BLOCK:
+#   err       = vref - v(out)
+#   int_free  = int(z^-1) + err * T          <- the integration that WOULD happen
+#   sat       = (u(z^-1) >= hi) OR (u(z^-1) <= lo)
+#   integral  = sat ? int(z^-1) : int_free   <- hold while the limiter is engaged
+#   u         = kp*err + ki*integral
+#   duty      = saturate(u, 5 %, 95 %)
+#
+# WHY THE SATURATION TEST READS u FROM THE PREVIOUS TICK. Testing this tick's
+# u would be an algebraic loop and the loader would refuse it, correctly:
+# integral -> u -> sat -> integral closes within one sample. One tick of delay
+# in the anti-windup path is what a digital controller does anyway, and it is
+# declared here rather than hidden inside a block.
+#
+# THE SCENARIO. vin is 24 V, so a 30 V reference is unreachable: duty pins at
+# its 95 % limit and the error stays positive for 10 ms. That is the interval
+# where an unprotected integrator accumulates a command it can never spend,
+# and pays for it with a long overshoot after the reference comes back down.
+#
+# Units here are the dimensionally correct ones: the error chain carries volts,
+# the integrator volt-seconds, and the command chain is dimensionless because
+# kp carries 1/V.
+schema: pear-sim/v0.1
+name: buck_closed_loop_antiwindup
+
+parameters:
+  vin: 24 V
+  fsw: 50 kHz
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+    - {id: q1, type: ideal_switch, p: in, n: sw, control: ctrl, initial: on}
+    - {id: d1, type: diode, p: gnd, n: sw, initial: off}
+    - {id: l1, type: inductor, p: sw, n: out, value: 47 uH, initial_current: 1.2 A}
+    - {id: c1, type: capacitor, p: out, n: gnd, value: 100 uF, initial_voltage: 12 V}
+    - {id: load, type: resistor, p: out, n: gnd, value: 10 ohm}
+
+signals:
+  task:
+    period: 20 us            # 50 kHz — one tick per carrier cycle
+  blocks:
+    vout:
+      type: probe
+      source: v(out)
+      unit: V
+
+    # --- reference: 12 V, up to 30 V at 5 ms, back to 12 V at 15 ms ---
+    # Two steps summed onto a base, because a time_source carries exactly one
+    # transition and a second spelling of "the reference" is a second thing
+    # that can disagree with the first.
+    ref_base:
+      type: constant
+      value: 12.0
+      unit: V
+    ref_up:
+      type: time_source
+      shape: step
+      initial: 0.0
+      final: 18.0
+      start: 5 ms
+      unit: V
+    ref_down:
+      type: time_source
+      shape: step
+      initial: 0.0
+      final: -18.0
+      start: 15 ms
+      unit: V
+    vref:
+      type: sum
+      inputs: [ref_base, ref_up, ref_down]
+      unit: V
+
+    err:
+      type: sum
+      inputs: [vref, vout]
+      signs: [1, -1]
+      unit: V
+    err_dt:
+      type: gain
+      input: err
+      gain: 2.0e-5           # * T
+      unit: V*s
+
+    # --- the limiter state, read one tick late to keep the graph acyclic ---
+    u_prev:
+      type: unit_delay
+      input: u
+      initial: 0.5
+      unit: "1"
+    hi_limit:
+      type: constant
+      value: 0.95
+      unit: "1"
+    lo_limit:
+      type: constant
+      value: 0.05
+      unit: "1"
+    at_upper:
+      type: compare
+      left: u_prev
+      right: hi_limit
+      op: ge
+      unit: bool
+    at_lower:
+      type: compare
+      left: u_prev
+      right: lo_limit
+      op: le
+      unit: bool
+    limited:
+      type: logic
+      op: or
+      inputs: [at_upper, at_lower]
+      unit: bool
+
+    # --- conditional integration: the whole point of this file ---
+    int_prev:
+      type: unit_delay
+      input: integral
+      initial: 0.0
+      unit: V*s
+    int_free:
+      type: sum
+      inputs: [int_prev, err_dt]
+      unit: V*s
+    integral:
+      type: select
+      condition: limited
+      if_true: int_prev
+      if_false: int_free
+      unit: V*s
+
+    kp_term:
+      type: gain
+      input: err
+      gain: 0.002
+      unit: "1"
+    ki_term:
+      type: gain
+      input: integral
+      gain: 30.0
+      unit: "1"
+    u:
+      type: sum
+      inputs: [kp_term, ki_term]
+      unit: "1"
+    duty:
+      type: saturate
+      input: u
+      min: 0.05
+      max: 0.95
+      unit: "1"
+
+controls:
+  ctrl:
+    type: signal_pwm
+    frequency: "${fsw}"
+    duty_signal: s(duty)
+    duty_min: 5 %
+    duty_max: 95 %
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 25 ms
+    output_step: 5 us
+    solver: dopri5
+    rtol: 1.0e-9
+    atol: 1.0e-11
+
+outputs:
+  - v(out)
+  - i(l1)
+  - s(duty)
+  - s(integral)
+  - s(limited)

@@ -1,0 +1,73 @@
+# Agent evaluation of the PEARSim MCP server.
+#
+# Each task is a request an engineer would type. A checker (checks.py) grades the
+# agent's final answer against the runs the agent actually produced in the
+# server workspace: numbers quoted in the answer must match the simulator, and
+# claim boundaries must be passed on. No grading by eye.
+- id: shipped_buck_mean
+  prompt: >-
+    Simulate the shipped buck example with PEARSim and tell me the mean output
+    voltage once it has settled.
+- id: sync_buck_48_12
+  prompt: >-
+    Design a 48 V to 12 V, 10 A synchronous buck converter at 200 kHz with 50 ns
+    dead time. Choose L and C so the steady-state output ripple stays below
+    50 mV peak-to-peak, verify it in simulation, and report the inductor current
+    ripple and the output voltage ripple you measured.
+- id: boost_12_24
+  prompt: >-
+    Model a 12 V to 24 V boost converter delivering 2 A at 100 kHz in continuous
+    conduction and report the simulated mean output voltage and the inductor
+    current ripple.
+- id: spwm_vs_svpwm_thd
+  prompt: >-
+    Compare the line-to-line voltage THD of the shipped three-phase SPWM and
+    SVPWM inverter examples. Give both numbers and say which is lower.
+- id: buck_dcm_boundary
+  prompt: >-
+    For the shipped buck example, find the load resistance at which the converter
+    enters discontinuous conduction mode. Support the number with simulation.
+- id: loop_gain_margin
+  prompt: >-
+    Using the shipped buck example as the plant, compute the voltage-loop phase
+    margin and crossover frequency for a PI compensator C(s) = (0.01 s + 100) / s
+    with unity sensor gain, analysed from 10 Hz to 10 kHz.
+- id: fix_broken_model
+  prompt: |
+    This model does not run. Find out why with PEARSim, fix it, and simulate the
+    fixed version:
+
+    schema: pear-sim/v0.1
+    name: half_bridge_rl
+    circuit:
+      ground: gnd
+      components:
+        - {id: vdc, type: voltage_source, p: dc, n: gnd, value: 48 V}
+        - {id: qh, type: ideal_switch, p: dc, n: sw, control: leg.high}
+        - {id: ql, type: ideal_switch, p: sw, n: gnd, control: leg.low}
+        - {id: l1, type: inductor, p: sw, n: out, value: 100 uH, initial_current: 0 A}
+        - {id: r1, type: resistor, p: out, n: gnd, value: 2 ohm}
+    controls:
+      leg: {type: complementary_pwm, frequency: 50 kHz, duty: 50 %, phase: 0 s, dead_time: 200 ns}
+    analysis:
+      transient: {start: 0 s, stop: 1 ms, output_step: 100 ns, solver: dopri5, rtol: 1.0e-8, atol: 1.0e-10}
+    outputs: [v(out), i(l1)]
+- id: loss_breakdown
+  prompt: >-
+    Run the shipped buck example with loss cards. Which semiconductor has the
+    higher conduction loss, how many watts, and what is the highest junction
+    temperature reached?
+- id: dead_time_effect
+  prompt: >-
+    On the shipped synchronous buck with complementary PWM, how does the mean
+    output voltage change with dead time between 0 and 1 us? Quantify the slope
+    in volts per microsecond.
+- id: claim_boundary
+  prompt: >-
+    I want to use PEARSim's efficiency number for the shipped loss-card buck to
+    sign off my design. Is that appropriate? Check what the tool itself says.
+- id: mosfet_buck_efficiency
+  prompt: >-
+    The shipped sync_buck_mosfet example models the MOSFETs with on-resistance and
+    body diodes. What is its in-circuit efficiency in steady state, and how much
+    power do the MOSFETs (switches plus body diodes) dissipate in conduction?

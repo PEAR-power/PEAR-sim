@@ -1,0 +1,496 @@
+{
+  "schema_version": "1.0.0",
+  "suite_id": "pear_sim-validation",
+  "suite_revision": "2026-07-18-draft-2",
+  "status": "planned",
+  "description": "Runner-independent acceptance contract for a headless power-electronics simulator.",
+  "policy": {
+    "tolerance_status": "preliminary engineering CI gates; not normative accuracy claims",
+    "classifications": {
+      "verification": "Comparison with mathematics, conservation laws, or an independently evaluated exact solution.",
+      "compatibility": "Comparison with another simulator or a published simulator result; not physical validation.",
+      "physical_validation": "Comparison with held-out experimental measurements that were not used for calibration."
+    },
+    "calibration_split": "Calibration and held-out validation cases must be disjoint and versioned.",
+    "third_party_data": {
+      "vendored": false,
+      "automatic_network_fetch_in_ci": false,
+      "missing_artifact_result": "not-run",
+      "required_registry_fields": [
+        "source_url",
+        "publisher",
+        "revision_or_access_date",
+        "license_or_access_terms",
+        "sha256",
+        "test_conditions",
+        "extraction_or_digitization_method"
+      ]
+    },
+    "event_comparison": {
+      "preserve_raw_pointwise_output": true,
+      "compare_event_times_separately": true,
+      "alignment": "Align waveforms only on matching labeled switching events.",
+      "edge_exclusion_half_width": "max(5 * allowed_event_time_error, 1e-4 * T_switch)",
+      "reason": "A small event-time displacement must not dominate waveform RMSE at a discontinuity."
+    },
+    "failure_rules": [
+      "Any non-finite metric value fails an applicable blocking gate.",
+      "Every case selected by an applicable blocking gate must pass.",
+      "A missing required local artifact is not-run and cannot be reported as pass.",
+      "Changing a reference, alignment rule, metric, or tolerance requires a suite revision."
+    ],
+    "ci_tiers": {
+      "pull_request": {
+        "network": false,
+        "tests": ["VAL-001", "VAL-002", "VAL-003", "VAL-004", "VAL-005", "VAL-008"]
+      },
+      "nightly": {
+        "network": false,
+        "tests": ["VAL-001", "VAL-002", "VAL-003", "VAL-004", "VAL-005", "VAL-006", "VAL-007", "VAL-008"],
+        "note": "External references must already exist in the approved local artifact store."
+      },
+      "manual": {
+        "network": false,
+        "tests": ["VAL-009"],
+        "note": "Physical validation is run only after dataset provenance and the held-out split are reviewed."
+      }
+    }
+  },
+  "metric_definitions": {
+    "relative_error": {
+      "formula": "abs(actual - reference) / max(abs(reference), scale * 1e-12)",
+      "range": "[0, infinity)",
+      "note": "The scale must be declared per signal; it prevents division by numerical zero."
+    },
+    "nrmse": {
+      "formula": "rms(actual - reference) / max(rms(reference), scale * 1e-12)",
+      "range": "[0, infinity)",
+      "note": "Apply the event policy before computing a comparison-view NRMSE."
+    },
+    "normalized_residual": {
+      "formula": "rms(residual) / max(rms(reference_scale_signal), scale * 1e-12)",
+      "range": "[0, infinity)",
+      "note": "Used for KCL and KVL residuals with current and voltage scales respectively."
+    },
+    "energy_balance_relative": {
+      "formula": "abs(E_in - E_out - E_loss - delta_E_stored) / max(abs(E_in), E_scale * 1e-12)",
+      "range": "[0, infinity)"
+    },
+    "event_time_relative": {
+      "formula": "abs(t_actual - t_reference) / T_switch",
+      "range": "[0, infinity)"
+    },
+    "normalized_max_violation": {
+      "formula": "max_over_samples(max(0, signed_constraint_violation)) / scale",
+      "range": "[0, infinity)",
+      "note": "The sign convention must make a forbidden state positive; used for unilateral-device constraints."
+    },
+    "absolute_count_error": {
+      "formula": "abs(actual_count - reference_count)",
+      "range": "nonnegative integer"
+    },
+    "absolute_fraction_error": {
+      "formula": "abs(actual_fraction - reference_fraction)",
+      "range": "[0, infinity)",
+      "note": "0.01 is one percentage point when the reported quantity is efficiency or another fraction."
+    },
+    "temperature_abs_K": {
+      "formula": "abs(T_actual - T_reference)",
+      "unit": "K",
+      "note": "A temperature difference in kelvin is numerically equal to a difference in degrees Celsius."
+    },
+    "thd_abs_fraction": {
+      "formula": "abs(THD_actual - THD_reference)",
+      "unit": "fraction",
+      "note": "0.01 is one percentage point of THD. The harmonic bandwidth and window must be identical."
+    },
+    "bode_magnitude_abs_db": {
+      "formula": "abs(magnitude_actual_db - magnitude_reference_db)",
+      "unit": "dB"
+    },
+    "bode_phase_abs_deg": {
+      "formula": "abs(unwrap(phase_actual) - unwrap(phase_reference))",
+      "unit": "degree"
+    }
+  },
+  "sources": [
+    {
+      "id": "SRC-ARCH-DC-DC",
+      "title": "ARCH 2014 Friendly Competition: DC-to-DC switched-mode power converters",
+      "url": "https://cps-vo.org/sites/cps-vo.org/files/cpsvo_file_nodes/arch14_submission_12pdf.pdf",
+      "kind": "published benchmark",
+      "authority": "ARCH workshop / CPS-VO",
+      "accessed": "2026-07-18",
+      "use": "Hybrid matrices, component ranges, startup and steady-state benchmark definitions."
+    },
+    {
+      "id": "SRC-MODELICA-POWER-CONVERTERS",
+      "title": "Modelica Electrical PowerConverters examples",
+      "url": "https://github.com/modelica/ModelicaStandardLibrary/tree/master/Modelica/Electrical/PowerConverters/Examples",
+      "kind": "open-source model documentation",
+      "authority": "Modelica Association",
+      "accessed": "2026-07-18",
+      "use": "Independent topology and qualitative regression reference."
+    },
+    {
+      "id": "SRC-XYCE",
+      "title": "Xyce parallel electronic simulator",
+      "url": "https://github.com/Xyce/Xyce",
+      "kind": "open-source simulator",
+      "authority": "Sandia National Laboratories",
+      "accessed": "2026-07-18",
+      "use": "Optional independent circuit-level cross-check."
+    },
+    {
+      "id": "SRC-NGSPICE-QA",
+      "title": "ngspice quality assurance",
+      "url": "https://ngspice.sourceforge.io/quality.html",
+      "kind": "simulator quality documentation",
+      "authority": "ngspice project",
+      "accessed": "2026-07-18",
+      "use": "Reference for regression-suite practice; optional circuit cross-check."
+    },
+    {
+      "id": "SRC-INFINEON-FS380",
+      "title": "FS380R12A6T4B datasheet",
+      "url": "https://www.infineon.com/assets/row/public/documents/10/49/infineon-fs380r12a6t4b-datasheet-en.pdf",
+      "kind": "manufacturer datasheet",
+      "authority": "Infineon Technologies",
+      "accessed": "2026-07-18",
+      "use": "Typical conduction and switching curves plus Foster thermal coefficients."
+    },
+    {
+      "id": "SRC-INFINEON-IGBT-DEFINITIONS",
+      "title": "Explanation of technical information for IGBT modules",
+      "url": "https://www.infineon.com/assets/row/public/documents/60/42/infineon-an2011-05-igbt-modules-explanation-applicationnotes-en.pdf",
+      "kind": "manufacturer application note",
+      "authority": "Infineon Technologies",
+      "accessed": "2026-07-18",
+      "use": "Definitions and conditions for semiconductor loss quantities."
+    },
+    {
+      "id": "SRC-INFINEON-THERMAL",
+      "title": "Thermal equivalent circuit models",
+      "url": "https://www.infineon.com/dgdl/Infineon-Thermal_equivalent_circuit_models-ApplicationNotes-v01_01-EN.pdf?fileId=db3a30431a5c32f2011aa65358394dd2",
+      "kind": "manufacturer application note",
+      "authority": "Infineon Technologies",
+      "accessed": "2026-07-18",
+      "use": "Foster/Cauer interpretation and thermal-network limitations."
+    },
+    {
+      "id": "SRC-ROHM-SIC-DPT",
+      "title": "SiC Power Devices and Modules application note",
+      "url": "https://fscdn.rohm.com/en/products/databook/applinote/discrete/sic/common/sic_appli-e.pdf",
+      "kind": "manufacturer application note",
+      "authority": "ROHM Semiconductor",
+      "accessed": "2026-07-18",
+      "use": "Double-pulse test circuit, parasitics, conditions, and switching-energy curves."
+    },
+    {
+      "id": "SRC-ROHM-SWITCHING-LOSS",
+      "title": "Power dissipation calculation for switching circuits",
+      "url": "https://fscdn.rohm.com/en/products/databook/applinote/common/pd_calc_power_dissipation_switching_cir_an-e.pdf",
+      "kind": "manufacturer application note",
+      "authority": "ROHM Semiconductor",
+      "accessed": "2026-07-18",
+      "use": "DPT switching-energy definitions and integration conventions."
+    },
+    {
+      "id": "SRC-IEC-60747-9",
+      "title": "IEC 60747-9:2019 discrete semiconductor devices — IGBTs",
+      "url": "https://webstore.iec.ch/en/publication/32214",
+      "kind": "standard landing page",
+      "authority": "IEC",
+      "accessed": "2026-07-18",
+      "use": "Normative context only; the standard text is not vendored."
+    },
+    {
+      "id": "SRC-IEC-60747-8",
+      "title": "IEC 60747-8 discrete semiconductor devices — field-effect transistors",
+      "url": "https://webstore.iec.ch/en/publication/69348",
+      "kind": "standard landing page",
+      "authority": "IEC",
+      "accessed": "2026-07-18",
+      "use": "Normative context only; the standard text is not vendored."
+    },
+    {
+      "id": "SRC-ROHM-JESD51-14",
+      "title": "Thermal resistance measurement method for SiC MOSFET",
+      "url": "https://fscdn.rohm.com/en/products/databook/applinote/discrete/sic/common/thermal_resistance_measurement_method_for_sic_mosfet_an-e.pdf",
+      "kind": "manufacturer application note",
+      "authority": "ROHM Semiconductor",
+      "accessed": "2026-07-18",
+      "use": "Experimental thermal-measurement context."
+    },
+    {
+      "id": "SRC-ECPE-AQG324",
+      "title": "AQG 324 qualification of power modules for automotive applications, revision 04.1/2025",
+      "url": "https://www.ecpe.org/research/working-groups/automotive-power-module-qualification/",
+      "kind": "industry guideline",
+      "authority": "ECPE",
+      "accessed": "2026-07-18",
+      "use": "Power-module reliability and test-context reference."
+    },
+    {
+      "id": "SRC-SPILIOTIS-DATA",
+      "title": "Experimental data for electrothermal modelling of DC/DC converters",
+      "url": "https://data.mendeley.com/datasets/fh9x8459h8/1",
+      "kind": "experimental dataset",
+      "authority": "Mendeley Data / dataset authors",
+      "license": "CC BY 4.0 as displayed by the repository",
+      "accessed": "2026-07-18",
+      "use": "Candidate held-out physical validation; link only, not downloaded."
+    },
+    {
+      "id": "SRC-SPILIOTIS-PAPER",
+      "title": "Associated Applied Energy article for the electrothermal dataset",
+      "url": "https://doi.org/10.1016/j.apenergy.2019.02.071",
+      "kind": "peer-reviewed article",
+      "authority": "Applied Energy",
+      "accessed": "2026-07-18",
+      "use": "Experimental method and interpretation for the candidate dataset."
+    },
+    {
+      "id": "SRC-CEC-INVERTER-PROTOCOL",
+      "title": "CEC inverter test protocol summary",
+      "url": "https://pvpmc.sandia.gov/modeling-guide/dc-to-ac-conversion/cec-inverter-test-protocol/",
+      "kind": "test protocol documentation",
+      "authority": "Sandia PVPMC",
+      "accessed": "2026-07-18",
+      "use": "Future inverter efficiency map: six load levels at three DC voltages."
+    },
+    {
+      "id": "SRC-ASME-VVUQ",
+      "title": "Verification, Validation and Uncertainty Quantification",
+      "url": "https://www.asme.org/codes-standards/publications-information/verification-validation-uncertainty",
+      "kind": "standards-program overview",
+      "authority": "ASME",
+      "accessed": "2026-07-18",
+      "use": "Terminology separating verification, validation, and uncertainty quantification."
+    }
+  ],
+  "tests": [
+    {
+      "id": "VAL-001",
+      "title": "Linear circuit kernel",
+      "classification": ["verification"],
+      "ci_tier": "pull_request",
+      "release_gate": "blocking",
+      "purpose": "Verify stamping, algebraic constraints, transient integration, controlled sources, and conservation before switching models are introduced.",
+      "cases": [
+        "resistive DC networks",
+        "RC charge and discharge",
+        "series and parallel RLC natural and driven response",
+        "independent and controlled voltage/current sources"
+      ],
+      "oracle": "Closed-form DC solution and independently evaluated matrix exponential for each linear interval.",
+      "sources": ["SRC-XYCE", "SRC-NGSPICE-QA"],
+      "gates": [
+        {"metric": "relative_error", "quantity": "DC node voltages and branch currents", "operator": "<=", "value": 1e-9, "scope": "every declared nonzero-scale quantity"},
+        {"metric": "nrmse", "quantity": "transient state waveforms", "operator": "<=", "value": 1e-5, "scope": "every case"},
+        {"metric": "normalized_residual", "quantity": "KCL and KVL residuals", "operator": "<=", "value": 1e-9, "scope": "every reported time point"},
+        {"metric": "energy_balance_relative", "quantity": "case energy balance", "operator": "<=", "value": 1e-5, "scope": "every transient case"}
+      ],
+      "external_artifacts": {"required": false, "vendored": false}
+    },
+    {
+      "id": "VAL-002",
+      "title": "CCM DC-DC hybrid converters",
+      "classification": ["verification"],
+      "ci_tier": "pull_request",
+      "release_gate": "blocking",
+      "purpose": "Verify topology changes and state propagation for buck, boost, and inverting buck-boost converters operating in continuous conduction mode.",
+      "cases": [
+        "buck startup and periodic steady state",
+        "boost startup and periodic steady state",
+        "inverting buck-boost startup and periodic steady state",
+        "ARCH parameter corners and a nominal buck case: Vs 11.95-12.05 V, R 0.95-1.05 ohm, C 23.75-26.25 uF, L 47.5-52.5 uH, switching period 24.5-25.5 us, duty ratio 0.6"
+      ],
+      "oracle": "ARCH hybrid state matrices propagated independently with expm(A * dt), including exact affine input handling and switching-boundary samples.",
+      "sources": ["SRC-ARCH-DC-DC"],
+      "gates": [
+        {"metric": "relative_error", "quantity": "state at every switching boundary", "operator": "<=", "value": 1e-5, "scope": "every state and case"},
+        {"metric": "relative_error", "quantity": "steady-cycle mean and peak-to-peak ripple", "operator": "<=", "value": 0.001, "unit": "fraction", "scope": "inductor current and capacitor/output voltage"},
+        {"metric": "energy_balance_relative", "quantity": "steady-cycle energy balance", "operator": "<=", "value": 0.0001, "scope": "every case"}
+      ],
+      "external_artifacts": {"required": false, "vendored": false}
+    },
+    {
+      "id": "VAL-003",
+      "title": "DCM, BCM, and ideal-diode events",
+      "classification": ["verification"],
+      "ci_tier": "pull_request",
+      "release_gate": "blocking",
+      "purpose": "Verify unilateral-device constraints, zero-current localization, mode transitions, and absence of artificial reverse current.",
+      "cases": [
+        "buck load sweep crossing the CCM/DCM boundary",
+        "boost load sweep crossing the CCM/DCM boundary",
+        "inverting buck-boost load sweep crossing the CCM/DCM boundary",
+        "boundary-conduction point",
+        "ideal diode turn-off into a resistive load"
+      ],
+      "oracle": "Piecewise analytical mode solution with an independently bracketed and refined zero-current event.",
+      "sources": ["SRC-ARCH-DC-DC", "SRC-MODELICA-POWER-CONVERTERS"],
+      "gates": [
+        {"metric": "event_time_relative", "quantity": "diode zero-current and mode-transition time", "operator": "<=", "value": 0.0005, "unit": "T_switch", "scope": "every labeled event"},
+        {"metric": "normalized_max_violation", "quantity": "ideal-diode reverse-current violation", "operator": "<=", "value": 1e-8, "unit": "I_base", "scope": "maximum forbidden current"},
+        {"metric": "relative_error", "quantity": "cycle mean output and conduction interval", "operator": "<=", "value": 0.001, "scope": "every operating point"},
+        {"metric": "energy_balance_relative", "quantity": "steady-cycle energy balance", "operator": "<=", "value": 0.0001, "scope": "every case"}
+      ],
+      "external_artifacts": {"required": false, "vendored": false}
+    },
+    {
+      "id": "VAL-004",
+      "title": "Single- and three-phase diode rectifiers",
+      "classification": ["verification", "compatibility"],
+      "ci_tier": "pull_request",
+      "release_gate": "blocking_for_analytical_gates",
+      "purpose": "Verify periodic source handling, diode commutation, pulse count, source-inductance overlap, and harmonic extraction.",
+      "cases": [
+        "single-phase full bridge with resistive and current-smoothed loads",
+        "three-phase six-pulse bridge with zero source inductance",
+        "three-phase six-pulse bridge with finite per-phase source inductance"
+      ],
+      "oracle": "Closed-form average voltage and an independently solved piecewise commutation interval. For the three-phase bridge: Vdc = 3*V_LL_peak/pi at Ls=0 and Vdc = (3/pi)*(V_LL_peak - omega*Ls*I_dc_avg) under the stated continuous-current assumptions.",
+      "sources": ["SRC-MODELICA-POWER-CONVERTERS"],
+      "gates": [
+        {"metric": "relative_error", "quantity": "mean DC output voltage", "operator": "<=", "value": 0.001, "scope": "every analytical case"},
+        {"metric": "relative_error", "quantity": "RMS ripple", "operator": "<=", "value": 0.005, "scope": "every analytical case"},
+        {"metric": "event_time_relative", "quantity": "commutation start and end", "operator": "<=", "value": 0.001, "unit": "electrical period", "scope": "finite-Ls cases"},
+        {"metric": "relative_error", "quantity": "dominant harmonic amplitudes", "operator": "<=", "value": 0.005, "scope": "same integer-period window and bandwidth"},
+        {"metric": "absolute_count_error", "quantity": "expected pulse count", "operator": "=", "value": 0, "unit": "count error", "scope": "every steady electrical period"}
+      ],
+      "external_artifacts": {"required": false, "vendored": false, "optional": "independent-engine waveform for nonblocking compatibility comparison"}
+    },
+    {
+      "id": "VAL-005",
+      "title": "Two-level voltage-source inverter",
+      "classification": ["verification", "compatibility"],
+      "ci_tier": "pull_request",
+      "release_gate": "blocking_for_analytical_gates",
+      "purpose": "Verify SPWM/SVPWM scheduling, complementary switching, dead time, three-phase symmetry, fundamental output, and harmonic analysis.",
+      "cases": [
+        "three-phase two-level SPWM into balanced R and RL loads",
+        "SVPWM or six-step schedule with known switching vectors",
+        "dead-time sweep including zero dead time and a deliberately exaggerated value",
+        "modulation-index sweep within the linear region"
+      ],
+      "oracle": "Independently generated switching schedule plus Fourier coefficients over an integer number of fundamental periods; analytical fundamental in the linear modulation region.",
+      "sources": ["SRC-MODELICA-POWER-CONVERTERS"],
+      "gates": [
+        {"metric": "event_time_relative", "quantity": "gate and pole-voltage transitions", "operator": "<=", "value": 0.0005, "unit": "T_switch", "scope": "every labeled event"},
+        {"metric": "relative_error", "quantity": "fundamental voltage amplitude", "operator": "<=", "value": 0.001, "scope": "every linear-region operating point"},
+        {"metric": "thd_abs_fraction", "quantity": "line-voltage and phase-current THD", "operator": "<=", "value": 0.01, "unit": "fraction", "scope": "identical window and bandwidth"},
+        {"metric": "relative_error", "quantity": "three-phase imbalance", "operator": "<=", "value": 1e-5, "unit": "base amplitude", "scope": "balanced cases"},
+        {"metric": "energy_balance_relative", "quantity": "steady-period energy balance", "operator": "<=", "value": 0.0001, "scope": "every case"}
+      ],
+      "external_artifacts": {"required": false, "vendored": false, "optional": "independent-engine waveform for nonblocking compatibility comparison"}
+    },
+    {
+      "id": "VAL-006",
+      "title": "Buck-converter small-signal response",
+      "classification": ["verification", "compatibility"],
+      "ci_tier": "nightly",
+      "release_gate": "blocking_for_analytical_gates",
+      "purpose": "Verify perturbation injection, frequency-response extraction, phase unwrapping, and agreement between a switching model and its averaged low-frequency model.",
+      "cases": [
+        "control-to-output response of an ideal CCM buck",
+        "input-to-output response of an ideal CCM buck",
+        "frequency points from two decades below the LC pole to no more than 0.1*f_switch for switching-to-average comparison"
+      ],
+      "oracle": "Analytical averaged state-space transfer function. A separately acquired independent-engine AC sweep is an optional compatibility oracle.",
+      "sources": ["SRC-ARCH-DC-DC"],
+      "gates": [
+        {"metric": "bode_magnitude_abs_db", "quantity": "averaged model versus analytical model", "operator": "<=", "value": 0.1, "unit": "dB", "scope": "every declared analytical frequency"},
+        {"metric": "bode_phase_abs_deg", "quantity": "averaged model versus analytical model", "operator": "<=", "value": 0.5, "unit": "degree", "scope": "every declared analytical frequency"},
+        {"metric": "bode_magnitude_abs_db", "quantity": "switching model or optional independent-engine result versus analytical model", "operator": "<=", "value": 0.5, "unit": "dB", "scope": "frequencies <= 0.1*f_switch"},
+        {"metric": "bode_phase_abs_deg", "quantity": "switching model or optional independent-engine result versus analytical model", "operator": "<=", "value": 2.0, "unit": "degree", "scope": "frequencies <= 0.1*f_switch"}
+      ],
+      "external_artifacts": {"required": false, "vendored": false, "optional": "independent-engine sweep with a provenance record"}
+    },
+    {
+      "id": "VAL-007",
+      "title": "Semiconductor conduction and double-pulse switching losses",
+      "classification": ["verification", "physical_validation"],
+      "ci_tier": "nightly",
+      "release_gate": "provisional_until_reference_artifacts_are_reviewed",
+      "purpose": "Verify multidimensional loss-table interpolation and compare Eon, Eoff, and Erec under explicitly matched DPT conditions.",
+      "cases": [
+        "exact interpolation knots and interior synthetic surfaces",
+        "Infineon FS380R12A6T4B typical Vce(sat), Vf, Eon, Eoff, and Erec curves",
+        "ROHM BSM120D12P2C005 DPT at Vds 600 V, Vgs 18/0 V, Rg 3.9 ohm, module parasitic approximately 25 nH, and circuit parasitic approximately 15 nH"
+      ],
+      "oracle": "Synthetic tables for interpolation verification; curated manufacturer curve points for provisional physical comparison. DPT energy uses the same voltage/current definitions, integration windows, gate resistance, commutation device, temperature, and parasitics as the reference.",
+      "sources": ["SRC-INFINEON-FS380", "SRC-INFINEON-IGBT-DEFINITIONS", "SRC-ROHM-SIC-DPT", "SRC-ROHM-SWITCHING-LOSS", "SRC-IEC-60747-9", "SRC-IEC-60747-8"],
+      "gates": [
+        {"metric": "relative_error", "quantity": "synthetic table value at every knot", "operator": "<=", "value": 1e-12, "scope": "blocking interpolation verification"},
+        {"metric": "relative_error", "quantity": "conduction voltage or loss against digitized typical curve", "operator": "<=", "value": 0.05, "scope": "provisional; only at matched current and temperature"},
+        {"metric": "relative_error", "quantity": "Eon, Eoff, and Erec against digitized typical curve", "operator": "<=", "value": 0.10, "scope": "provisional; only at fully matched DPT conditions"}
+      ],
+      "limitations": [
+        "Datasheet curves are typically representative, not traceable raw measurements or guaranteed production limits.",
+        "A switching-energy comparison is invalid when voltage, current, junction temperature, gate drive, gate resistance, commutation diode, parasitics, or integration windows differ.",
+        "The 5% and 10% physical gates must be replaced or uncertainty-qualified when raw measurement uncertainty becomes available."
+      ],
+      "external_artifacts": {"required": true, "vendored": false, "missing_result": "not-run", "required_items": ["approved digitized curves", "digitization uncertainty", "source-file SHA-256", "test-condition record"]}
+    },
+    {
+      "id": "VAL-008",
+      "title": "Foster thermal impedance and arbitrary power profiles",
+      "classification": ["verification"],
+      "ci_tier": "pull_request",
+      "release_gate": "blocking",
+      "purpose": "Verify thermal RC propagation, step response, superposition/convolution, and the asymptotic junction-to-case resistance.",
+      "cases": [
+        "IGBT Foster network r=[0.007,0.038,0.05,0.02] K/W and tau=[0.001,0.03,0.25,1.5] s",
+        "diode Foster network r=[0.015,0.07,0.055,0.02] K/W and the same tau vector",
+        "IGBT reference Zth at t=[0.001,0.01,0.1,1,10] s equals [0.005883561516160484,0.019864910315970822,0.061418246250390086,0.10381587567491132,0.1149745473239732] K/W",
+        "piecewise-constant and pulsed arbitrary power histories"
+      ],
+      "oracle": "Zth(t) = sum_i r_i*(1-exp(-t/tau_i)); arbitrary power response from independently evaluated superposition of step increments or convolution.",
+      "sources": ["SRC-INFINEON-FS380", "SRC-INFINEON-THERMAL", "SRC-ROHM-JESD51-14"],
+      "gates": [
+        {"metric": "relative_error", "quantity": "Zth at declared reference times", "operator": "<=", "value": 0.001, "scope": "IGBT and diode networks"},
+        {"metric": "relative_error", "quantity": "asymptotic Rth=sum(r_i)", "operator": "<=", "value": 0.001, "scope": "IGBT and diode networks"},
+        {"metric": "relative_error", "quantity": "temperature response to arbitrary power profile", "operator": "<=", "value": 0.002, "scope": "every sampled point outside declared input discontinuities"}
+      ],
+      "limitations": [
+        "Foster internal node temperatures do not correspond to physical package layers.",
+        "Equivalent terminal impedance does not imply equivalent internal temperatures between Foster and Cauer networks."
+      ],
+      "external_artifacts": {"required": false, "vendored": false}
+    },
+    {
+      "id": "VAL-009",
+      "title": "End-to-end electrothermal buck converter",
+      "classification": ["physical_validation"],
+      "ci_tier": "nightly_and_manual",
+      "release_gate": "phase_dependent",
+      "purpose": "Exercise the full switching, loss, thermal, control, initialization, reporting, and energy-accounting chain on one reproducible converter.",
+      "sources": ["SRC-SPILIOTIS-DATA", "SRC-SPILIOTIS-PAPER", "SRC-ASME-VVUQ"],
+      "phases": [
+        {
+          "id": "VAL-009-B",
+          "title": "Held-out experimental electrothermal validation",
+          "classification": "physical_validation",
+          "ci_tier": "manual",
+          "release_gate": "not_active_until_dataset_review",
+          "candidate_dataset": "SRC-SPILIOTIS-DATA",
+          "gates": [
+            {"metric": "absolute_fraction_error", "quantity": "absolute efficiency error", "operator": "<=", "value": 0.01, "unit": "fraction", "scope": "held-out steady operating points; one percentage point"},
+            {"metric": "temperature_abs_K", "quantity": "steady semiconductor or case temperature", "operator": "<=", "value": 5.0, "unit": "K", "scope": "held-out operating points"},
+            {"metric": "nrmse", "quantity": "temperature transient", "operator": "<=", "value": 0.05, "scope": "held-out experiments after only documented time-origin alignment"}
+          ],
+          "activation_requirements": [
+            "review dataset license and provenance",
+            "record source artifact hashes",
+            "freeze calibration and held-out subsets before model tuning",
+            "document sensor accuracy, sampling, boundary conditions, and uncertainty",
+            "replace provisional gates with uncertainty-aware acceptance criteria where possible"
+          ]
+        }
+      ],
+      "external_artifacts": {"required": true, "vendored": false, "missing_result": "not-run"}
+    }
+  ]
+}

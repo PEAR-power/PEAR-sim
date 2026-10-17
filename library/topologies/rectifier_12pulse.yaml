@@ -1,0 +1,597 @@
+# Topology library entry. Data, not code.
+#
+# The mode sequence below is NOT documentation prose: it deserializes into the
+# exact ModeSequence dataclass the gradient engine consumes, and it was
+# extracted from a live run of the referenced model. The suite re-extracts it
+# from a fresh run on every commit and fails if the stored cycle stops matching
+# reality (tests/test_topology_library.py).
+
+schema: pear-sim/topology-entry/v0.1
+id: rectifier_12pulse
+name: Twelve-pulse diode rectifier — Y and delta secondaries
+prerequisites:
+  isolation: provided
+  direction: unidirectional
+  voltage:
+    min_v: 400.0
+    max_v: 35000.0
+  power:
+    min_w: 100000.0
+    max_w: 20000000.0
+mode_sequences:
+- label: line_commutated
+  source_model: examples/rectifier_12pulse_yyd.yaml
+  sequence:
+    schema: pear-sim/mode-sequence/v0.1
+    period_s: 0.02
+    source_run_sha256: 91bd3c20c4e09867739c5c08707573783f0d2877f543fef17044f6b1a817603f
+    extraction_tolerance_s: 1.0e-12
+    steps:
+    - signature: gates[];diodes[y.d1=off,y.d2=off,y.d3=on,y.d4=off,y.d5=on,y.d6=off,z.d1=off,z.d2=off,z.d3=on,z.d4=on,z.d5=off,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: false
+        y.d3: true
+        y.d4: false
+        y.d5: true
+        y.d6: false
+        z.d1: false
+        z.d2: false
+        z.d3: true
+        z.d4: true
+        z.d5: false
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: z.d5
+        guard_is_current: false
+      nominal_duration_s: 3.774127836711494e-06
+    - signature: gates[];diodes[y.d1=off,y.d2=off,y.d3=on,y.d4=off,y.d5=on,y.d6=off,z.d1=off,z.d2=off,z.d3=on,z.d4=on,z.d5=on,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: false
+        y.d3: true
+        y.d4: false
+        y.d5: true
+        y.d6: false
+        z.d1: false
+        z.d2: false
+        z.d3: true
+        z.d4: true
+        z.d5: true
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: z.d4
+        guard_is_current: true
+      nominal_duration_s: 0.0005422930997229583
+    - signature: gates[];diodes[y.d1=off,y.d2=off,y.d3=on,y.d4=off,y.d5=on,y.d6=off,z.d1=off,z.d2=off,z.d3=on,z.d4=off,z.d5=on,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: false
+        y.d3: true
+        y.d4: false
+        y.d5: true
+        y.d6: false
+        z.d1: false
+        z.d2: false
+        z.d3: true
+        z.d4: false
+        z.d5: true
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y.d1
+        guard_is_current: false
+      nominal_duration_s: 0.001124373565852592
+    - signature: gates[];diodes[y.d1=on,y.d2=off,y.d3=on,y.d4=off,y.d5=on,y.d6=off,z.d1=off,z.d2=off,z.d3=on,z.d4=off,z.d5=on,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: true
+        y.d2: false
+        y.d3: true
+        y.d4: false
+        y.d5: true
+        y.d6: false
+        z.d1: false
+        z.d2: false
+        z.d3: true
+        z.d4: false
+        z.d5: true
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y.d3
+        guard_is_current: true
+      nominal_duration_s: 0.0005422931305861176
+    - signature: gates[];diodes[y.d1=on,y.d2=off,y.d3=off,y.d4=off,y.d5=on,y.d6=off,z.d1=off,z.d2=off,z.d3=on,z.d4=off,z.d5=on,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: true
+        y.d2: false
+        y.d3: false
+        y.d4: false
+        y.d5: true
+        y.d6: false
+        z.d1: false
+        z.d2: false
+        z.d3: true
+        z.d4: false
+        z.d5: true
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: z.d1
+        guard_is_current: false
+      nominal_duration_s: 0.0011243737685693936
+    - signature: gates[];diodes[y.d1=on,y.d2=off,y.d3=off,y.d4=off,y.d5=on,y.d6=off,z.d1=on,z.d2=off,z.d3=on,z.d4=off,z.d5=on,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: true
+        y.d2: false
+        y.d3: false
+        y.d4: false
+        y.d5: true
+        y.d6: false
+        z.d1: true
+        z.d2: false
+        z.d3: true
+        z.d4: false
+        z.d5: true
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: z.d3
+        guard_is_current: true
+      nominal_duration_s: 0.0005422949063444982
+    - signature: gates[];diodes[y.d1=on,y.d2=off,y.d3=off,y.d4=off,y.d5=on,y.d6=off,z.d1=on,z.d2=off,z.d3=off,z.d4=off,z.d5=on,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: true
+        y.d2: false
+        y.d3: false
+        y.d4: false
+        y.d5: true
+        y.d6: false
+        z.d1: true
+        z.d2: false
+        z.d3: false
+        z.d4: false
+        z.d5: true
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y.d6
+        guard_is_current: false
+      nominal_duration_s: 0.0011243716207920834
+    - signature: gates[];diodes[y.d1=on,y.d2=off,y.d3=off,y.d4=off,y.d5=on,y.d6=on,z.d1=on,z.d2=off,z.d3=off,z.d4=off,z.d5=on,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: true
+        y.d2: false
+        y.d3: false
+        y.d4: false
+        y.d5: true
+        y.d6: true
+        z.d1: true
+        z.d2: false
+        z.d3: false
+        z.d4: false
+        z.d5: true
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y.d5
+        guard_is_current: true
+      nominal_duration_s: 0.0005422950848564673
+    - signature: gates[];diodes[y.d1=on,y.d2=off,y.d3=off,y.d4=off,y.d5=off,y.d6=on,z.d1=on,z.d2=off,z.d3=off,z.d4=off,z.d5=on,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: true
+        y.d2: false
+        y.d3: false
+        y.d4: false
+        y.d5: false
+        y.d6: true
+        z.d1: true
+        z.d2: false
+        z.d3: false
+        z.d4: false
+        z.d5: true
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: z.d6
+        guard_is_current: false
+      nominal_duration_s: 0.0011243714903250018
+    - signature: gates[];diodes[y.d1=on,y.d2=off,y.d3=off,y.d4=off,y.d5=off,y.d6=on,z.d1=on,z.d2=off,z.d3=off,z.d4=off,z.d5=on,z.d6=on];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: true
+        y.d2: false
+        y.d3: false
+        y.d4: false
+        y.d5: false
+        y.d6: true
+        z.d1: true
+        z.d2: false
+        z.d3: false
+        z.d4: false
+        z.d5: true
+        z.d6: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: z.d5
+        guard_is_current: true
+      nominal_duration_s: 0.0005422930947962951
+    - signature: gates[];diodes[y.d1=on,y.d2=off,y.d3=off,y.d4=off,y.d5=off,y.d6=on,z.d1=on,z.d2=off,z.d3=off,z.d4=off,z.d5=off,z.d6=on];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: true
+        y.d2: false
+        y.d3: false
+        y.d4: false
+        y.d5: false
+        y.d6: true
+        z.d1: true
+        z.d2: false
+        z.d3: false
+        z.d4: false
+        z.d5: false
+        z.d6: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y.d2
+        guard_is_current: false
+      nominal_duration_s: 0.0011243735707134467
+    - signature: gates[];diodes[y.d1=on,y.d2=on,y.d3=off,y.d4=off,y.d5=off,y.d6=on,z.d1=on,z.d2=off,z.d3=off,z.d4=off,z.d5=off,z.d6=on];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: true
+        y.d2: true
+        y.d3: false
+        y.d4: false
+        y.d5: false
+        y.d6: true
+        z.d1: true
+        z.d2: false
+        z.d3: false
+        z.d4: false
+        z.d5: false
+        z.d6: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y.d1
+        guard_is_current: true
+      nominal_duration_s: 0.0005422931265285508
+    - signature: gates[];diodes[y.d1=off,y.d2=on,y.d3=off,y.d4=off,y.d5=off,y.d6=on,z.d1=on,z.d2=off,z.d3=off,z.d4=off,z.d5=off,z.d6=on];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: true
+        y.d3: false
+        y.d4: false
+        y.d5: false
+        y.d6: true
+        z.d1: true
+        z.d2: false
+        z.d3: false
+        z.d4: false
+        z.d5: false
+        z.d6: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: z.d2
+        guard_is_current: false
+      nominal_duration_s: 0.0011243737697229639
+    - signature: gates[];diodes[y.d1=off,y.d2=on,y.d3=off,y.d4=off,y.d5=off,y.d6=on,z.d1=on,z.d2=on,z.d3=off,z.d4=off,z.d5=off,z.d6=on];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: true
+        y.d3: false
+        y.d4: false
+        y.d5: false
+        y.d6: true
+        z.d1: true
+        z.d2: true
+        z.d3: false
+        z.d4: false
+        z.d5: false
+        z.d6: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: z.d1
+        guard_is_current: true
+      nominal_duration_s: 0.0005422949080295808
+    - signature: gates[];diodes[y.d1=off,y.d2=on,y.d3=off,y.d4=off,y.d5=off,y.d6=on,z.d1=off,z.d2=on,z.d3=off,z.d4=off,z.d5=off,z.d6=on];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: true
+        y.d3: false
+        y.d4: false
+        y.d5: false
+        y.d6: true
+        z.d1: false
+        z.d2: true
+        z.d3: false
+        z.d4: false
+        z.d5: false
+        z.d6: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y.d4
+        guard_is_current: false
+      nominal_duration_s: 0.0011243716203963028
+    - signature: gates[];diodes[y.d1=off,y.d2=on,y.d3=off,y.d4=on,y.d5=off,y.d6=on,z.d1=off,z.d2=on,z.d3=off,z.d4=off,z.d5=off,z.d6=on];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: true
+        y.d3: false
+        y.d4: true
+        y.d5: false
+        y.d6: true
+        z.d1: false
+        z.d2: true
+        z.d3: false
+        z.d4: false
+        z.d5: false
+        z.d6: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y.d6
+        guard_is_current: true
+      nominal_duration_s: 0.0005422950873851251
+    - signature: gates[];diodes[y.d1=off,y.d2=on,y.d3=off,y.d4=on,y.d5=off,y.d6=off,z.d1=off,z.d2=on,z.d3=off,z.d4=off,z.d5=off,z.d6=on];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: true
+        y.d3: false
+        y.d4: true
+        y.d5: false
+        y.d6: false
+        z.d1: false
+        z.d2: true
+        z.d3: false
+        z.d4: false
+        z.d5: false
+        z.d6: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: z.d4
+        guard_is_current: false
+      nominal_duration_s: 0.0011243714858333864
+    - signature: gates[];diodes[y.d1=off,y.d2=on,y.d3=off,y.d4=on,y.d5=off,y.d6=off,z.d1=off,z.d2=on,z.d3=off,z.d4=on,z.d5=off,z.d6=on];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: true
+        y.d3: false
+        y.d4: true
+        y.d5: false
+        y.d6: false
+        z.d1: false
+        z.d2: true
+        z.d3: false
+        z.d4: true
+        z.d5: false
+        z.d6: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: z.d6
+        guard_is_current: true
+      nominal_duration_s: 0.0005422930956384825
+    - signature: gates[];diodes[y.d1=off,y.d2=on,y.d3=off,y.d4=on,y.d5=off,y.d6=off,z.d1=off,z.d2=on,z.d3=off,z.d4=on,z.d5=off,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: true
+        y.d3: false
+        y.d4: true
+        y.d5: false
+        y.d6: false
+        z.d1: false
+        z.d2: true
+        z.d3: false
+        z.d4: true
+        z.d5: false
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y.d3
+        guard_is_current: false
+      nominal_duration_s: 0.0011243735705337848
+    - signature: gates[];diodes[y.d1=off,y.d2=on,y.d3=on,y.d4=on,y.d5=off,y.d6=off,z.d1=off,z.d2=on,z.d3=off,z.d4=on,z.d5=off,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: true
+        y.d3: true
+        y.d4: true
+        y.d5: false
+        y.d6: false
+        z.d1: false
+        z.d2: true
+        z.d3: false
+        z.d4: true
+        z.d5: false
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y.d2
+        guard_is_current: true
+      nominal_duration_s: 0.0005422931270132741
+    - signature: gates[];diodes[y.d1=off,y.d2=off,y.d3=on,y.d4=on,y.d5=off,y.d6=off,z.d1=off,z.d2=on,z.d3=off,z.d4=on,z.d5=off,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: false
+        y.d3: true
+        y.d4: true
+        y.d5: false
+        y.d6: false
+        z.d1: false
+        z.d2: true
+        z.d3: false
+        z.d4: true
+        z.d5: false
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: z.d3
+        guard_is_current: false
+      nominal_duration_s: 0.001124373769437026
+    - signature: gates[];diodes[y.d1=off,y.d2=off,y.d3=on,y.d4=on,y.d5=off,y.d6=off,z.d1=off,z.d2=on,z.d3=on,z.d4=on,z.d5=off,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: false
+        y.d3: true
+        y.d4: true
+        y.d5: false
+        y.d6: false
+        z.d1: false
+        z.d2: true
+        z.d3: true
+        z.d4: true
+        z.d5: false
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: z.d2
+        guard_is_current: true
+      nominal_duration_s: 0.0005422949093888269
+    - signature: gates[];diodes[y.d1=off,y.d2=off,y.d3=on,y.d4=on,y.d5=off,y.d6=off,z.d1=off,z.d2=off,z.d3=on,z.d4=on,z.d5=off,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: false
+        y.d3: true
+        y.d4: true
+        y.d5: false
+        y.d6: false
+        z.d1: false
+        z.d2: false
+        z.d3: true
+        z.d4: true
+        z.d5: false
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y.d5
+        guard_is_current: false
+      nominal_duration_s: 0.0011243716187665231
+    - signature: gates[];diodes[y.d1=off,y.d2=off,y.d3=on,y.d4=on,y.d5=on,y.d6=off,z.d1=off,z.d2=off,z.d3=on,z.d4=on,z.d5=off,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: false
+        y.d3: true
+        y.d4: true
+        y.d5: true
+        y.d6: false
+        z.d1: false
+        z.d2: false
+        z.d3: true
+        z.d4: true
+        z.d5: false
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y.d4
+        guard_is_current: true
+      nominal_duration_s: 0.0005422950851848435
+    - signature: gates[];diodes[y.d1=off,y.d2=off,y.d3=on,y.d4=off,y.d5=on,y.d6=off,z.d1=off,z.d2=off,z.d3=on,z.d4=on,z.d5=off,z.d6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y.d1: false
+        y.d2: false
+        y.d3: true
+        y.d4: false
+        y.d5: true
+        y.d6: false
+        z.d1: false
+        z.d2: false
+        z.d3: true
+        z.d4: true
+        z.d5: false
+        z.d6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: period_end
+        target: ''
+        guard_is_current: false
+      nominal_duration_s: 0.0011205973617477022
+kernel_support:
+  status: simulated
+  note: 'Runs on the reference kernel. No comparison against an independent simulation
+    engine exists for this entry. Also the first entry whose model is written with reusable
+    subcircuits.'
+known_limitations:
+- Requires a phase-shifting transformer with two secondaries — the transformer is part of
+  the topology, not an accessory, and it dominates cost, mass and footprint.
+- Cancellation of the 5th and 7th harmonics is only as good as the supply balance and the
+  matching of the two secondaries; an unbalanced grid degrades it and the 11th and 13th remain
+  regardless.
+- No output control and no regeneration path, exactly as the six-pulse bridge.
+- The stored cycle is a healthy, balanced operating point; the entry makes no claim about
+  behaviour under phase loss or deep unbalance.
+template:
+  model: examples/rectifier_12pulse_yyd.yaml
+notes: 'Second variant for the rectifier slot of the drive chain: it buys harmonic performance
+  with a transformer. Ranges are the entry author''s judgement, before review.'

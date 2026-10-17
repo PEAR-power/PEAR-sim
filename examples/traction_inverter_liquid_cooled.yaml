@@ -1,0 +1,199 @@
+schema: pear-sim/v0.1
+name: traction_inverter_liquid_cooled
+
+# Liquid-cooled traction inverter leg — the cold-plate cooling arrangement
+# typical of automotive traction inverters, as opposed to the forced-air path
+# the medium-voltage examples use.
+#
+# What a cold plate changes is not only the resistance but the REFERENCE:
+# an air-cooled device sits at cabinet ambient, a liquid-cooled one sits at
+# the coolant inlet. Using ambient for a liquid path would silently overstate
+# the thermal margin, so the card carries its own inlet temperature.
+#
+# The pump and plumbing curve is deliberately NOT modelled — unlike the air
+# path, where the fan PQ curve and the heatsink pressure drop genuinely
+# intersect at one operating point. Here the operating flow is declared and
+# the omission is recorded in the artifact.
+
+parameters:
+  udc_half: 375 V
+  fsw: 10 kHz
+  ffund: 200 Hz
+  mi: 80 %
+  dead_time: 1 us
+  rload: 0.5 ohm
+  lload: 0.8 mH
+
+circuit:
+  ground: mid
+  components:
+    - {id: vp, type: voltage_source, p: dcp, n: mid, value: "${udc_half}"}
+    - {id: vn, type: voltage_source, p: mid, n: dcn, value: "${udc_half}"}
+    - {id: qah, type: ideal_switch, p: dcp, n: pa, control: bridge.a.high}
+    - {id: qal, type: ideal_switch, p: pa, n: dcn, control: bridge.a.low}
+    - {id: dah, type: diode, p: pa, n: dcp, initial: off}
+    - {id: dal, type: diode, p: dcn, n: pa, initial: off}
+    - {id: qbh, type: ideal_switch, p: dcp, n: pb, control: bridge.b.high}
+    - {id: qbl, type: ideal_switch, p: pb, n: dcn, control: bridge.b.low}
+    - {id: dbh, type: diode, p: pb, n: dcp, initial: off}
+    - {id: dbl, type: diode, p: dcn, n: pb, initial: off}
+    - {id: qch, type: ideal_switch, p: dcp, n: pc, control: bridge.c.high}
+    - {id: qcl, type: ideal_switch, p: pc, n: dcn, control: bridge.c.low}
+    - {id: dch, type: diode, p: pc, n: dcp, initial: off}
+    - {id: dcl, type: diode, p: dcn, n: pc, initial: off}
+    # Windings meet at the star, not the resistors: a floating star of plain
+    # inductors is what the index reduction recognizes.
+    - {id: ra, type: resistor, p: pa, n: na, value: "${rload}"}
+    - {id: la, type: inductor, p: na, n: nstar, value: "${lload}", initial_current: 0 A}
+    - {id: rb, type: resistor, p: pb, n: nb, value: "${rload}"}
+    - {id: lb, type: inductor, p: nb, n: nstar, value: "${lload}", initial_current: 0 A}
+    - {id: rc, type: resistor, p: pc, n: nc, value: "${rload}"}
+    - {id: lc, type: inductor, p: nc, n: nstar, value: "${lload}", initial_current: 0 A}
+    - {id: vdcp, type: voltage_probe, p: dcp, n: mid}
+
+controls:
+  bridge:
+    type: three_phase_spwm
+    carrier_frequency: "${fsw}"
+    fundamental_frequency: "${ffund}"
+    modulation_index: "${mi}"
+    dead_time: "${dead_time}"
+
+device_cards:
+  sic_1200v_400a:
+    kind: switch
+    provenance: {source: "Representative 1200V/400A SiC module class (datasheet-shaped, NOT a vendor part)"}
+    validity: {tj_min_c: 25, tj_max_c: 175, current_max_a: 800}
+    conduction:
+      current_axis_a: [0, 100, 200, 300, 400]
+      temperature_axis_c: [25, 125]
+      voltage_table_v:
+        - [0.0, 0.45, 0.90, 1.40, 1.90]
+        - [0.0, 0.60, 1.20, 1.85, 2.55]
+      provenance: {source: "Representative class values", figure: "Vds(Id)"}
+    switching:
+      test_voltage_v: 600
+      test_temperature_c: 125
+      current_axis_a: [0, 100, 200, 300, 400]
+      e_on_j: [0.0, 3.0e-3, 6.5e-3, 10.5e-3, 15.0e-3]
+      e_off_j: [0.0, 2.0e-3, 4.2e-3, 6.8e-3, 9.6e-3]
+      voltage_scaling: linear
+      provenance: {source: "Representative class values", figure: "E(Id) @600V/125C"}
+    thermal:
+      foster_stages:
+        - {resistance_k_per_w: 0.010, time_constant_s: 0.0008}
+        - {resistance_k_per_w: 0.045, time_constant_s: 0.015}
+        - {resistance_k_per_w: 0.055, time_constant_s: 0.10}
+      provenance: {source: "Representative class values", figure: "Zth_jc"}
+
+  sic_diode_1200v_400a:
+    kind: diode
+    provenance: {source: "Representative 1200V/400A SiC body/anti-parallel diode class (datasheet-shaped)"}
+    validity: {tj_min_c: 25, tj_max_c: 175, current_max_a: 800}
+    conduction:
+      current_axis_a: [0, 100, 200, 300, 400]
+      temperature_axis_c: [25, 125]
+      voltage_table_v:
+        - [0.0, 0.85, 1.15, 1.40, 1.65]
+        - [0.0, 0.80, 1.10, 1.35, 1.60]
+      provenance: {source: "Representative class values", figure: "Vf(If)"}
+    switching:
+      test_voltage_v: 600
+      test_temperature_c: 125
+      current_axis_a: [0, 100, 200, 300, 400]
+      e_rec_j: [0.0, 0.4e-3, 0.8e-3, 1.3e-3, 1.9e-3]
+      voltage_scaling: linear
+      provenance: {source: "Representative class values", figure: "Erec(If)"}
+    thermal:
+      foster_stages:
+        - {resistance_k_per_w: 0.018, time_constant_s: 0.0008}
+        - {resistance_k_per_w: 0.070, time_constant_s: 0.02}
+      provenance: {source: "Representative class values", figure: "Zth_jc diode"}
+
+cooling:
+  tims:
+    tim_grease: {rth_k_per_w: 0.008, provenance: {source: "Representative thermal grease layer"}}
+  cold_plates:
+    plate_wg50:
+      flow_axis_l_per_min: [2, 4, 8, 16]
+      rth_k_per_w: [0.075, 0.048, 0.033, 0.026]
+      coolant_inlet_c: 65
+      provenance: {source: "Representative water-glycol cold plate, one module footprint"}
+
+loss_analysis:
+  ambient_c: 45
+  tj_evaluation_c: 125
+  devices:
+    qah:
+      card: sic_1200v_400a
+      commutation_voltage: v(vdcp)
+      cooling: {tim: tim_grease, cold_plate: plate_wg50, coolant_flow_l_per_min: 8}
+    qal:
+      card: sic_1200v_400a
+      commutation_voltage: v(vdcp)
+      cooling: {tim: tim_grease, cold_plate: plate_wg50, coolant_flow_l_per_min: 8}
+    qbh:
+      card: sic_1200v_400a
+      commutation_voltage: v(vdcp)
+      cooling: {tim: tim_grease, cold_plate: plate_wg50, coolant_flow_l_per_min: 8}
+    qbl:
+      card: sic_1200v_400a
+      commutation_voltage: v(vdcp)
+      cooling: {tim: tim_grease, cold_plate: plate_wg50, coolant_flow_l_per_min: 8}
+    qch:
+      card: sic_1200v_400a
+      commutation_voltage: v(vdcp)
+      cooling: {tim: tim_grease, cold_plate: plate_wg50, coolant_flow_l_per_min: 8}
+    qcl:
+      card: sic_1200v_400a
+      commutation_voltage: v(vdcp)
+      cooling: {tim: tim_grease, cold_plate: plate_wg50, coolant_flow_l_per_min: 8}
+    dah:
+      card: sic_diode_1200v_400a
+      commutation_voltage: v(vdcp)
+      cooling: {tim: tim_grease, cold_plate: plate_wg50, coolant_flow_l_per_min: 8}
+    dal:
+      card: sic_diode_1200v_400a
+      commutation_voltage: v(vdcp)
+      cooling: {tim: tim_grease, cold_plate: plate_wg50, coolant_flow_l_per_min: 8}
+    dbh:
+      card: sic_diode_1200v_400a
+      commutation_voltage: v(vdcp)
+      cooling: {tim: tim_grease, cold_plate: plate_wg50, coolant_flow_l_per_min: 8}
+    dbl:
+      card: sic_diode_1200v_400a
+      commutation_voltage: v(vdcp)
+      cooling: {tim: tim_grease, cold_plate: plate_wg50, coolant_flow_l_per_min: 8}
+    dch:
+      card: sic_diode_1200v_400a
+      commutation_voltage: v(vdcp)
+      cooling: {tim: tim_grease, cold_plate: plate_wg50, coolant_flow_l_per_min: 8}
+    dcl:
+      card: sic_diode_1200v_400a
+      commutation_voltage: v(vdcp)
+      cooling: {tim: tim_grease, cold_plate: plate_wg50, coolant_flow_l_per_min: 8}
+analysis:
+  transient:
+    start: 0 s
+    stop: 10 ms
+    output_step: 2 us
+    solver: dopri5
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs:
+  - v(pa)
+  - i(la)
+  - i(qah)
+  - i(qal)
+  - i(qbh)
+  - i(qbl)
+  - i(qch)
+  - i(qcl)
+  - i(dah)
+  - i(dal)
+  - i(dbh)
+  - i(dbl)
+  - i(dch)
+  - i(dcl)
+  - v(vdcp)

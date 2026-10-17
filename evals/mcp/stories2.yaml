@@ -1,0 +1,108 @@
+# Second round of user stories: longer workflows, project files, limits and
+# honest refusals. Graded by reading the answers against the runs and closed forms.
+- id: v01_project_file
+  prompt: >-
+    My model is in buck_48v.yaml in the project folder. Validate it, run it to steady
+    state and tell me the output voltage, the ripple and the conduction efficiency.
+  files:
+    buck_48v.yaml: |
+      schema: pear-sim/v0.1
+      name: buck_48v
+      parameters:
+        vin: 48 V
+        fsw: 100 kHz
+        duty: 26 %
+      circuit:
+        ground: gnd
+        components:
+          - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+          - {id: qh, type: ideal_switch, p: in, n: sw, control: leg.high, on_resistance: 15 milliohm}
+          - {id: ql, type: ideal_switch, p: sw, n: gnd, control: leg.low, on_resistance: 15 milliohm}
+          - {id: dh, type: diode, p: sw, n: in, forward_voltage: 0.7 V}
+          - {id: dl, type: diode, p: gnd, n: sw, forward_voltage: 0.7 V}
+          - {id: l1, type: inductor, p: sw, n: out, value: 22 uH, initial_current: 5 A}
+          - {id: c1, type: capacitor, p: out, n: gnd, value: 47 uF, initial_voltage: 12 V}
+          - {id: load, type: resistor, p: out, n: gnd, value: 2.4 ohm}
+      controls:
+        leg: {type: complementary_pwm, frequency: "${fsw}", duty: "${duty}", phase: 0 s, dead_time: 100 ns}
+      analysis:
+        transient: {start: 0 s, stop: 2 ms, output_step: 50 ns, solver: dopri5, rtol: 1.0e-9, atol: 1.0e-11}
+      outputs: [v(out), i(l1), v(sw)]
+- id: v02_path_escape
+  prompt: >-
+    My colleague keeps a model one folder above the project, at
+    ../shared/buck_ref.yaml. Validate it with PEARSim.
+- id: v03_compare_designs
+  prompt: >-
+    Compare two variants of the shipped synchronous buck example: with the 1 mH
+    inductor and with a 330 uH inductor. Show inductor ripple, output ripple and peak
+    inductor current side by side in steady state.
+- id: v04_closed_loop_pi
+  prompt: >-
+    Build a closed-loop 24 V to 12 V buck at 50 kHz with a digital PI voltage
+    controller (use the signal blocks), apply a load step from 2 A to 4 A after it
+    settles, and report the undershoot and recovery time.
+- id: v05_dab_power
+  prompt: >-
+    For the shipped DAB example, how does the transferred power depend on the phase
+    shift? Compare a few points with the textbook DAB power formula.
+- id: v06_six_pulse
+  prompt: >-
+    For the shipped 6-pulse rectifier example, what is the dominant output ripple
+    frequency and how big is the ripple? Explain why that frequency.
+- id: v07_saturation
+  prompt: >-
+    Explain what happens in the shipped saturable inductor example when the
+    inductor saturates. Show me numbers from the simulation.
+- id: v08_npc_midpoint
+  prompt: >-
+    In the shipped NPC midpoint example, does the DC-link midpoint stay balanced?
+    How much does it move?
+- id: v09_pll
+  prompt: >-
+    In the shipped grid-following converter, does the PLL lock, and how long does it
+    take?
+- id: v10_sensitivity
+  prompt: >-
+    For the shipped buck, which of inductance, capacitance and load resistance has the
+    biggest effect on the output voltage ripple? Quantify each with a +/-20 % change.
+- id: v11_too_long
+  prompt: >-
+    Simulate the shipped buck for 2 seconds with a 10 ns output step and give me the
+    full waveform.
+- id: v12_explain_junior
+  prompt: >-
+    I'm new to power electronics. Explain the shipped NPC three-phase example to me:
+    what each part does, and what the simulation shows. Keep it practical.
+- id: v13_rainflow
+  prompt: >-
+    In the shipped loss-card buck, give me the junction temperature swing cycles
+    (rainflow) for the devices, and say what they mean for lifetime.
+- id: v14_boost_dcm_ratio
+  prompt: >-
+    Run the shipped boost example at a light load where it enters discontinuous
+    conduction and compare the output voltage with the textbook DCM conversion ratio.
+- id: v15_duty_table
+  prompt: >-
+    Run the shipped buck at duty cycles of 30, 40, 50 and 60 % and give me a table of
+    output voltage and inductor ripple.
+- id: v16_interleaved
+  prompt: >-
+    Build a two-phase interleaved buck, 48 V to 12 V, 20 A total, 100 kHz per phase,
+    phases 180 degrees apart. Show how much the output capacitor ripple current is
+    reduced compared with a single-phase design with the same inductors.
+- id: v17_foc
+  prompt: >-
+    In the shipped PMSM FOC current-control example, do the d and q currents reach
+    their references, and what torque results?
+- id: v18_thermal_transient
+  prompt: >-
+    With the shipped loss-card buck, how fast does the junction temperature rise
+    after start-up, and what are the thermal time constants?
+- id: v19_vague
+  prompt: >-
+    Make my converter better.
+- id: v20_monte_carlo
+  prompt: >-
+    Can PEARSim run a Monte Carlo analysis of my buck with random component
+    tolerances? If not, what is the closest thing it offers?

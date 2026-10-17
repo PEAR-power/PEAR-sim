@@ -1,0 +1,105 @@
+# Topology library entry. Data, not code.
+#
+# The mode sequence below is NOT documentation prose: it deserializes into the
+# exact ModeSequence dataclass the gradient engine consumes, and it was
+# extracted from a live run of the referenced model. The suite re-extracts it
+# from a fresh run on every commit and fails if the stored cycle stops matching
+# reality (tests/test_topology_library.py).
+
+schema: pear-sim/topology-entry/v0.1
+id: buck_synchronous
+name: Synchronous buck — non-isolated step-down with active rectifier
+prerequisites:
+  isolation: none
+  direction: bidirectional
+  voltage:
+    min_v: 1.0
+    max_v: 100.0
+  power:
+    min_w: 1.0
+    max_w: 5000.0
+mode_sequences:
+- label: ccm
+  source_model: examples/synchronous_buck_complementary.yaml
+  sequence:
+    schema: pear-sim/mode-sequence/v0.1
+    period_s: 5.0e-05
+    source_run_sha256: f7116c9ee9a595a0dc1e9d344dd8831687bba05e751abb256e218dbd96ff8231
+    extraction_tolerance_s: 1.0e-12
+    steps:
+    - signature: gates[leg.high=off,leg.low=off];diodes[dh=off,dl=on];constrained_inductors[none]
+      gates:
+        leg.high: false
+        leg.low: false
+      diodes:
+        dh: false
+        dl: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: leg.high
+        guard_is_current: false
+      nominal_duration_s: 5.000000000000122e-07
+    - signature: gates[leg.high=on,leg.low=off];diodes[dh=off,dl=off];constrained_inductors[none]
+      gates:
+        leg.high: true
+        leg.low: false
+      diodes:
+        dh: false
+        dl: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: leg.high
+        guard_is_current: false
+      nominal_duration_s: 1.9499999999999986e-05
+    - signature: gates[leg.high=off,leg.low=off];diodes[dh=off,dl=on];constrained_inductors[none]
+      gates:
+        leg.high: false
+        leg.low: false
+      diodes:
+        dh: false
+        dl: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: leg.low
+        guard_is_current: false
+      nominal_duration_s: 5.000000000000122e-07
+    - signature: gates[leg.high=off,leg.low=on];diodes[dh=off,dl=off];constrained_inductors[none]
+      gates:
+        leg.high: false
+        leg.low: true
+      diodes:
+        dh: false
+        dl: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: period_end
+        target: ''
+        guard_is_current: false
+      nominal_duration_s: 2.9499999999999958e-05
+kernel_support:
+  status: simulated
+  note: Runs on the reference kernel including the complementary pair with declared dead time;
+    the dead-time intervals appear as their own steps in the stored cycle.
+known_limitations:
+- Dead time is mandatory against shoot-through, and during it the body diode conducts — the
+  loss the synchronous rectifier was meant to remove partly returns, scaling with switching
+  frequency.
+- Being bidirectional, the stage can pull current OUT of the load at light load (negative
+  inductor current) unless the control forbids it; that is a feature for regulation and a
+  hazard for a battery.
+- Step-down only, and the switch still sees the full input voltage.
+- Two gate drives, one of them high-side referenced — more expensive and more failure-prone
+  than a diode rectifier.
+- No isolation.
+template:
+  model: examples/synchronous_buck_complementary.yaml
+notes: The high-efficiency low-voltage step-down slot (point-of-load, VRM front ends), and
+  the bidirectional counterpart of the plain buck entry. Ranges are the entry author's judgement,
+  before review.

@@ -1,0 +1,55 @@
+{
+  "schema": "pear-sim/perturbation-campaign-request/v0.1",
+  "label": "B — forced-gate transient, phase x width x polarity",
+  "nominal": {"vout_v": 12.0, "recovery_band_percent": 2.0},
+  "events": [
+    {
+      "id": "set1", "type": "pulse", "target": "control:ctrl",
+      "phase": 0.0, "phase_anchor": "4 ms", "width": "1 us", "level": "off"
+    }
+  ],
+  "axes": [
+    {
+      "id": "phase", "kind": "event_phase", "event": "set1",
+      "values": [0.0, 0.0625, 0.125, 0.1875, 0.25, 0.3125, 0.375, 0.4375,
+                 0.5, 0.5625, 0.625, 0.6875, 0.75, 0.8125, 0.875, 0.9375],
+      "source": "assumption",
+      "note": "16 equally spaced phases of one switching period. Phase dependence is the point: what a forced gate does depends on where in the cycle it lands, so phase is swept rather than sampled."
+    },
+    {
+      "id": "width", "kind": "event_field", "event": "set1", "field": "width",
+      "values": ["0.5 us", "2 us", "5 us", "10 us"],
+      "source": "assumption",
+      "note": "Placeholder pulse widths spanning a decade. Widths that matter come from device test data, not from this simulator."
+    },
+    {
+      "id": "level", "kind": "event_field", "event": "set1", "field": "level",
+      "values": ["on", "off"],
+      "source": "assumption",
+      "note": "Both polarities: a forced-on and a forced-off gate are different faults with different consequences."
+    }
+  ],
+  "criteria": [
+    {
+      "id": "vout_excursion",
+      "signal": "v(out)", "field": "min_last_half",
+      "op": "min", "limit": 11.5, "unit": "V",
+      "source": "assumption",
+      "note": "Placeholder undervoltage floor, judged on min_last_half rather than the whole-run min. A whole-run extremum is dominated by the start-up transient and would score every point identically regardless of the injected event."
+    },
+    {
+      "id": "inductor_saturation",
+      "signal": "i(l1)", "field": "max",
+      "op": "max", "limit": 12.0, "unit": "A",
+      "source": "assumption",
+      "note": "Placeholder saturation current for the inductor. Describes no real part."
+    },
+    {
+      "id": "switch_blocking_derating",
+      "signal": "v(q1)", "field": "max",
+      "op": "max", "limit": 30.0, "unit": "V",
+      "source": "assumption",
+      "note": "Placeholder blocking-voltage derating limit standing in for an ECSS-Q-ST-30-11C style rule."
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.PEAR-power/pear-sim",
+  "title": "PEARSim",
+  "description": "Deterministic power-electronics simulator: write, validate and simulate converter models, steady state, loop gain, sweeps.",
+  "repository": {"url": "https://github.com/PEAR-power/pear-sim", "source": "github"},
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "pear-sim-mcp",
+      "version": "0.1.0",
+      "transport": {"type": "stdio"}
+    }
+  ]
+}

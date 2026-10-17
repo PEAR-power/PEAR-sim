@@ -1,0 +1,55 @@
+# Entry without verified mode sequences.
+#
+# The kernel refuses a coupled winding whose branch has no DC path, and in a
+# flyback the secondary is open while the primary switch conducts (and the
+# primary while the output diode conducts). A flyback therefore runs only when
+# every winding keeps a DC path through declared parts — in practice large
+# bleeder resistors across the primary switch and the output diode, and a
+# clamp or snubber for the leakage energy. Those resistors are a modelling
+# choice the user makes and must report; this entry does not make it for them,
+# so it carries no mode_sequences (kernel_support: not_simulated) and is not
+# ranked against simulated entries.
+
+schema: pear-sim/topology-entry/v0.1
+id: flyback
+name: "Flyback — isolated single-switch converter"
+
+prerequisites:
+  isolation: provided
+  direction: unidirectional
+  voltage:
+    min_v: 5.0
+    max_v: 1000.0
+  power:
+    min_w: 0.1
+    max_w: 250.0
+
+kernel_support:
+  status: not_simulated
+  note: >-
+    The secondary winding is open during the primary conduction interval and
+    the kernel refuses a coupled winding with no DC path. A user model runs once
+    every winding keeps a DC path (large bleeder resistors across the switch and
+    the output diode, plus a clamp for the leakage energy); that choice belongs
+    to the model and is not made for this entry.
+
+known_limitations:
+  - "Energy is stored in the transformer core every cycle, so the magnetic
+    component is a flyback INDUCTOR with a gapped core, not a true
+    transformer — core volume grows quickly and limits the practical power."
+  - "Leakage inductance is not optional detail: it drives the switch voltage
+    spike and forces a snubber or active clamp, and the ideal model here says
+    nothing about it."
+  - "Pulsed current on both sides puts high ripple on the input and output
+    capacitors; output ripple is set by capacitor ESR far more than by the
+    conversion ratio."
+  - "Right-half-plane zero in CCM limits control bandwidth; many designs stay
+    in DCM to avoid it, at the cost of higher peak currents."
+  - "Practical ceiling around 100-150 W in most industrial designs; entries
+    above that are the exception, not the rule."
+
+template:
+  subcircuit: flyback
+
+notes: "Screening-only until the coupled-winding gap closes. The power window
+  states where the topology is a sensible candidate, not a device limit."

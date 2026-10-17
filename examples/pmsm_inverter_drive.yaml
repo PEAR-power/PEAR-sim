@@ -1,0 +1,112 @@
+schema: pear-sim/v0.1
+name: pmsm_inverter_drive
+
+# Three-phase two-level inverter feeding a surface-magnet synchronous
+# machine — the drive arrangement the portfolio is built on (traction,
+# servo, in-wheel). The machine is declared, not hand-wired: the loader
+# expands it into three auditable branches (stator resistance, three-wire
+# equivalent inductance, motional back-EMF) plus one mechanical state.
+#
+# Open loop on purpose: a fixed-frequency supply makes this a synchronous
+# machine that must find its own load angle, so the run shows the rotor
+# HUNTING into place against the load torque rather than sitting still at
+# it — the speed swings a couple of rad/s around synchronous and the mean
+# torque over the window is correspondingly above the steady load. Damping
+# it faster would need either more friction or the closed-loop
+# rotor-oriented control that is the next rung.
+#
+# Operating point: 100 Hz electrical on 4 pole pairs is 157 rad/s
+# mechanical (1500 rpm). The machine starts AT synchronous speed because an
+# open-loop supply cannot start a PMSM from standstill — that is a property
+# of the drive, not of the model.
+#
+# The commanded voltage is NOT free: a synchronous machine sits behind
+# R_s + j*omega_e*L_s, whose reactance here is only 0.31 ohm, so a command
+# far from the back-EMF drives hundreds of amperes and pulls the rotor out
+# of step. The operating point is therefore computed, not guessed:
+#
+#   E        = omega_e * psi_f              = 62.83 V peak
+#   T        = T_load + B*omega             = 8.854 N*m
+#   i_q      = T / (1.5 * p * psi_f)        = 14.757 A
+#   V        = |(-omega_e*L*i_q) + j(R*i_q + E)| = 66.21 V peak
+#   m        = V / (Udc/2)                  = 0.2207
+#   load angle                              = 16.24 degrees
+#
+# THE STAR IS LEFT FLOATING (three-wire). Tying the machine neutral to the
+# DC midpoint would expose the winding to the inverter's common-mode square
+# wave, and at these values the zero-sequence ripple would dwarf the 4.3 A
+# fundamental. Three wires is both the physical connection and the one the
+# DAE reduction was built for.
+#
+# PHASE ALIGNMENT MATTERS AND IS NOT FREE EITHER. The modulator commands
+# +V*sin(omega*t) on phase a, while the motional EMF of this model is
+# -omega_e*psi_f*sin(theta_e): at theta_e(0)=0 the two would be in ANTIPHASE
+# and the full 126 V would fall across a 0.32 ohm impedance. The rotor
+# therefore starts at pi minus the load angle (3.12026 rad), which puts the
+# supply 1.22 electrical degrees ahead of the EMF — motoring.
+
+parameters:
+  udc_half: 300 V
+  fsw: 10 kHz
+  ffund: 100 Hz
+  mi: 22.07 %
+  dead_time: 1 us
+
+circuit:
+  ground: mid
+  components:
+    - {id: vp, type: voltage_source, p: dcp, n: mid, value: "${udc_half}"}
+    - {id: vn, type: voltage_source, p: mid, n: dcn, value: "${udc_half}"}
+    - {id: qah, type: ideal_switch, p: dcp, n: ta, control: bridge.a.high}
+    - {id: qal, type: ideal_switch, p: ta, n: dcn, control: bridge.a.low}
+    - {id: dah, type: diode, p: ta, n: dcp, initial: off}
+    - {id: dal, type: diode, p: dcn, n: ta, initial: off}
+    - {id: qbh, type: ideal_switch, p: dcp, n: tb, control: bridge.b.high}
+    - {id: qbl, type: ideal_switch, p: tb, n: dcn, control: bridge.b.low}
+    - {id: dbh, type: diode, p: tb, n: dcp, initial: off}
+    - {id: dbl, type: diode, p: dcn, n: tb, initial: off}
+    - {id: qch, type: ideal_switch, p: dcp, n: tc, control: bridge.c.high}
+    - {id: qcl, type: ideal_switch, p: tc, n: dcn, control: bridge.c.low}
+    - {id: dch, type: diode, p: tc, n: dcp, initial: off}
+    - {id: dcl, type: diode, p: dcn, n: tc, initial: off}
+
+machines:
+  motor:
+    type: pmsm
+    terminals: [ta, tb, tc]
+    neutral: nstar
+    pole_pairs: 4
+    stator_resistance_ohm: 0.05
+    stator_inductance_h: 0.002
+    flux_linkage_wb: 0.1
+    inertia_kg_m2: 0.01
+    viscous_friction_nm_s: 0.05
+    load_torque_nm: 1.0
+    initial_speed_rad_s: 157.0796
+    initial_angle_rad: 2.85862
+
+controls:
+  bridge:
+    type: three_phase_spwm
+    carrier_frequency: "${fsw}"
+    fundamental_frequency: "${ffund}"
+    modulation_index: "${mi}"
+    dead_time: "${dead_time}"
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 40 ms
+    output_step: 10 us
+    solver: dopri5
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs:
+  - v(ta)
+  - i(motor.a.l)
+  - i(motor.b.l)
+  - i(motor.c.l)
+  - torque(motor)
+  - speed_mech(motor)
+  - angle_elec(motor)

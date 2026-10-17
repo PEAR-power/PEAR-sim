@@ -1,0 +1,35 @@
+schema: pear-sim/v0.1
+name: boost_ccm
+
+# Ideal boost (step-up) converter in CCM: 24 V in, 50 % duty, 20 kHz, 24 ohm load.
+
+parameters:
+  vin: 24 V
+  fsw: 20 kHz
+  duty: 50 %
+  load: 24 ohm
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+    # Periodic steady-state initial conditions for the declared ideal converter.
+    - {id: l1, type: inductor, p: in, n: sw, value: 500 uH, initial_current: 3.39683954 A}
+    - {id: q1, type: ideal_switch, p: sw, n: gnd, control: pwm, initial: on}
+    - {id: d1, type: diode, p: sw, n: out, initial: off}
+    - {id: c1, type: capacitor, p: out, n: gnd, value: 100 uF, initial_voltage: 48.22442611 V}
+    - {id: load, type: resistor, p: out, n: gnd, value: "${load}"}
+
+controls:
+  pwm: {type: pwm, frequency: "${fsw}", duty: "${duty}", phase: 0 s}
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 2 ms
+    output_step: 1 us
+    solver: dopri5
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs: [v(out), i(l1), v(q1), i(d1)]

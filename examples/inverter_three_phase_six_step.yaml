@@ -1,0 +1,54 @@
+schema: pear-sim/v0.1
+name: inverter_three_phase_six_step
+
+parameters:
+  half_bus: 200 V
+  fundamental: 1 kHz
+  phase_r: 10 ohm
+  phase_l: 5 mH
+
+circuit:
+  ground: dc_minus
+  components:
+    - {id: vlow, type: voltage_source, p: neutral, n: dc_minus, value: "${half_bus}"}
+    - {id: vhigh, type: voltage_source, p: dc_plus, n: neutral, value: "${half_bus}"}
+
+    - {id: qah, type: ideal_switch, p: dc_plus, n: a, control: leg_a.high}
+    - {id: qal, type: ideal_switch, p: a, n: dc_minus, control: leg_a.low}
+    - {id: qbh, type: ideal_switch, p: dc_plus, n: b, control: leg_b.high}
+    - {id: qbl, type: ideal_switch, p: b, n: dc_minus, control: leg_b.low}
+    - {id: qch, type: ideal_switch, p: dc_plus, n: c, control: leg_c.high}
+    - {id: qcl, type: ideal_switch, p: c, n: dc_minus, control: leg_c.low}
+
+    - {id: la, type: inductor, p: a, n: ar, value: "${phase_l}", initial_current: 0 A}
+    - {id: ra, type: resistor, p: ar, n: neutral, value: "${phase_r}"}
+    - {id: lb, type: inductor, p: b, n: br, value: "${phase_l}", initial_current: 0 A}
+    - {id: rb, type: resistor, p: br, n: neutral, value: "${phase_r}"}
+    - {id: lc, type: inductor, p: c, n: cr, value: "${phase_l}", initial_current: 0 A}
+    - {id: rc, type: resistor, p: cr, n: neutral, value: "${phase_r}"}
+    - {id: vab, type: voltage_probe, p: a, n: b}
+
+# Three intrinsically interlocked 180-degree legs, shifted by 120 degrees.
+# This six-step fixture uses zero dead time; nonzero dead time is exercised by
+# synchronous_buck_complementary.yaml and the independent schedule oracle tests.
+controls:
+  leg_a:
+    {type: complementary_pwm, frequency: "${fundamental}", duty: 50 %, phase: 0 us,
+     dead_time: 0 s}
+  leg_b:
+    {type: complementary_pwm, frequency: "${fundamental}", duty: 50 %,
+     phase: 333.3333333333333 us, dead_time: 0 s}
+  leg_c:
+    {type: complementary_pwm, frequency: "${fundamental}", duty: 50 %,
+     phase: 666.6666666666666 us, dead_time: 0 s}
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 10 ms
+    output_step: 2 us
+    solver: dopri5
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs: [v(vab), i(la), i(lb), i(lc)]

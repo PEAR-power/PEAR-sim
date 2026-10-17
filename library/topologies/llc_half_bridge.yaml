@@ -1,0 +1,121 @@
+# Topology library entry. Data, not code.
+#
+# The mode sequence below is NOT documentation prose: it deserializes into the
+# exact ModeSequence dataclass the gradient engine consumes, and it was
+# extracted from a live run of the referenced model. The suite re-extracts it
+# from a fresh run on every commit and fails if the stored cycle stops matching
+# reality (tests/test_topology_library.py).
+
+schema: pear-sim/topology-entry/v0.1
+id: llc_half_bridge
+name: Half-bridge LLC resonant converter
+prerequisites:
+  isolation: provided
+  direction: unidirectional
+  voltage:
+    min_v: 50.0
+    max_v: 1000.0
+  power:
+    min_w: 50.0
+    max_w: 5000.0
+mode_sequences:
+- label: above_resonance
+  source_model: examples/llc_resonant.yaml
+  sequence:
+    schema: pear-sim/mode-sequence/v0.1
+    period_s: 5.0e-05
+    source_run_sha256: 038a96fa8fcfa5666729cf2aca2807c39f8e265dc7176b8234e80712c6cbba32
+    extraction_tolerance_s: 1.0e-12
+    steps:
+    - signature: gates[leg.high=on,leg.low=off];diodes[dh=off,dl=off,dr1=off,dr2=on,dr3=on,dr4=off];constrained_inductors[none]
+      gates:
+        leg.high: true
+        leg.low: false
+      diodes:
+        dh: false
+        dl: false
+        dr1: false
+        dr2: true
+        dr3: true
+        dr4: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: dr2
+        guard_is_current: true
+      nominal_duration_s: 2.480280358811704e-06
+    - signature: gates[leg.high=on,leg.low=off];diodes[dh=off,dl=off,dr1=on,dr2=off,dr3=off,dr4=on];constrained_inductors[none]
+      gates:
+        leg.high: true
+        leg.low: false
+      diodes:
+        dh: false
+        dl: false
+        dr1: true
+        dr2: false
+        dr3: false
+        dr4: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: leg.high
+        guard_is_current: false
+      nominal_duration_s: 2.251971956155653e-05
+    - signature: gates[leg.high=off,leg.low=on];diodes[dh=off,dl=off,dr1=on,dr2=off,dr3=off,dr4=on];constrained_inductors[none]
+      gates:
+        leg.high: false
+        leg.low: true
+      diodes:
+        dh: false
+        dl: false
+        dr1: true
+        dr2: false
+        dr3: false
+        dr4: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: dr1
+        guard_is_current: true
+      nominal_duration_s: 2.4802803588099692e-06
+    - signature: gates[leg.high=off,leg.low=on];diodes[dh=off,dl=off,dr1=off,dr2=on,dr3=on,dr4=off];constrained_inductors[none]
+      gates:
+        leg.high: false
+        leg.low: true
+      diodes:
+        dh: false
+        dl: false
+        dr1: false
+        dr2: true
+        dr3: true
+        dr4: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: period_end
+        target: ''
+        guard_is_current: false
+      nominal_duration_s: 2.2519719561554796e-05
+kernel_support:
+  status: simulated
+  note: Runs on the reference kernel. Notably, the gradient engine solves this topology on
+    an invariant subspace in a regime where the production shooting solver does not work at
+    all. No comparison against an independent simulation engine exists for this entry.
+known_limitations:
+- 'Gain is controlled by frequency and is NOT monotone across the whole range: operating below
+  the resonant frequency risks the capacitive region, where the bridge hard-switches into
+  its own body diodes — a device-destroying failure mode, not a performance penalty.'
+- Regulation degrades badly at no load and the topology has no inherent short-circuit control;
+  a protection scheme is part of the design, not an option.
+- Behaviour depends strongly on the Lm/Lr ratio and on resonant-component tolerances, which
+  shift the whole gain curve.
+- The stored cycle is a single above-resonance operating point.
+- High-frequency magnetic losses and burst-mode operation are outside the kernel's declared
+  scope.
+template:
+  model: examples/llc_resonant.yaml
+notes: The isolated step-down slot for efficiency-driven designs (server and telecom supplies),
+  typically behind a PFC stage. Ranges are the entry author's judgement, before review.

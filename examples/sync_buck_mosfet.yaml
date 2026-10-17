@@ -1,0 +1,59 @@
+schema: pear-sim/v0.1
+name: sync_buck_mosfet
+
+# 48 V to 12 V, 10 A synchronous buck at 200 kHz with MOSFETs modelled as an
+# ideal switch with on-resistance plus an antiparallel body diode with a forward
+# drop. During each 50 ns dead time the low-side body diode carries the inductor
+# current, so the output sits below D * Vin by the dead-time and R_on drops.
+#
+# The capacitor ESR and inductor DCR are written as series resistors.
+# Illustrative values, not a specific part.
+
+parameters:
+  vin: 48 V
+  fsw: 200 kHz
+  duty: 26 %
+  dead_time: 50 ns
+  rdson: 8 milliohm
+  vf_body: 0.8 V
+  load: 1.2 ohm
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+    - {id: qh, type: ideal_switch, p: in, n: sw, control: leg.high, on_resistance: "${rdson}"}
+    - {id: ql, type: ideal_switch, p: sw, n: gnd, control: leg.low, on_resistance: "${rdson}"}
+    - {id: dh, type: diode, p: sw, n: in, forward_voltage: "${vf_body}", initial: off}
+    - {id: dl, type: diode, p: gnd, n: sw, forward_voltage: "${vf_body}", initial: off}
+    - {id: l1, type: inductor, p: sw, n: lx, value: 15 uH, initial_current: 10 A}
+    - {id: dcr, type: resistor, p: lx, n: out, value: 5 milliohm}
+    - {id: esr, type: resistor, p: out, n: cx, value: 2 milliohm}
+    - {id: c1, type: capacitor, p: cx, n: gnd, value: 100 uF, initial_voltage: 12 V}
+    - {id: load, type: resistor, p: out, n: gnd, value: "${load}"}
+
+controls:
+  leg:
+    type: complementary_pwm
+    frequency: "${fsw}"
+    duty: "${duty}"
+    phase: 0 s
+    dead_time: "${dead_time}"
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 1 ms
+    output_step: 20 ns
+    solver: dop853
+    rtol: 1.0e-9
+    atol: 1.0e-11
+
+outputs:
+  - v(out)
+  - v(sw)
+  - i(l1)
+  - i(qh)
+  - i(ql)
+  - i(dl)
+  - i(load)

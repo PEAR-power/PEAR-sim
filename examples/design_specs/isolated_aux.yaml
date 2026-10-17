@@ -1,0 +1,41 @@
+schema: pear-sim/design-spec/v0.1
+name: isolated_aux_supply_48v_to_12v
+
+# A COMPLETE specification: every required field is either declared by the
+# owner or assumed by a named human with a rationale. This is the reference
+# document for the DesignSpec examples and tests; numbers are representative.
+#
+# hard: = rejects topology families (screening).
+# soft: = ranks candidates on the Pareto front (comparison).
+# Putting a field in the wrong section is a validation error, on purpose.
+
+owner: {id: jdoe, name: "Jane Doe"}
+
+hard:
+  input:
+    kind: dc
+    voltage_v: {min: 36, max: 75}          # telecom 48 V bus window
+  output:
+    voltage_v: {nominal: 12, tolerance_pct: 5}
+    power_w: {max: 60}
+  isolation: required                       # family-level reject: no buck/boost
+  direction: unidirectional
+  standards:
+    emc: ["EN 55032 Class B"]
+    safety: ["IEC 62368-1"]
+
+soft:
+  targets:
+    efficiency_pct: 92
+    cost: {value: 18, currency: EUR}
+  lead_time_weeks: 12
+  preferences:
+    - "prefer parts already qualified in-house"
+
+assumptions:
+  - field: environment.ambient_c
+    value: {min: -10, max: 55}
+    author: {id: jdoe, name: "Jane Doe"}
+    rationale: >-
+      Indoor cabinet assumed per the usual telecom deployment; to be
+      confirmed with the customer before thermal sign-off.

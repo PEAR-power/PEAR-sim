@@ -1,0 +1,148 @@
+# Topology library entry. Data, not code.
+#
+# The mode sequence below is NOT documentation prose: it deserializes into the
+# exact ModeSequence dataclass the gradient engine consumes, and it was
+# extracted from a live run of the referenced model. The suite re-extracts it
+# from a fresh run on every commit and fails if the stored cycle stops matching
+# reality (tests/test_topology_library.py).
+
+schema: pear-sim/topology-entry/v0.1
+id: inverter_2l_3ph
+name: Two-level three-phase voltage-source inverter
+prerequisites:
+  isolation: none
+  direction: bidirectional
+  voltage:
+    min_v: 48.0
+    max_v: 1500.0
+  power:
+    min_w: 100.0
+    max_w: 1000000.0
+mode_sequences:
+- label: six_step
+  source_model: examples/inverter_three_phase_six_step.yaml
+  sequence:
+    schema: pear-sim/mode-sequence/v0.1
+    period_s: 0.001
+    source_run_sha256: 63981694a88acf07617f8918f187c361d7eb405f957fe37dc94577c6e47cca6e
+    extraction_tolerance_s: 1.0e-12
+    steps:
+    - signature: gates[leg_a.high=on,leg_a.low=off,leg_b.high=off,leg_b.low=on,leg_c.high=on,leg_c.low=off];diodes[];constrained_inductors[none]
+      gates:
+        leg_a.high: true
+        leg_a.low: false
+        leg_b.high: false
+        leg_b.low: true
+        leg_c.high: true
+        leg_c.low: false
+      diodes: {}
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: leg_c.high
+        guard_is_current: false
+      nominal_duration_s: 0.00016666666666666566
+    - signature: gates[leg_a.high=on,leg_a.low=off,leg_b.high=off,leg_b.low=on,leg_c.high=off,leg_c.low=on];diodes[];constrained_inductors[none]
+      gates:
+        leg_a.high: true
+        leg_a.low: false
+        leg_b.high: false
+        leg_b.low: true
+        leg_c.high: false
+        leg_c.low: true
+      diodes: {}
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: leg_b.low
+        guard_is_current: false
+      nominal_duration_s: 0.0001666666666666674
+    - signature: gates[leg_a.high=on,leg_a.low=off,leg_b.high=on,leg_b.low=off,leg_c.high=off,leg_c.low=on];diodes[];constrained_inductors[none]
+      gates:
+        leg_a.high: true
+        leg_a.low: false
+        leg_b.high: true
+        leg_b.low: false
+        leg_c.high: false
+        leg_c.low: true
+      diodes: {}
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: leg_a.high
+        guard_is_current: false
+      nominal_duration_s: 0.0001666666666666674
+    - signature: gates[leg_a.high=off,leg_a.low=on,leg_b.high=on,leg_b.low=off,leg_c.high=off,leg_c.low=on];diodes[];constrained_inductors[none]
+      gates:
+        leg_a.high: false
+        leg_a.low: true
+        leg_b.high: true
+        leg_b.low: false
+        leg_c.high: false
+        leg_c.low: true
+      diodes: {}
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: leg_c.low
+        guard_is_current: false
+      nominal_duration_s: 0.00016666666666666566
+    - signature: gates[leg_a.high=off,leg_a.low=on,leg_b.high=on,leg_b.low=off,leg_c.high=on,leg_c.low=off];diodes[];constrained_inductors[none]
+      gates:
+        leg_a.high: false
+        leg_a.low: true
+        leg_b.high: true
+        leg_b.low: false
+        leg_c.high: true
+        leg_c.low: false
+      diodes: {}
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: leg_b.high
+        guard_is_current: false
+      nominal_duration_s: 0.0001666666666666674
+    - signature: gates[leg_a.high=off,leg_a.low=on,leg_b.high=off,leg_b.low=on,leg_c.high=on,leg_c.low=off];diodes[];constrained_inductors[none]
+      gates:
+        leg_a.high: false
+        leg_a.low: true
+        leg_b.high: false
+        leg_b.low: true
+        leg_c.high: true
+        leg_c.low: false
+      diodes: {}
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: period_end
+        target: ''
+        guard_is_current: false
+      nominal_duration_s: 0.00016666666666666566
+kernel_support:
+  status: simulated
+  note: Runs on the reference kernel with a floating-neutral load (floating-star DAE reduction). No
+    comparison against an independent simulation engine exists for this entry. The stored
+    cycle is the SIX-STEP one, which is the modulation-independent cycle of this bridge.
+known_limitations:
+- The stored cycle is six-step. A PWM-modulated cycle is not a property of the topology alone
+  — it depends on carrier ratio, modulation index and load — so no PWM cycle is stored here.
+- 'Two output levels mean full-bus dv/dt at every commutation: motor insulation stress, bearing
+  currents and EMI filtering are design constraints, not afterthoughts.'
+- Dead time is mandatory against shoot-through and it distorts the output; at 500 ns and 21
+  kHz the measured fundamental loss is about 1.4 %.
+- Common-mode voltage steps between +-Vdc/6 and +-Vdc/2 — relevant wherever a common-mode
+  path exists.
+- 'No isolation: the DC bus and the load share a reference.'
+template:
+  model: examples/inverter_three_phase_six_step.yaml
+notes: 'Third stage of the drive chain, and the same netlist serves as an ACTIVE FRONT END
+  when the control layer changes (control is a separate layer of the system graph, not
+  an attribute of the topology). A separate bidirectional AFE entry is deliberately NOT shipped
+  yet: its natural reference model (examples/grid_following_converter.yaml) costs about 105
+  s per run, which is too expensive for the per-commit re-extraction gate. Ranges are the
+  entry author''s judgement, before review.'

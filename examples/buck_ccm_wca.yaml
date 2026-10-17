@@ -1,0 +1,140 @@
+# Worst-case-analysis fixture: closed-loop CCM buck with the parasitics a
+# parametric-corner campaign needs somewhere to act on.
+#
+# Derived from buck_closed_loop.yaml. examples/buck.yaml (`buck_ccm`) is left
+# untouched — it is the regression witness, and adding elements to it would
+# make "identical result as before" meaningless.
+#
+# EVERY drift figure below is `source: assumption`. They are placeholders with
+# plausible orders of magnitude, chosen to exercise the corner machinery. NONE
+# of them describes a real component, and nothing here predicts what a real
+# device would do under any environment. A drift figure that matters must come
+# from a datasheet, a qualification report, or a standard — and must then be
+# re-declared with the matching `source`.
+#
+# Structural notes:
+# - `vos` + `rsense` inject an error-amplifier input offset the only way the
+#   v0.1 controller can see one: by sensing a node that differs from `out` by a
+#   declared voltage. v(out_s) = v(out) - voffset.
+# - `rds` is the switch on-resistance, in series with the ideal switch.
+# - `resr` is the output-capacitor ESR, in series with c1.
+# - The load is 2 ohm (6 A), not the 10 ohm of the parent example, and the PI
+#   is retuned to kp=0.06 / ki=150. At the lighter load the inductor current
+#   reaches zero on ripple, the DCM nonlinearity enters the loop, and the
+#   controller limit-cycles at a few hundred Hz with volts of output swing. At
+#   6 A the current never reaches zero, the plant stays linear, and the loop is
+#   well behaved: 12.012 V mean, 227 mV ripple, i(l1) in [4.56, 7.46] A.
+#   Measured 2026-07-27; one run is ~1.1 s over the 6 ms window.
+#
+# NO leakage element. This is a measured limitation, not an oversight: an
+# off-state leakage path in parallel with the ideal switch makes the run
+# intractable above about 10 kohm. Measured on this fixture over a 300 us
+# window (2026-07-27): 10 kohm runs in 5.5 s, 100 kohm / 1 Mohm / 10 Mohm all
+# fail to finish inside 40 s. A real SiC off-state leakage is hundreds of
+# megohms, i.e. four decades past where this kernel stops converging, so a
+# leakage-drift campaign is NOT expressible here today.
+schema: pear-sim/v0.1
+name: buck_ccm_wca
+
+parameters:
+  vin: 24 V
+  load: 2 ohm
+
+  vref:
+    nominal: 12 V
+    source: assumption
+    note: >-
+      Placeholder for combined voltage-reference drift. Order of magnitude only;
+      no real reference is described. Replace with a qualification-report figure
+      before any of this is used to argue a margin.
+    corners:
+      eol_lo: 11.76 V
+      eol_hi: 12.24 V
+
+  voffset:
+    nominal: 0 V
+    source: assumption
+    note: >-
+      Placeholder for error-amplifier input offset. Nominal is exactly zero:
+      an undeclared offset is no offset.
+    corners:
+      eol_lo: -5 mV
+      eol_hi: 5 mV
+
+  fsw:
+    nominal: 50 kHz
+    source: assumption
+    note: >-
+      Placeholder for oscillator frequency spread. Reported spreads of this kind
+      widen with accumulated dose; this figure is not taken from any measurement.
+    corners:
+      eol_lo: 43.45 kHz
+      eol_hi: 56.55 kHz
+
+  rdson:
+    nominal: 25 mohm
+    source: assumption
+    note: >-
+      Placeholder for switch on-resistance. Nominal and end-of-life values are
+      illustrative and describe no particular device.
+    corners:
+      eol_hi: 50 mohm
+    life: {type: linear, end_of_life_percent: 100.0}
+
+  esr:
+    nominal: 20 mohm
+    source: assumption
+    note: >-
+      Placeholder for output-capacitor ESR. Chosen to make the ESR-driven step
+      of an injected current visible against the nominal ripple. The geometric
+      life model (x3 end of life) is here to exercise the life-fraction path;
+      the factor is illustrative and measures nothing.
+    corners:
+      eol_lo: 10 mohm
+      eol_hi: 80 mohm
+    life: {type: geometric, end_of_life_ratio: 3.0}
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+    - {id: q1, type: ideal_switch, p: in, n: swa, control: ctrl, initial: on}
+    - {id: rds, type: resistor, p: swa, n: sw, value: "${rdson}"}
+    - {id: d1, type: diode, p: gnd, n: sw, initial: off}
+    - {id: l1, type: inductor, p: sw, n: out, value: 47 uH, initial_current: 6.0 A}
+    - {id: c1, type: capacitor, p: out, n: cx, value: 100 uF, initial_voltage: 12 V}
+    - {id: resr, type: resistor, p: cx, n: gnd, value: "${esr}"}
+    - {id: load, type: resistor, p: out, n: gnd, value: "${load}"}
+    # Sense path: the controller reads out_s, which sits one declared offset
+    # below out. rsense keeps the node determined without loading the output.
+    - {id: vos, type: voltage_source, p: out, n: out_s, value: "${voffset}"}
+    - {id: rsense, type: resistor, p: out_s, n: gnd, value: 1 megaohm}
+
+controls:
+  ctrl:
+    type: sampled_pi_pwm
+    frequency: "${fsw}"
+    sense: v(out_s)
+    reference: "${vref}"
+    kp: 0.06
+    ki: 150
+    duty_min: 5 %
+    duty_max: 95 %
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 6 ms
+    output_step: 2 us
+    solver: dopri5
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs:
+  - v(out)
+  - v(out_s)
+  - i(l1)
+  - v(q1)
+  - i(q1)
+  - i(d1)
+  - i(load)

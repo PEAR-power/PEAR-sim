@@ -1,0 +1,68 @@
+# Topology library entry. Data, not code: the selection
+# engine reads this file; nothing in pear_sim names "buck" in code.
+#
+# The mode sequence below is NOT documentation prose — it deserializes into
+# the exact ModeSequence dataclass the gradient engine consumes, and it was
+# extracted from a live run of the referenced model (source_run_sha256 is
+# that run's identity). tests/test_topology_library.py re-extracts it from
+# a fresh run and fails if the stored cycle no longer matches reality.
+
+schema: pear-sim/topology-entry/v0.1
+id: buck
+name: "Buck — non-isolated step-down converter"
+
+prerequisites:
+  isolation: none
+  direction: unidirectional
+  voltage:
+    min_v: 1.0
+    max_v: 1000.0
+  power:
+    min_w: 0.1
+    max_w: 100000.0
+
+mode_sequences:
+  - label: ccm
+    source_model: examples/buck.yaml
+    sequence:
+      schema: pear-sim/mode-sequence/v0.1
+      period_s: 5.0e-05
+      source_run_sha256: ed6d0e7b4a3cf3cdcb64b2cb7384ec5cfde619bd141877f3eb31991581987327
+      extraction_tolerance_s: 1.0e-12
+      steps:
+        - signature: gates[pwm=on];diodes[d1=off];constrained_inductors[none]
+          gates: {pwm: true}
+          diodes: {d1: false}
+          constrained_inductors: []
+          saturated_inductors: []
+          exit: {kind: scheduled_gate, target: pwm, guard_is_current: false}
+          nominal_duration_s: 1.9999999999999836e-05
+        - signature: gates[pwm=off];diodes[d1=on];constrained_inductors[none]
+          gates: {pwm: false}
+          diodes: {d1: true}
+          constrained_inductors: []
+          saturated_inductors: []
+          exit: {kind: period_end, target: '', guard_is_current: false}
+          nominal_duration_s: 3.000000000000008e-05
+
+kernel_support:
+  status: simulated
+  note: >-
+    Runs on the reference kernel; the stored CCM cycle is re-extracted from examples/buck.yaml by the suite on every run.
+
+known_limitations:
+  - "No galvanic isolation; input and output share a ground reference."
+  - "Unidirectional as entered here (diode rectifier): cannot sink power
+    back to the input without replacing the diode with a controlled switch."
+  - "Step-down only; the conversion ratio is limited to D <= 1 and extreme
+    duty ratios (D < ~0.1) degrade efficiency and controllability."
+  - "The switch sees the full input voltage, so device stress follows V_in,
+    not V_out — high-V_in low-V_out designs pay for it in the transistor."
+  - "Pulsed input current demands substantial input-side filtering; the
+    stored CCM sequence stops being valid below the DCM boundary load."
+
+template:
+  model: examples/buck.yaml
+
+notes: "First entry of the library (the vertical-slice topology). Ranges
+  bound where the topology is a sensible candidate, not device limits."

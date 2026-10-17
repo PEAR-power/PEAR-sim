@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PEAR-power/pear-sim/main/schema/stability-request.schema.json",
+  "title": "PEARSim stability analysis request",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "pear-sim/stability-request/v0.1"
+    },
+    "output": {
+      "type": "string",
+      "minLength": 1
+    },
+    "compensator": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "numerator": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1
+        },
+        "denominator": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "sensor_gain": {
+      "type": "number"
+    },
+    "f_min_hz": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "f_max_hz": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "points": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 100000
+    },
+    "margins": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "min_phase_margin_deg": {
+          "type": "number"
+        },
+        "min_gain_margin_db": {
+          "type": "number"
+        }
+      }
+    },
+    "sampling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "update_frequency_hz": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "computation_delay_s": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

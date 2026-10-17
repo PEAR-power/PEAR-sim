@@ -1,0 +1,142 @@
+schema: pear-sim/v0.1
+name: synrm_torque_test
+
+# SYNCHRONOUS RELUCTANCE MACHINE (no excitation) — torque test.
+#
+# ALL of the torque comes from the difference between the d- and q-axis
+# inductances, because there are practically no magnets
+# (flux_linkage_wb = 0 — literally zero, not "almost zero").
+#
+# WHY THIS FILE EXISTS. With Ld = Lq this machine would produce exactly
+# ZERO torque — not "less accurate", zero. With salient inductances it
+# produces tens of N*m, so the file guards support for Ld != Lq.
+#
+# The shaft is driven externally (speed ramp) because the question is "how
+# much torque", not "what speed will it reach" — and because a reluctance
+# machine fed at a fixed frequency will not start on its own from standstill.
+#
+# WHAT IS NOT HERE: saturation and flux maps. A real reluctance machine
+# operates deep in saturation, so constant Ld/Lq is a linear model — useful
+# for checking that reluctance torque is present at all, not for designing a
+# machine. For flux-map machines see pmsm_saturating_flux_map.yaml.
+
+parameters:
+  udc_half: 300 V
+  fsw: 10 kHz
+  ffund: 100 Hz
+  mi: 8 %
+  dead_time: 0 s
+circuit:
+  ground: mid
+  components:
+  - id: vp
+    type: voltage_source
+    p: dcp
+    n: mid
+    value: ${udc_half}
+  - id: vn
+    type: voltage_source
+    p: mid
+    n: dcn
+    value: ${udc_half}
+  - id: qah
+    type: ideal_switch
+    p: dcp
+    n: ta
+    control: bridge.a.high
+  - id: qal
+    type: ideal_switch
+    p: ta
+    n: dcn
+    control: bridge.a.low
+  - id: dah
+    type: diode
+    p: ta
+    n: dcp
+    initial: false
+  - id: dal
+    type: diode
+    p: dcn
+    n: ta
+    initial: false
+  - id: qbh
+    type: ideal_switch
+    p: dcp
+    n: tb
+    control: bridge.b.high
+  - id: qbl
+    type: ideal_switch
+    p: tb
+    n: dcn
+    control: bridge.b.low
+  - id: dbh
+    type: diode
+    p: tb
+    n: dcp
+    initial: false
+  - id: dbl
+    type: diode
+    p: dcn
+    n: tb
+    initial: false
+  - id: qch
+    type: ideal_switch
+    p: dcp
+    n: tc
+    control: bridge.c.high
+  - id: qcl
+    type: ideal_switch
+    p: tc
+    n: dcn
+    control: bridge.c.low
+  - id: dch
+    type: diode
+    p: tc
+    n: dcp
+    initial: false
+  - id: dcl
+    type: diode
+    p: dcn
+    n: tc
+    initial: false
+machines:
+  motor:
+    type: pmsm
+    terminals:
+    - ta
+    - tb
+    - tc
+    neutral: nstar
+    pole_pairs: 4
+    stator_resistance_ohm: 0.2
+    stator_inductance_h: 0.002
+    flux_linkage_wb: 0.0
+    initial_angle_rad: 0.0
+    driven_speed:
+      initial_rad_s: 0.0
+      final_rad_s: 157.0796
+      ramp_start_s: 0.0
+      ramp_stop_s: 0.03
+    d_axis_inductance_h: 0.001
+    q_axis_inductance_h: 0.003
+controls:
+  bridge:
+    type: three_phase_spwm
+    carrier_frequency: ${fsw}
+    fundamental_frequency: ${ffund}
+    modulation_index: ${mi}
+    dead_time: ${dead_time}
+analysis:
+  transient:
+    start: 0 s
+    stop: 40 ms
+    output_step: 10 us
+    solver: dopri5
+    rtol: 1.0e-08
+    atol: 1.0e-10
+outputs:
+- v(ta)
+- i(motor.a.l)
+- torque(motor)
+- speed_mech(motor)
+- angle_elec(motor)

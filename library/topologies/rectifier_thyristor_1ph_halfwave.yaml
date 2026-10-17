@@ -1,0 +1,100 @@
+# Topology library entry. Data, not code.
+#
+# The mode sequence below is NOT documentation prose: it deserializes into the
+# exact ModeSequence dataclass the gradient engine consumes, and it was
+# extracted from a live run of the referenced model. The suite re-extracts it
+# from a fresh run on every commit and fails if the stored cycle stops matching
+# reality (tests/test_topology_library.py).
+
+schema: pear-sim/topology-entry/v0.1
+id: rectifier_thyristor_1ph_halfwave
+name: Single-phase half-wave phase-controlled thyristor rectifier
+prerequisites:
+  isolation: none
+  direction: unidirectional
+  voltage:
+    min_v: 20.0
+    max_v: 1000.0
+  power:
+    min_w: 10.0
+    max_w: 5000.0
+mode_sequences:
+- label: phase_controlled
+  source_model: examples/thyristor_phase_controlled.yaml
+  sequence:
+    schema: pear-sim/mode-sequence/v0.1
+    period_s: 0.02
+    source_run_sha256: 02234ce6be1401e82d4f8575e257a28fb6d7b619ece98131fd579b61e6db2bad
+    extraction_tolerance_s: 1.0e-12
+    steps:
+    - signature: gates[fire=off];diodes[t1=off];constrained_inductors[ll]
+      gates:
+        fire: false
+      diodes:
+        t1: false
+      constrained_inductors:
+      - ll
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: fire
+        guard_is_current: false
+      nominal_duration_s: 0.0033330000000000026
+    - signature: gates[fire=on];diodes[t1=on];constrained_inductors[none]
+      gates:
+        fire: true
+      diodes:
+        t1: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: fire
+        guard_is_current: false
+      nominal_duration_s: 0.0003999999999999976
+    - signature: gates[fire=off];diodes[t1=on];constrained_inductors[none]
+      gates:
+        fire: false
+      diodes:
+        t1: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: t1
+        guard_is_current: true
+      nominal_duration_s: 0.00803070092983562
+    - signature: gates[fire=off];diodes[t1=off];constrained_inductors[ll]
+      gates:
+        fire: false
+      diodes:
+        t1: false
+      constrained_inductors:
+      - ll
+      saturated_inductors: []
+      exit:
+        kind: period_end
+        target: ''
+        guard_is_current: false
+      nominal_duration_s: 0.008236299070164377
+kernel_support:
+  status: simulated
+  note: 'Runs on the reference kernel, including the latch: the device keeps conducting after
+    the gate pulse ends and turns off only at the current zero. NOTE: the thyristor has no
+    independent oracle yet, so this entry rests on kernel-internal evidence.'
+known_limitations:
+- Half-wave rectification injects a DC component into the supply current, which saturates
+  a feeding transformer — the arrangement is a teaching and small-load circuit, not a power
+  front end.
+- Output ripple is enormous and the ripple frequency equals the line frequency, so filtering
+  is expensive.
+- Displacement power factor collapses as the firing angle grows; control range is bought with
+  reactive power.
+- 'Turn-off is not commandable: the device conducts until the current reaches zero, so the
+  load inductance sets the conduction window.'
+- Single phase only; no isolation.
+template:
+  model: examples/thyristor_phase_controlled.yaml
+notes: Present because phase control is a distinct family the selection engine must be able
+  to reject explicitly, not because it is a recommended front end. Ranges are the entry author's
+  judgement.

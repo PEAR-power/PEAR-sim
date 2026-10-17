@@ -1,0 +1,52 @@
+# Closed-loop control gate scenario: closed-loop buck with a load step.
+# The sampled PI gains were chosen with the averaged loop-gain analysis: at this
+# operating point kp=0.002/ki=30 gives PM ~92 deg @ 115 Hz, GM ~9 dB.
+# (kp=0.08/ki=150 gives PM ~2 deg and reproduces a ~4 kHz limit cycle in
+# this very simulator — the averaged model and the switching kernel agree.)
+# The load step is a step-waveform current sink at the output.
+schema: pear-sim/v0.1
+name: buck_closed_loop_load_step
+
+parameters:
+  vin: 24 V
+  fsw: 50 kHz
+  vref: 12 V
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+    - {id: q1, type: ideal_switch, p: in, n: sw, control: ctrl, initial: on}
+    - {id: d1, type: diode, p: gnd, n: sw, initial: off}
+    - {id: l1, type: inductor, p: sw, n: out, value: 47 uH, initial_current: 1.2 A}
+    - {id: c1, type: capacitor, p: out, n: gnd, value: 100 uF, initial_voltage: 12 V}
+    - {id: load, type: resistor, p: out, n: gnd, value: 10 ohm}
+    - id: istep
+      type: current_source
+      p: out
+      n: gnd
+      waveform: {type: step, initial: 0 A, final: 1 A, at: 25 ms}
+
+controls:
+  ctrl:
+    type: sampled_pi_pwm
+    frequency: "${fsw}"
+    sense: v(out)
+    reference: "${vref}"
+    kp: 0.002
+    ki: 30
+    duty_min: 5 %
+    duty_max: 95 %
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 45 ms
+    output_step: 2 us
+    solver: dopri5
+    rtol: 1.0e-9
+    atol: 1.0e-11
+
+outputs:
+  - v(out)
+  - i(l1)

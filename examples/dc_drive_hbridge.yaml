@@ -1,0 +1,77 @@
+schema: pear-sim/v0.1
+name: dc_drive_hbridge
+
+# Small DC drive: PMDC motor + H-bridge, bipolar PWM start-up.
+# The permanent-magnet DC machine is represented by its EXACT linear
+# equivalent circuit (valid because back-EMF e = Ke*w and torque T = Kt*i
+# are linear couplings with Ke = Kt in SI units):
+#   armature:   Ra + La in series
+#   mechanics:  C_j = J/Ke^2   (inertia)   -> v(cj) = Ke * w
+#               R_f = Ke^2/B   (friction)  in parallel with C_j
+# Parameters below: Ra=1 ohm, La=5 mH, Ke=Kt=0.1 V*s/rad, J=2e-4 kg*m^2,
+# B=1e-4 N*m*s  =>  C_j=0.02 F, R_f=100 ohm.
+# Bipolar PWM: leg A duty D, leg B duty (1-D) shifted by D*T, so the bridge
+# output alternates +Vdc / -Vdc with mean (2D-1)*Vdc = 12 V at D=75 %.
+# Expected steady state (friction load only): w ~= 118.8 rad/s, ia ~= 0.119 A.
+
+parameters:
+  vdc: 24 V
+  fsw: 5 kHz
+  duty_a: 75 %
+  duty_b: 25 %
+  phase_b: 150 us
+  dead_time: 1 us
+  ra: 1 ohm
+  la: 5 mH
+  cj: 0.02 F
+  rfric: 100 ohm
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vdc, type: voltage_source, p: in, n: gnd, value: "${vdc}"}
+    # leg A
+    - {id: qah, type: ideal_switch, p: in, n: swa, control: lega.high}
+    - {id: qal, type: ideal_switch, p: swa, n: gnd, control: lega.low}
+    - {id: dah, type: diode, p: swa, n: in, initial: off}
+    - {id: dal, type: diode, p: gnd, n: swa, initial: off}
+    # leg B
+    - {id: qbh, type: ideal_switch, p: in, n: swb, control: legb.high}
+    - {id: qbl, type: ideal_switch, p: swb, n: gnd, control: legb.low}
+    - {id: dbh, type: diode, p: swb, n: in, initial: off}
+    - {id: dbl, type: diode, p: gnd, n: swb, initial: off}
+    # PMDC motor equivalent (armature + mechanics), standstill start
+    - {id: rarm, type: resistor, p: swa, n: m1, value: "${ra}"}
+    - {id: larm, type: inductor, p: m1, n: m2, value: "${la}", initial_current: 0 A}
+    - {id: cj, type: capacitor, p: m2, n: swb, value: "${cj}", initial_voltage: 0 V}
+    - {id: rfric, type: resistor, p: m2, n: swb, value: "${rfric}"}
+
+controls:
+  lega:
+    type: complementary_pwm
+    frequency: "${fsw}"
+    duty: "${duty_a}"
+    phase: 0 s
+    dead_time: "${dead_time}"
+  legb:
+    type: complementary_pwm
+    frequency: "${fsw}"
+    duty: "${duty_b}"
+    phase: "${phase_b}"
+    dead_time: "${dead_time}"
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 60 ms
+    output_step: 5 us
+    solver: dop853
+    rtol: 1.0e-9
+    atol: 1.0e-11
+
+outputs:
+  - v(swa)
+  - v(swb)
+  - i(larm)
+  - v(cj)
+  - i(vdc)

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PEAR-power/pear-sim/main/schema/stability-evidence.schema.json",
+  "title": "PEARSim stability analysis evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "kind",
+    "pear_sim_version",
+    "model",
+    "model_hashes",
+    "request",
+    "gates",
+    "overall_status",
+    "claim_boundary"
+  ],
+  "properties": {
+    "schema": {
+      "const": "pear-sim/stability-evidence/v0.1"
+    },
+    "kind": {
+      "const": "stability-analysis"
+    },
+    "pear_sim_version": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "model_hashes": {
+      "type": "object"
+    },
+    "request": {
+      "type": "object"
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "status",
+          "blocking",
+          "detail"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "fail"
+            ]
+          },
+          "blocking": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "overall_status": {
+      "enum": [
+        "pass",
+        "fail"
+      ]
+    },
+    "loop_gain_error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "claim_boundary": {
+      "type": "string"
+    }
+  }
+}

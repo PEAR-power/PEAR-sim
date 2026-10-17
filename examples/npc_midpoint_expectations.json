@@ -1,0 +1,28 @@
+{
+  "schema": "pear-sim/expectations/v0.1",
+  "purpose": "Midpoint-balance envelope for the capacitive-link three-phase NPC example. The gate blocks when the DC-link midpoint drifts or ripples outside the declared envelope; it does not claim active balancing (none is implemented yet).",
+  "measurement_window": {
+    "kind": "last_half",
+    "start_s": 0.02,
+    "end_s": 0.04
+  },
+  "criteria": [
+    {
+      "id": "midpoint_mean_balance",
+      "signal": "v(mid)",
+      "metric": "mean_last_half",
+      "unit": "V",
+      "target": 600.0,
+      "absolute_tolerance": 40.0,
+      "blocking": true
+    },
+    {
+      "id": "midpoint_ripple_envelope",
+      "signal": "v(mid)",
+      "metric": "peak_to_peak_last_half",
+      "unit": "V",
+      "maximum": 150.0,
+      "blocking": true
+    }
+  ]
+}

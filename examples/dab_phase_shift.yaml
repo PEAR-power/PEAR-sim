@@ -1,0 +1,126 @@
+schema: pear-sim/v0.1
+name: dab_phase_shift
+
+# Dual Active Bridge — the isolated bidirectional workhorse, and the first
+# resonant/isolated rung of the gradient engine's LLC/DAB slice. Two full bridges around a
+# transformer whose LEAKAGE is the power-transfer element: the declared
+# coupling k < 1 leaves L_sigma ~ 2*Lp*(1-k) in series, and the phase shift
+# phi between the bridges drives the classic
+#
+#   P = Vin * Vout' * phi * (1 - phi/pi) / (2*pi*fsw*L_sigma)
+#
+# power flow. The output voltage is a STATE: the load resistor settles where
+# the transferred power balances, which is exactly what the steady-state
+# engine has to find.
+#
+# EACH BRIDGE USES ONE CONTROL. Leg B of every bridge reuses the SAME
+# complementary pair with the outputs swapped (its high switch listens to
+# ".low" and vice versa), so the two legs are antiphase BY CONSTRUCTION and
+# the phase shift is a single named parameter — which makes d/d(phi) a real,
+# well-defined design derivative instead of a constraint the user must keep
+# by hand across two parameters.
+#
+# Zero dead time ON PURPOSE (atomic swaps): this example is the all-scheduled
+# rung of the LLC/DAB slice, where the period map is affine and exact. The antiparallel
+# diodes stay in the model for honesty — at this operating point they idle,
+# and the extracted sequence shows them blocking throughout.
+#
+# SECONDARY GROUND TIE, declared: outn is tied to the primary ground, which
+# discards the galvanic isolation the transformer provides. Electrically the
+# simulation is identical (nothing else couples the sides); a floating
+# secondary would only add a common-mode reference the ideal model does not
+# need. Real designs earth one point anyway.
+#
+# WINDING RESISTANCES ARE LOAD-BEARING, not decoration: an ideal lossless
+# DAB conserves the transformer's DC (magnetizing) current — no resistance
+# anywhere in the winding loops means a monodromy eigenvalue of exactly one
+# and NO isolated periodic fixed point. The declared rp/rs (about 1% loss at
+# this operating point) are the physical damping that makes the steady state
+# well-posed, exactly as real copper does. ONE series resistance suffices —
+# the conserved mode is a single loop current — and it sits on the primary:
+# a secondary-side series element turned out to shave the bridge-parallel
+# diode guards off their identically-zero special case and chatter (measured;
+# see the kernel note in the PR).
+#
+# CLAIM BOUNDARY: ideal switches, no dead time, no magnetizing-branch loss,
+# no snubbers; the transformer is two coupled windings (leakage from k, no
+# core saturation) plus series winding resistance. Numbers are
+# representative, not a datasheet design.
+
+parameters:
+  vin: 400 V
+  fsw: 20 kHz
+  phi: 4.1667 us      # 30 electrical degrees of the 50 us period
+  lp: 2 mH
+  ls: 2 mH
+  k: 95 %
+  rp: 100 milliohm
+  cout: 20 uF
+  load: 40 ohm
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: dcp, n: gnd, value: "${vin}"}
+
+    # Primary bridge. Leg A on (p.high, p.low); leg B antiphase by swap.
+    - {id: qpah, type: ideal_switch, p: dcp, n: pa, control: p.high, initial: on}
+    - {id: qpal, type: ideal_switch, p: pa, n: gnd, control: p.low, initial: off}
+    - {id: dpah, type: diode, p: pa, n: dcp, initial: off}
+    - {id: dpal, type: diode, p: gnd, n: pa, initial: off}
+    - {id: qpbh, type: ideal_switch, p: dcp, n: pb, control: p.low, initial: off}
+    - {id: qpbl, type: ideal_switch, p: pb, n: gnd, control: p.high, initial: on}
+    - {id: dpbh, type: diode, p: pb, n: dcp, initial: off}
+    - {id: dpbl, type: diode, p: gnd, n: pb, initial: off}
+
+    # Transformer: leakage lives in k < 1.
+    - {id: rprim, type: resistor, p: pa, n: pw, value: "${rp}"}
+    - {id: lprim, type: inductor, p: pw, n: pb, value: "${lp}", initial_current: 0 A}
+    - {id: lsec, type: inductor, p: sa, n: sb, value: "${ls}", initial_current: 0 A}
+
+    # Secondary bridge, phase-shifted by phi. Same leg-swap construction.
+    - {id: qsah, type: ideal_switch, p: outp, n: sa, control: s.high, initial: on}
+    - {id: qsal, type: ideal_switch, p: sa, n: gnd, control: s.low, initial: off}
+    - {id: dsah, type: diode, p: sa, n: outp, initial: off}
+    - {id: dsal, type: diode, p: gnd, n: sa, initial: off}
+    - {id: qsbh, type: ideal_switch, p: outp, n: sb, control: s.low, initial: off}
+    - {id: qsbl, type: ideal_switch, p: sb, n: gnd, control: s.high, initial: on}
+    - {id: dsbh, type: diode, p: sb, n: outp, initial: off}
+    - {id: dsbl, type: diode, p: gnd, n: sb, initial: off}
+
+    - {id: cout, type: capacitor, p: outp, n: gnd, value: "${cout}", initial_voltage: 250 V}
+    - {id: rload, type: resistor, p: outp, n: gnd, value: "${load}"}
+
+  couplings:
+    - {inductors: [lprim, lsec], coupling: "${k}"}
+
+controls:
+  p:
+    type: complementary_pwm
+    frequency: "${fsw}"
+    duty: 50 %
+    phase: 0 s
+    dead_time: 0 s
+  s:
+    type: complementary_pwm
+    frequency: "${fsw}"
+    duty: 50 %
+    phase: "${phi}"
+    dead_time: 0 s
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 6 ms
+    output_step: 1 us
+    solver: radau
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs:
+  - v(outp)
+  - v(pa)
+  - v(pb)
+  - i(lprim)
+  - i(lsec)
+  - i(rload)

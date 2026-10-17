@@ -1,0 +1,51 @@
+schema: pear-sim/v0.1
+name: buck_ccm
+
+# Ideal buck (step-down) converter in CCM: 100 V in, 40 % duty, 20 kHz, 10 ohm load. The simplest starting point.
+
+parameters:
+  vin: 100 V
+  fsw: 20 kHz
+  duty: 40 %
+  load: 10 ohm
+  # L and C are parameters rather than inline values: a value the parameters:
+  # section does not name is invisible to the design vector, and L/C belong to
+  # theta in the gradient gate tests (T2).
+  l: 1 mH
+  c: 100 uF
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+    - {id: q1, type: ideal_switch, p: in, n: sw, control: pwm, initial: on}
+    - {id: d1, type: diode, p: gnd, n: sw, initial: off}
+    # User-declared nonzero warm-start seeds; this source does not claim their derivation.
+    - {id: l1, type: inductor, p: sw, n: out, value: "${l}", initial_current: 3.39970055 A}
+    - {id: c1, type: capacitor, p: out, n: gnd, value: "${c}", initial_voltage: 39.98969319 V}
+    - {id: load, type: resistor, p: out, n: gnd, value: "${load}"}
+
+controls:
+  pwm:
+    type: pwm
+    frequency: "${fsw}"
+    duty: "${duty}"
+    phase: 0 s
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 2 ms
+    output_step: 1 us
+    solver: dopri5
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs:
+  - v(out)
+  - i(l1)
+  - v(q1)
+  - i(q1)
+  - i(d1)
+  - i(vin)
+  - i(load)

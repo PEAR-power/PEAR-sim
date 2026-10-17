@@ -1,0 +1,108 @@
+schema: pear-sim/v0.1
+# Five-level multilevel example: full three-phase five-level diode-clamped (DNPC)
+# inverter — 24 switches, 42 ideal diodes (8 antiparallel + 6 clamps per
+# leg), stiff quarter-link sources (4 x 300 V; capacitive link balancing is
+# an explicitly open claim, see VAL-010). Per leg the top arm is
+# S1..S4 (gates h1..h4) and the bottom arm S5..S8 (gates l1..l4);
+# complementary pairs are (h_k, l_k), pair k pulsing in carrier band
+# N-1-k of the level-shifted PD stack.
+#
+# Clamp diodes: top node p_k clamps FROM link tap dc(4-k) (anode at the
+# tap), bottom node m_k clamps INTO tap dc(4-k) (anode at the node) —
+# the five-level generalization of the 3L d5/d6 pair.
+#
+# Cold start: most internal nodes float at t=0 (both neighbours off), so
+# the initial stable-mode query exceeds any distance-ordered enumeration;
+# the deterministic anchor repair resolves it (see
+# Circuit.active_set_search_stats()["anchor_repairs"]).
+name: npc5_three_phase
+circuit:
+  ground: dc2
+  components:
+    - {id: v4, type: voltage_source, p: dcp, n: dc3, value: 300 V}
+    - {id: v3, type: voltage_source, p: dc3, n: dc2, value: 300 V}
+    - {id: v2, type: voltage_source, p: dc2, n: dc1, value: 300 V}
+    - {id: v1, type: voltage_source, p: dc1, n: dcn, value: 300 V}
+    - {id: s_h1a, type: ideal_switch, p: dcp, n: p1a, control: mod.a.h1}
+    - {id: d_h1a, type: diode, p: p1a, n: dcp, initial: off}
+    - {id: s_h2a, type: ideal_switch, p: p1a, n: p2a, control: mod.a.h2}
+    - {id: d_h2a, type: diode, p: p2a, n: p1a, initial: off}
+    - {id: s_h3a, type: ideal_switch, p: p2a, n: p3a, control: mod.a.h3}
+    - {id: d_h3a, type: diode, p: p3a, n: p2a, initial: off}
+    - {id: s_h4a, type: ideal_switch, p: p3a, n: pa, control: mod.a.h4}
+    - {id: d_h4a, type: diode, p: pa, n: p3a, initial: off}
+    - {id: s_l1a, type: ideal_switch, p: pa, n: m1a, control: mod.a.l1}
+    - {id: d_l1a, type: diode, p: m1a, n: pa, initial: off}
+    - {id: s_l2a, type: ideal_switch, p: m1a, n: m2a, control: mod.a.l2}
+    - {id: d_l2a, type: diode, p: m2a, n: m1a, initial: off}
+    - {id: s_l3a, type: ideal_switch, p: m2a, n: m3a, control: mod.a.l3}
+    - {id: d_l3a, type: diode, p: m3a, n: m2a, initial: off}
+    - {id: s_l4a, type: ideal_switch, p: m3a, n: dcn, control: mod.a.l4}
+    - {id: d_l4a, type: diode, p: dcn, n: m3a, initial: off}
+    - {id: dcu1a, type: diode, p: dc3, n: p1a, initial: off}
+    - {id: dcl1a, type: diode, p: m1a, n: dc3, initial: off}
+    - {id: dcu2a, type: diode, p: dc2, n: p2a, initial: off}
+    - {id: dcl2a, type: diode, p: m2a, n: dc2, initial: off}
+    - {id: dcu3a, type: diode, p: dc1, n: p3a, initial: off}
+    - {id: dcl3a, type: diode, p: m3a, n: dc1, initial: off}
+    - {id: la, type: inductor, p: pa, n: loada, value: 0.5 mH, initial_current: 0 A}
+    - {id: ra, type: resistor, p: loada, n: dc2, value: 0.68 ohm}
+    - {id: s_h1b, type: ideal_switch, p: dcp, n: p1b, control: mod.b.h1}
+    - {id: d_h1b, type: diode, p: p1b, n: dcp, initial: off}
+    - {id: s_h2b, type: ideal_switch, p: p1b, n: p2b, control: mod.b.h2}
+    - {id: d_h2b, type: diode, p: p2b, n: p1b, initial: off}
+    - {id: s_h3b, type: ideal_switch, p: p2b, n: p3b, control: mod.b.h3}
+    - {id: d_h3b, type: diode, p: p3b, n: p2b, initial: off}
+    - {id: s_h4b, type: ideal_switch, p: p3b, n: pb, control: mod.b.h4}
+    - {id: d_h4b, type: diode, p: pb, n: p3b, initial: off}
+    - {id: s_l1b, type: ideal_switch, p: pb, n: m1b, control: mod.b.l1}
+    - {id: d_l1b, type: diode, p: m1b, n: pb, initial: off}
+    - {id: s_l2b, type: ideal_switch, p: m1b, n: m2b, control: mod.b.l2}
+    - {id: d_l2b, type: diode, p: m2b, n: m1b, initial: off}
+    - {id: s_l3b, type: ideal_switch, p: m2b, n: m3b, control: mod.b.l3}
+    - {id: d_l3b, type: diode, p: m3b, n: m2b, initial: off}
+    - {id: s_l4b, type: ideal_switch, p: m3b, n: dcn, control: mod.b.l4}
+    - {id: d_l4b, type: diode, p: dcn, n: m3b, initial: off}
+    - {id: dcu1b, type: diode, p: dc3, n: p1b, initial: off}
+    - {id: dcl1b, type: diode, p: m1b, n: dc3, initial: off}
+    - {id: dcu2b, type: diode, p: dc2, n: p2b, initial: off}
+    - {id: dcl2b, type: diode, p: m2b, n: dc2, initial: off}
+    - {id: dcu3b, type: diode, p: dc1, n: p3b, initial: off}
+    - {id: dcl3b, type: diode, p: m3b, n: dc1, initial: off}
+    - {id: lb, type: inductor, p: pb, n: loadb, value: 0.5 mH, initial_current: 0 A}
+    - {id: rb, type: resistor, p: loadb, n: dc2, value: 0.68 ohm}
+    - {id: s_h1c, type: ideal_switch, p: dcp, n: p1c, control: mod.c.h1}
+    - {id: d_h1c, type: diode, p: p1c, n: dcp, initial: off}
+    - {id: s_h2c, type: ideal_switch, p: p1c, n: p2c, control: mod.c.h2}
+    - {id: d_h2c, type: diode, p: p2c, n: p1c, initial: off}
+    - {id: s_h3c, type: ideal_switch, p: p2c, n: p3c, control: mod.c.h3}
+    - {id: d_h3c, type: diode, p: p3c, n: p2c, initial: off}
+    - {id: s_h4c, type: ideal_switch, p: p3c, n: pc, control: mod.c.h4}
+    - {id: d_h4c, type: diode, p: pc, n: p3c, initial: off}
+    - {id: s_l1c, type: ideal_switch, p: pc, n: m1c, control: mod.c.l1}
+    - {id: d_l1c, type: diode, p: m1c, n: pc, initial: off}
+    - {id: s_l2c, type: ideal_switch, p: m1c, n: m2c, control: mod.c.l2}
+    - {id: d_l2c, type: diode, p: m2c, n: m1c, initial: off}
+    - {id: s_l3c, type: ideal_switch, p: m2c, n: m3c, control: mod.c.l3}
+    - {id: d_l3c, type: diode, p: m3c, n: m2c, initial: off}
+    - {id: s_l4c, type: ideal_switch, p: m3c, n: dcn, control: mod.c.l4}
+    - {id: d_l4c, type: diode, p: dcn, n: m3c, initial: off}
+    - {id: dcu1c, type: diode, p: dc3, n: p1c, initial: off}
+    - {id: dcl1c, type: diode, p: m1c, n: dc3, initial: off}
+    - {id: dcu2c, type: diode, p: dc2, n: p2c, initial: off}
+    - {id: dcl2c, type: diode, p: m2c, n: dc2, initial: off}
+    - {id: dcu3c, type: diode, p: dc1, n: p3c, initial: off}
+    - {id: dcl3c, type: diode, p: m3c, n: dc1, initial: off}
+    - {id: lc, type: inductor, p: pc, n: loadc, value: 0.5 mH, initial_current: 0 A}
+    - {id: rc, type: resistor, p: loadc, n: dc2, value: 0.68 ohm}
+controls:
+  mod:
+    type: three_phase_npc_spwm
+    levels: 5
+    carrier_frequency: 2 kHz
+    fundamental_frequency: 50 Hz
+    modulation_index: 0.9
+    dead_time: 3 us
+analysis:
+  transient: {start: 0 s, stop: 20 ms, output_step: 5 us, solver: dopri5, rtol: 1.0e-8, atol: 1.0e-10}
+outputs: [v(pa), v(pb), i(la), i(lb), i(lc)]

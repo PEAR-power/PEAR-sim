@@ -1,0 +1,137 @@
+# Topology library entry. Data, not code.
+#
+# The mode sequence below is NOT documentation prose: it deserializes into the
+# exact ModeSequence dataclass the gradient engine consumes, and it was
+# extracted from a live run of the referenced model. The suite re-extracts it
+# from a fresh run on every commit and fails if the stored cycle stops matching
+# reality (tests/test_topology_library.py).
+
+schema: pear-sim/topology-entry/v0.1
+id: dab
+name: Dual active bridge — isolated bidirectional DC-DC
+prerequisites:
+  isolation: provided
+  direction: bidirectional
+  voltage:
+    min_v: 50.0
+    max_v: 1500.0
+  power:
+    min_w: 500.0
+    max_w: 500000.0
+mode_sequences:
+- label: single_phase_shift
+  source_model: examples/dab_phase_shift.yaml
+  sequence:
+    schema: pear-sim/mode-sequence/v0.1
+    period_s: 5.0e-05
+    source_run_sha256: ff7f1029bc5b68164b612f370e8eb50e0cec242c3cb652510dd40b253e1b52c6
+    extraction_tolerance_s: 1.0e-12
+    steps:
+    - signature: gates[p.high=on,p.low=off,s.high=off,s.low=on];diodes[dpah=off,dpal=off,dpbh=off,dpbl=off,dsah=off,dsal=off,dsbh=off,dsbl=off];constrained_inductors[none]
+      gates:
+        p.high: true
+        p.low: false
+        s.high: false
+        s.low: true
+      diodes:
+        dpah: false
+        dpal: false
+        dpbh: false
+        dpbl: false
+        dsah: false
+        dsal: false
+        dsbh: false
+        dsbl: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: s.low
+        guard_is_current: false
+      nominal_duration_s: 4.166699999999697e-06
+    - signature: gates[p.high=on,p.low=off,s.high=on,s.low=off];diodes[dpah=off,dpal=off,dpbh=off,dpbl=off,dsah=off,dsal=off,dsbh=off,dsbl=off];constrained_inductors[none]
+      gates:
+        p.high: true
+        p.low: false
+        s.high: true
+        s.low: false
+      diodes:
+        dpah: false
+        dpal: false
+        dpbh: false
+        dpbl: false
+        dsah: false
+        dsal: false
+        dsbh: false
+        dsbl: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: p.high
+        guard_is_current: false
+      nominal_duration_s: 2.0833300000000152e-05
+    - signature: gates[p.high=off,p.low=on,s.high=on,s.low=off];diodes[dpah=off,dpal=off,dpbh=off,dpbl=off,dsah=off,dsal=off,dsbh=off,dsbl=off];constrained_inductors[none]
+      gates:
+        p.high: false
+        p.low: true
+        s.high: true
+        s.low: false
+      diodes:
+        dpah: false
+        dpal: false
+        dpbh: false
+        dpbl: false
+        dsah: false
+        dsal: false
+        dsbh: false
+        dsbl: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: s.high
+        guard_is_current: false
+      nominal_duration_s: 4.166699999999697e-06
+    - signature: gates[p.high=off,p.low=on,s.high=off,s.low=on];diodes[dpah=off,dpal=off,dpbh=off,dpbl=off,dsah=off,dsal=off,dsbh=off,dsbl=off];constrained_inductors[none]
+      gates:
+        p.high: false
+        p.low: true
+        s.high: false
+        s.low: true
+      diodes:
+        dpah: false
+        dpal: false
+        dpbh: false
+        dpbl: false
+        dsah: false
+        dsal: false
+        dsbh: false
+        dsbl: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: period_end
+        target: ''
+        guard_is_current: false
+      nominal_duration_s: 2.0833300000000152e-05
+kernel_support:
+  status: simulated
+  note: Runs on the reference kernel; the gradient engine also resolves this topology, with
+    the leg swap folded into a single derivative with respect to the phase shift. No
+    comparison against an independent simulation engine exists for this entry.
+known_limitations:
+- Soft switching (ZVS) holds only inside a window of load and voltage ratio; outside it the
+  bridges hard-switch and the losses step up rather than drift up.
+- Away from the matched voltage ratio the circulating current grows and the conduction losses
+  with it — the topology punishes wide voltage ranges under single phase shift.
+- Power transfer is set by the transformer LEAKAGE inductance, so the design depends on a
+  parasitic that manufacturing tolerances move.
+- The stored cycle is ONE phase-shift operating point; the mode sequence changes with phase
+  shift, and the engine's derivatives are valid only while it holds.
+- Magnetising saturation, dead-time detail and synchronous-rectifier timing are outside the
+  kernel's declared scope (isolated DC-DC review, section 11).
+template:
+  model: examples/dab_phase_shift.yaml
+notes: 'The isolated bidirectional slot: battery chargers, storage interfaces, solid-state
+  transformer cells. Ranges are the entry author''s judgement, before review.'

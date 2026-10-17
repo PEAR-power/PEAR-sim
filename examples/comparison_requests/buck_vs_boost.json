@@ -1,0 +1,13 @@
+{
+  "schema": "pear-sim/comparison-request/v0.1",
+  "root": ".",
+  "objectives": [
+    {"metric": "rms(i(l1))", "sense": "minimize"},
+    {"metric": "mean(v(out))", "sense": "maximize"}
+  ],
+  "finalists": [
+    {"topology_id": "buck", "theta": {"l": [0.0005, 0.004]}},
+    {"topology_id": "boost", "theta": {"duty": [0.3, 0.6]}}
+  ],
+  "max_iterations": 6
+}

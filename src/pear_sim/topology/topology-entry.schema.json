@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PEAR-power/pear-sim/main/schema/topology-entry.schema.json",
+  "title": "PEARSim topology library entry v0.1",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "name",
+    "prerequisites",
+    "kernel_support",
+    "known_limitations",
+    "template"
+  ],
+  "properties": {
+    "schema": {
+      "const": "pear-sim/topology-entry/v0.1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 64
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "prerequisites": {
+      "type": "object",
+      "required": [
+        "isolation",
+        "direction",
+        "voltage",
+        "power"
+      ],
+      "properties": {
+        "isolation": {
+          "enum": [
+            "none",
+            "provided",
+            "optional"
+          ]
+        },
+        "direction": {
+          "enum": [
+            "unidirectional",
+            "bidirectional"
+          ]
+        },
+        "voltage": {
+          "type": "object",
+          "required": [
+            "min_v",
+            "max_v"
+          ],
+          "properties": {
+            "min_v": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "max_v": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "power": {
+          "type": "object",
+          "required": [
+            "min_w",
+            "max_w"
+          ],
+          "properties": {
+            "min_w": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "max_w": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "mode_sequences": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "required": [
+          "label",
+          "source_model",
+          "sequence"
+        ],
+        "properties": {
+          "label": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "maxLength": 64
+          },
+          "source_model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "sequence": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "known_limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+      }
+    },
+    "template": {
+      "type": "object",
+      "required": [],
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "subcircuit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "additionalProperties": false
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "kernel_support": {
+      "type": "object",
+      "required": [
+        "status",
+        "note"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "simulated",
+            "not_simulated"
+          ]
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

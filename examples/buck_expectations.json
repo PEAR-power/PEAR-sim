@@ -1,0 +1,41 @@
+{
+  "schema": "pear-sim/expectations/v0.1",
+  "purpose": "Exploratory steady-state check of the ideal 100 V to 40 V buck example.",
+  "measurement_window": {
+    "kind": "last_half",
+    "start_s": 0.001,
+    "end_s": 0.002
+  },
+  "criteria": [
+    {
+      "id": "vout_mean",
+      "signal": "v(out)",
+      "metric": "mean_last_half",
+      "unit": "V",
+      "target": 40.0,
+      "absolute_tolerance": 0.2,
+      "blocking": true
+    },
+    {
+      "id": "vout_ripple",
+      "signal": "v(out)",
+      "metric": "ripple_last_half",
+      "unit": "V",
+      "maximum": 0.1,
+      "blocking": true
+    },
+    {
+      "id": "inductor_ccm_margin",
+      "signal": "i(l1)",
+      "metric": "min_last_half",
+      "unit": "A",
+      "minimum": 0.1,
+      "blocking": true
+    }
+  ],
+  "human_checks": [
+    "Confirm q1 polarity from in to sw and d1 freewheel polarity from gnd to sw.",
+    "Confirm that ideal devices and preloaded steady-state initial conditions match the intended study.",
+    "Do not interpret these criteria as hardware validation or a safety sign-off."
+  ]
+}

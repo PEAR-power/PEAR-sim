@@ -1,0 +1,265 @@
+# Topology library entry. Data, not code.
+#
+# The mode sequence below is NOT documentation prose: it deserializes into the
+# exact ModeSequence dataclass the gradient engine consumes, and it was
+# extracted from a live run of the referenced model. The suite re-extracts it
+# from a fresh run on every commit and fails if the stored cycle stops matching
+# reality (tests/test_topology_library.py).
+
+schema: pear-sim/topology-entry/v0.1
+id: rectifier_6pulse
+name: Six-pulse diode bridge — three-phase uncontrolled rectifier
+prerequisites:
+  isolation: optional
+  direction: unidirectional
+  voltage:
+    min_v: 100.0
+    max_v: 15000.0
+  power:
+    min_w: 1000.0
+    max_w: 10000000.0
+mode_sequences:
+- label: line_commutated
+  source_model: examples/rectifier_6pulse_transformer.yaml
+  sequence:
+    schema: pear-sim/mode-sequence/v0.1
+    period_s: 0.02
+    source_run_sha256: 30dec04b805d1bb157e485feeaf374bb2fb3b8a015ff3d2973073b6afe903286
+    extraction_tolerance_s: 1.0e-12
+    steps:
+    - signature: gates[];diodes[y1=off,y2=off,y3=on,y4=off,y5=on,y6=off];constrained_inductors[lya]
+      gates: {}
+      diodes:
+        y1: false
+        y2: false
+        y3: true
+        y4: false
+        y5: true
+        y6: false
+      constrained_inductors:
+      - lya
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y1
+        guard_is_current: false
+      nominal_duration_s: 0.001672821780934032
+    - signature: gates[];diodes[y1=on,y2=off,y3=on,y4=off,y5=on,y6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y1: true
+        y2: false
+        y3: true
+        y4: false
+        y5: true
+        y6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y3
+        guard_is_current: true
+      nominal_duration_s: 0.00036417698313793274
+    - signature: gates[];diodes[y1=on,y2=off,y3=off,y4=off,y5=on,y6=off];constrained_inductors[lyc]
+      gates: {}
+      diodes:
+        y1: true
+        y2: false
+        y3: false
+        y4: false
+        y5: true
+        y6: false
+      constrained_inductors:
+      - lyc
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y6
+        guard_is_current: false
+      nominal_duration_s: 0.002969156345187099
+    - signature: gates[];diodes[y1=on,y2=off,y3=off,y4=off,y5=on,y6=on];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y1: true
+        y2: false
+        y3: false
+        y4: false
+        y5: true
+        y6: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y5
+        guard_is_current: true
+      nominal_duration_s: 0.0003641769869428199
+    - signature: gates[];diodes[y1=on,y2=off,y3=off,y4=off,y5=off,y6=on];constrained_inductors[lyb]
+      gates: {}
+      diodes:
+        y1: true
+        y2: false
+        y3: false
+        y4: false
+        y5: false
+        y6: true
+      constrained_inductors:
+      - lyb
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y2
+        guard_is_current: false
+      nominal_duration_s: 0.002969156354743599
+    - signature: gates[];diodes[y1=on,y2=on,y3=off,y4=off,y5=off,y6=on];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y1: true
+        y2: true
+        y3: false
+        y4: false
+        y5: false
+        y6: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y1
+        guard_is_current: true
+      nominal_duration_s: 0.0003641769806491911
+    - signature: gates[];diodes[y1=off,y2=on,y3=off,y4=off,y5=off,y6=on];constrained_inductors[lya]
+      gates: {}
+      diodes:
+        y1: false
+        y2: true
+        y3: false
+        y4: false
+        y5: false
+        y6: true
+      constrained_inductors:
+      - lya
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y4
+        guard_is_current: false
+      nominal_duration_s: 0.002969156339631447
+    - signature: gates[];diodes[y1=off,y2=on,y3=off,y4=on,y5=off,y6=on];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y1: false
+        y2: true
+        y3: false
+        y4: true
+        y5: false
+        y6: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y6
+        guard_is_current: true
+      nominal_duration_s: 0.00036417699119189496
+    - signature: gates[];diodes[y1=off,y2=on,y3=off,y4=on,y5=off,y6=off];constrained_inductors[lyc]
+      gates: {}
+      diodes:
+        y1: false
+        y2: true
+        y3: false
+        y4: true
+        y5: false
+        y6: false
+      constrained_inductors:
+      - lyc
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y3
+        guard_is_current: false
+      nominal_duration_s: 0.0029691563611503498
+    - signature: gates[];diodes[y1=off,y2=on,y3=on,y4=on,y5=off,y6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y1: false
+        y2: true
+        y3: true
+        y4: true
+        y5: false
+        y6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y2
+        guard_is_current: true
+      nominal_duration_s: 0.0003641769747534905
+    - signature: gates[];diodes[y1=off,y2=off,y3=on,y4=on,y5=off,y6=off];constrained_inductors[lyb]
+      gates: {}
+      diodes:
+        y1: false
+        y2: false
+        y3: true
+        y4: true
+        y5: false
+        y6: false
+      constrained_inductors:
+      - lyb
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y5
+        guard_is_current: false
+      nominal_duration_s: 0.002969156348394968
+    - signature: gates[];diodes[y1=off,y2=off,y3=on,y4=on,y5=on,y6=off];constrained_inductors[none]
+      gates: {}
+      diodes:
+        y1: false
+        y2: false
+        y3: true
+        y4: true
+        y5: true
+        y6: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: natural_guard
+        target: y4
+        guard_is_current: true
+      nominal_duration_s: 0.0003641769846625745
+    - signature: gates[];diodes[y1=off,y2=off,y3=on,y4=off,y5=on,y6=off];constrained_inductors[lya]
+      gates: {}
+      diodes:
+        y1: false
+        y2: false
+        y3: true
+        y4: false
+        y5: true
+        y6: false
+      constrained_inductors:
+      - lya
+      saturated_inductors: []
+      exit:
+        kind: period_end
+        target: ''
+        guard_is_current: false
+      nominal_duration_s: 0.0012963345684210426
+kernel_support:
+  status: simulated
+  note: Runs on the reference kernel; the stored line-frequency cycle is re-extracted from
+    the transformer-fed example on every run. Coupled windings run as drawn.
+known_limitations:
+- 'No output control whatsoever: the DC level follows the line amplitude, so anything downstream
+  must accept an unregulated bus or add a stage.'
+- Unidirectional by construction — it cannot return braking or regenerated energy to the grid.
+- Draws a strongly distorted line current (5th and 7th harmonics dominate); meeting IEEE 519
+  / IEC 61000-3-x usually requires a filter, a higher pulse number, or an active front end.
+- Commutation notches on the supply voltage scale with source inductance and can disturb other
+  loads on the same bus.
+- The DC ripple is at six times the line frequency, so the output filter is sized by the line
+  period, not by a switching period.
+- Isolation, when required, comes from the INPUT TRANSFORMER, not from the bridge — the entry
+  is declared `optional` for that reason.
+template:
+  model: examples/rectifier_6pulse_transformer.yaml
+notes: First stage of the canonical drive chain (transformer -> rectifier -> inverter -> machine).
+  Voltage and power ranges are the entry author's engineering judgement about where the topology
+  is a sensible candidate — not device limits and not reviewed knowledge.

@@ -1,0 +1,71 @@
+# Topology library entry. Data, not code.
+#
+# The mode sequence below is NOT documentation prose: it deserializes into the
+# exact ModeSequence dataclass the gradient engine consumes, and it was
+# extracted from a live run of the referenced model. The suite re-extracts it
+# from a fresh run on every commit and fails if the stored cycle stops matching
+# reality (tests/test_topology_library.py).
+
+schema: pear-sim/topology-entry/v0.1
+id: buck_boost_inverting
+name: Inverting buck-boost — non-isolated step-up/down
+prerequisites:
+  isolation: none
+  direction: unidirectional
+  voltage:
+    min_v: 1.0
+    max_v: 500.0
+  power:
+    min_w: 0.1
+    max_w: 1000.0
+mode_sequences:
+- label: ccm
+  source_model: examples/inverting_buck_boost.yaml
+  sequence:
+    schema: pear-sim/mode-sequence/v0.1
+    period_s: 5.0e-05
+    source_run_sha256: dbcb23c9074c3ea48da7463fe31d589469c46446132875d824643460767f512c
+    extraction_tolerance_s: 1.0e-12
+    steps:
+    - signature: gates[pwm=on];diodes[d1=off];constrained_inductors[none]
+      gates:
+        pwm: true
+      diodes:
+        d1: false
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: scheduled_gate
+        target: pwm
+        guard_is_current: false
+      nominal_duration_s: 2.5000000000000066e-05
+    - signature: gates[pwm=off];diodes[d1=on];constrained_inductors[none]
+      gates:
+        pwm: false
+      diodes:
+        d1: true
+      constrained_inductors: []
+      saturated_inductors: []
+      exit:
+        kind: period_end
+        target: ''
+        guard_is_current: false
+      nominal_duration_s: 2.499999999999985e-05
+kernel_support:
+  status: simulated
+  note: Runs on the reference kernel and has an INDEPENDENT closed-form oracle in pear_sim.benchmarks
+    (boundary sweep), so its steady state is checked against mathematics that never imports
+    the solver.
+known_limitations:
+- The output polarity is INVERTED with respect to the input, so the load cannot share a reference
+  with the source — this is a system constraint, not a detail.
+- Both input and output currents are pulsed, so both sides need filtering; the four-switch
+  buck-boost avoids this at the cost of devices.
+- The switch must block Vin plus the magnitude of Vout, so device stress is worse than either
+  a buck or a boost alone.
+- A right-half-plane zero in continuous conduction limits the achievable control bandwidth.
+- No isolation.
+template:
+  model: examples/inverting_buck_boost.yaml
+notes: Present as the canonical step-up/down family for the selection engine. Ranges are the
+  entry author's judgement, before review.

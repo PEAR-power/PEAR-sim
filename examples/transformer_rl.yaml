@@ -1,0 +1,33 @@
+# Showcase: two-winding transformer via the circuit.couplings section.
+# k = 0.95 (declared leakage; perfect coupling is rejected as singular).
+# Validated against the exact 2x2 matrix-exponential closed form.
+# v0.1 limitation: each coupled winding needs a DC path in every active-set
+# configuration — an open secondary sees the reflected voltage, which the
+# zero-current reduction cannot express (fail-closed TopologyError).
+schema: pear-sim/v0.1
+name: transformer_rl
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: 10 V}
+    - {id: r1, type: resistor, p: in, n: p1, value: 1 ohm}
+    - {id: lp, type: inductor, p: p1, n: gnd, value: 1 mH, initial_current: 0 A}
+    - {id: ls, type: inductor, p: s1, n: gnd, value: 4 mH, initial_current: 0 A}
+    - {id: rload, type: resistor, p: s1, n: gnd, value: 10 ohm}
+  couplings:
+    - {inductors: [lp, ls], coupling: 0.95}
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 10 ms
+    output_step: 5 us
+    solver: dopri5
+    rtol: 1.0e-10
+    atol: 1.0e-12
+
+outputs:
+  - i(lp)
+  - i(ls)
+  - v(s1)
