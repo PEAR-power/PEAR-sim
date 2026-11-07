@@ -830,6 +830,22 @@ class Circuit:
         ]
         self.initial_diodes = {component.id: component.initial for component in self.diodes}
         self._cache: dict[Topology, CompiledMode | TopologyError] = {}
+        # Floating-node memo for the active-set search. "Node X has no
+        # algebraic support" is decided by node X's own KCL row, and that row
+        # is stamped ONLY by the components touching X. So once a compile
+        # fails at X, any later topology that puts every component touching X
+        # in the same state fails too — it is skipped without being compiled.
+        # This changes cost, never outcome: the skipped compile would have
+        # raised. See _predicted_floating_node.
+        self._incident: dict[str, tuple[Component, ...]] = {
+            node: tuple(
+                component
+                for component in self.components
+                if node in (component.p, component.n)
+            )
+            for node in self.nodes
+        }
+        self._floating_signatures: dict[str, set[tuple[Any, ...]]] = {}
         self._active_set_stats = {
             "calls": 0,
             "candidates_examined": 0,
@@ -888,6 +904,9 @@ class Circuit:
                 self.mutual_by_pair[key] = float(matrix[row, column])
         # Every cached mode carries the old matrix in its compiled form.
         self._cache.clear()
+        # Floating is structural, not value-dependent, but the memo follows the
+        # cache so that "what was learned" never outlives "what it was learned on".
+        self._floating_signatures.clear()
 
     def coupling_matrix(self, group: tuple[str, ...]) -> np.ndarray:
         """Symmetric inductance matrix of one magnetically coupled group.
@@ -993,6 +1012,8 @@ class Circuit:
         diodes: dict[str, bool],
         constrained_inductors: Iterable[str] = (),
         saturated_inductors: Iterable[str] = (),
+        *,
+        skip_known_floating: bool = False,
     ) -> CompiledMode:
         topology = self.topology(
             gates, diodes, constrained_inductors, saturated_inductors
@@ -1002,13 +1023,64 @@ class Circuit:
             raise cached
         if cached is not None:
             return cached
+        if skip_known_floating:
+            node = self._predicted_floating_node(topology)
+            if node is not None:
+                raise _SkippedFloatingTopology(self, topology, node)
         try:
             compiled = CompiledMode(self, topology)
         except TopologyError as exc:
             self._cache[topology] = exc
+            node = getattr(exc, "floating_node", None)
+            if node is not None:
+                self._floating_signatures.setdefault(node, set()).add(
+                    self._node_signature(node, topology)
+                )
             raise
         self._cache[topology] = compiled
         return compiled
+
+    def _node_signature(self, node: str, topology: Topology) -> tuple[Any, ...]:
+        """State of every component touching ``node`` — all that its KCL row sees."""
+        return self._signature_from(node, *_topology_lookup(topology))
+
+    def _signature_from(
+        self,
+        node: str,
+        gates: dict[str, bool],
+        diodes: dict[str, bool],
+        constrained: frozenset[str],
+        saturated: frozenset[str],
+    ) -> tuple[Any, ...]:
+        return tuple(
+            gates[component.control or ""]
+            if component.type == "ideal_switch"
+            else diodes[component.id]
+            if component.type in LATCHING_OR_DIODE
+            else component.id in constrained
+            if component.type == "inductor"
+            else component.id in saturated
+            if component.type == "sat_inductor"
+            else None
+            for component in self._incident[node]
+        )
+
+    def _predicted_floating_node(self, topology: Topology) -> str | None:
+        """A node known to float in ``topology``, or None.
+
+        Sound by construction: a node's KCL row, the frozen-branch columns that
+        are ignored in it and the star-point test all read only the components
+        touching that node, so an identical local signature reproduces the
+        failure exactly. The converse is not claimed — an unknown signature is
+        simply compiled.
+        """
+        if not self._floating_signatures:
+            return None
+        lookup = _topology_lookup(topology)
+        for node, signatures in self._floating_signatures.items():
+            if self._signature_from(node, *lookup) in signatures:
+                return node
+        return None
 
     def _structurally_open_windings(
         self,
@@ -1121,7 +1193,7 @@ class Circuit:
             )
         )
         saturation_candidates = self._saturation_candidates(state)
-        failures: list[str] = []
+        failures: list[TopologyError] = []
         preferred_open_windings = self._structurally_open_windings(
             gates, preferred_diodes, state
         )
@@ -1171,10 +1243,16 @@ class Circuit:
             for saturated in saturation_candidates:
                 try:
                     modes.append(
-                        self.compile(gates, candidate, open_windings, saturated)
+                        self.compile(
+                            gates,
+                            candidate,
+                            open_windings,
+                            saturated,
+                            skip_known_floating=True,
+                        )
                     )
                 except TopologyError as exc:
-                    failures.append(str(exc))
+                    failures.append(exc)
                     # Never freeze a well-posed active inductor merely to satisfy
                     # a guard. Reduction is a fallback only for a singular
                     # current-constrained mode. Subsets are tried smallest-first
@@ -1194,10 +1272,11 @@ class Circuit:
                                         )
                                     ),
                                     saturated,
+                                    skip_known_floating=True,
                                 )
                             )
                         except TopologyError as reduced_exc:
-                            failures.append(str(reduced_exc))
+                            failures.append(reduced_exc)
 
             if modes:
                 any_mode_compiled = True
@@ -1232,7 +1311,9 @@ class Circuit:
             if repaired is not None:
                 self._active_set_stats["anchor_repairs"] += 1
                 return repaired
-            first_failure = f"; first failure: {failures[0]}" if failures else ""
+            first_failure = (
+                f"; first failure: {_failure_text(failures[0])}" if failures else ""
+            )
             raise TopologyError(
                 "No stable ideal-switch configuration found within the "
                 f"active-set search budget of {MAX_ACTIVE_SET_CANDIDATES} "
@@ -1245,7 +1326,11 @@ class Circuit:
                 "inconsistent initial diode guess or a modeling error"
                 f"{first_failure}"
             )
-        detail = failures[0] if failures else "all diode inequalities are inconsistent"
+        detail = (
+            _failure_text(failures[0])
+            if failures
+            else "all diode inequalities are inconsistent"
+        )
         raise TopologyError(f"No stable ideal-switch configuration found: {detail}")
 
     def _anchor_repair(
@@ -1491,6 +1576,52 @@ class Circuit:
                 ):
                     return False
         return True
+
+
+class _SkippedFloatingTopology(TopologyError):
+    """A candidate rejected by the floating-node memo instead of compiled.
+
+    Its text is produced on demand by compiling the topology for real, so a
+    message that reaches the user is word for word the one the full compile
+    gives (which may name an earlier floating node than the memo did).
+    """
+
+    def __init__(self, circuit: "Circuit", topology: Topology, node: str) -> None:
+        super().__init__(f"Node {node!r} has no algebraic support in this topology")
+        self.floating_node = node
+        self._circuit = circuit
+        self._topology = topology
+
+    def exact_message(self) -> str:
+        try:
+            self._circuit.compile(
+                self._topology.gate_dict(),
+                self._topology.diode_dict(),
+                self._topology.constrained_inductors,
+                self._topology.saturated_inductors,
+            )
+        except TopologyError as exc:
+            return str(exc)
+        raise AssertionError(  # pragma: no cover - the memo is sound by construction
+            "floating-node memo predicted a failure the full compile did not reproduce"
+        )
+
+
+def _topology_lookup(
+    topology: Topology,
+) -> tuple[dict[str, bool], dict[str, bool], frozenset[str], frozenset[str]]:
+    return (
+        topology.gate_dict(),
+        topology.diode_dict(),
+        frozenset(topology.constrained_inductors),
+        frozenset(topology.saturated_inductors),
+    )
+
+
+def _failure_text(failure: TopologyError) -> str:
+    if isinstance(failure, _SkippedFloatingTopology):
+        return failure.exact_message()
+    return str(failure)
 
 
 def _active_gamma_rows(
