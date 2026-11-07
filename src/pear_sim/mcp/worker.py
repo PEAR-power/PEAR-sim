@@ -103,12 +103,20 @@ def _tolerance_corners(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _evaluate_designs(request: dict[str, Any]) -> dict[str, Any]:
+    from pear_sim.evidence.batch import run_batch
+
+    artifacts = run_batch(request["model"], request["request_path"], request["out"])
+    return {"bundle": str(artifacts.output_dir), "summary": str(artifacts.summary)}
+
+
 OPERATIONS = {
     "simulate": _simulate,
     "steady_state": _steady_state,
     "stability": _stability,
     "sweep_parameter": _sweep_parameter,
     "tolerance_corners": _tolerance_corners,
+    "evaluate_designs": _evaluate_designs,
 }
 
 
