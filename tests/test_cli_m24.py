@@ -87,7 +87,7 @@ def test_cli_parameter_sweep_reports_not_run_acceptance_without_false_approval(
     output = tmp_path / "parameter-sweep"
     captured: dict[str, object] = {}
 
-    def fake_sweep(model, request, out, *, expectations_file):
+    def fake_sweep(model, request, out, *, expectations_file, jobs=None):
         captured.update(
             model=model,
             request=request,

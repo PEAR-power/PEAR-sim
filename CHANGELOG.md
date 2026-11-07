@@ -109,6 +109,11 @@ First public release of PEARSim, published by PEAR Power.
 
 ### Performance
 
+- Parameter sweeps, tolerance corners and perturbation grids run their point
+  simulations in parallel (`--jobs N`, default all cores but one). Points are still
+  isolated child processes with their own time limit, and results are consumed in point
+  order, so every retained file is the same as with `--jobs 1`. A timed-out MCP sweep
+  now stops its point processes too, not only its worker.
 - The diode active-set search skips candidates already known to leave a node floating
   instead of compiling them (multilevel bridges: about 7× fewer mode compilations,
   five-level NPC 1.7× faster), and dense-state extrema use raw coefficient arrays.
