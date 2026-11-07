@@ -56,7 +56,7 @@ EXPECTED_TOOLS = {
     "list_examples", "get_example", "get_model_format", "capabilities", "validate_model",
     "render_schematic", "simulate", "steady_state", "loop_gain", "sweep_parameter",
     "sweep_tolerance_corners", "get_metrics", "get_waveform", "get_artifact",
-    "compare_runs", "list_runs", "doctor",
+    "compare_runs", "list_runs", "doctor", "evaluate_designs",
 }
 
 
@@ -380,3 +380,27 @@ def test_confidence_level_travels_with_its_meaning(workspace: Workspace) -> None
     assert not error, buck
     assert buck["confidence"] != "not_run"
     assert buck["confidence_uncovered_features"] == []
+
+
+def test_evaluate_designs_ranks_a_listed_batch(workspace: Workspace) -> None:
+    is_error, result = _call(
+        workspace,
+        "evaluate_designs",
+        {
+            "example": "buck_with_loss_cards",
+            "request": {
+                "designs": {
+                    "method": "list",
+                    "rows": [{"fsw": "20 kHz"}, {"fsw": "10 kHz"}],
+                },
+                "objective": {"minimize": {"losses": "total_mean_power_w"}},
+                "constraints": [{"losses": "tj_max_c", "max": 125}],
+                "finalists": 1,
+            },
+        },
+    )
+    assert not is_error, result
+    assert result["status"] == "pass"
+    assert result["best_design"] == "d0002"  # lower frequency, lower switching loss
+    assert result["finalists"][0]["status"] == "pass"
+    assert "not an optimum" in result["claim"]

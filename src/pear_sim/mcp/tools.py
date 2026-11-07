@@ -992,6 +992,42 @@ def sweep_parameter(
     }
 
 
+def evaluate_designs(
+    workspace: Workspace,
+    *,
+    request: dict[str, Any],
+    model_yaml: str | None = None,
+    model_path: str | None = None,
+    example: str | None = None,
+    timeout_s: float | None = None,
+) -> dict[str, Any]:
+    path = resolve_model(workspace, model_yaml, model_path, example)
+    model = _load(path, None)
+    run_id, out = workspace.new_run_dir(model.name, kind="batch")
+    request_path = _request_file(workspace, request, out, "pear-sim/batch-request/v0.1")
+    result = _run_worker(
+        {"op": "evaluate_designs", "model": str(path), "request_path": str(request_path), "out": str(out)},
+        _timeout(timeout_s),
+    )
+    summary = json.loads(Path(result["summary"]).read_text(encoding="utf-8"))
+    return {
+        "run_id": run_id,
+        "status": summary["status"],
+        "claim": summary["claim"],
+        "design_count": summary["design_count"],
+        "feasible_count": summary["feasible_count"],
+        "failed_count": summary["failed_count"],
+        "best_design": summary["best_design"],
+        "ranking": _sig(summary["ranking"][:10]),
+        "finalists": summary["finalists"],
+        "failures": summary["failures"][:10],
+        "note": (
+            "designs.csv in this bundle lists every design; finalists are full runs "
+            "under finalists/<design_id>/run"
+        ),
+    }
+
+
 def sweep_tolerance_corners(
     workspace: Workspace,
     *,

@@ -166,6 +166,12 @@ resonance audit, event-aligned Fourier/THD, bounded parameter and tolerance-corn
 sweeps. Sweeps run their points in parallel (`--jobs`, default all cores but one); the
 retained results do not depend on the job count.
 
+**Many designs at once.** `pear-sim batch` screens up to 2 000 designs (Latin hypercube,
+grid or a list), ranks them against a declared objective and constraints (for example:
+lowest device losses with output ripple under 0.5 V and every junction under 125 °C) and
+re-runs the finalists in full, checking they reproduce the screening numbers. The winner
+is the best of the sample, not an optimum. See [docs/batch.md](docs/batch.md).
+
 **Reuse.** Declared subcircuits let you write a bridge once and instantiate it: the
 twelve-pulse rectifier is one `three_phase_diode_bridge` definition used twice. Expansion
 is deterministic and happens at load time, so hierarchy is presentation and never
@@ -310,7 +316,7 @@ tracker.
 ## Working with it
 
 `pear-sim --help` is the command reference. Beyond the four commands above:
-`catalog`, `capabilities`, `spec`, `render`, `evaluate`, `analyze`, `compare`, `sweep`,
+`catalog`, `capabilities`, `spec`, `render`, `evaluate`, `analyze`, `compare`, `sweep`, `batch`,
 `verify`, `review`, `topology`, `doctor`, `mcp`.
 
 Three surfaces, one contract: the CLI, a typed Python API (`pear_sim.api`,

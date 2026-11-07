@@ -35,6 +35,8 @@ On Windows PowerShell the same `uv` commands apply. A standard `venv` plus `pip 
 - `src/pear_sim/evidence/sweep.py`: bounded, retained-run canonical buck, boost, and exact inverting-buck-boost boundary sweep orchestration.
 - `src/pear_sim/evidence/run_compare.py`: fail-closed same-physics/same-measurement comparison of verified run bundles; no fuzzy mappings.
 - `src/pear_sim/evidence/parameter_sweep.py`: bounded, retained one-dimensional parameter experiments with optional expectations evaluation.
+- `src/pear_sim/evidence/batch.py`: many-design screening (Latin hypercube, grid or list), ranking against a declared objective and constraints, full re-run of finalists.
+- `src/pear_sim/evidence/parallel_points.py`: concurrent point workers with outcomes in declaration order (used by every batch producer).
 - `src/pear_sim/reporting/benchmark_report.py`: deterministic offline human projection of recorded sweep evidence.
 - `src/pear_sim/evidence/numerical_evidence.py`: bounded `full-v1` numerical matrix producer for the exact canonical buck.
 - `src/pear_sim/evidence/platform_evidence.py`: strict native Linux/Darwin/Windows evidence verification and aggregation.

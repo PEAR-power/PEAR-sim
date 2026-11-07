@@ -104,6 +104,7 @@ can be raised per call with `timeout_s`, up to 900 s.
 | `steady_state` | periodic steady state by Newton shooting |
 | `loop_gain` | loop gain and margins for a declared compensator |
 | `sweep_parameter`, `sweep_tolerance_corners` | bounded sweeps, every point retained |
+| `evaluate_designs` | screen up to 2 000 designs, rank against an objective and constraints, re-run finalists in full |
 | `get_metrics`, `get_waveform`, `get_artifact` | selective reads from a run |
 | `compare_runs` | side-by-side metrics of several runs |
 | `list_runs`, `doctor` | workspace listing and installation diagnosis |

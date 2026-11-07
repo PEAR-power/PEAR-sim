@@ -121,6 +121,19 @@ DESCRIPTIONS = {
         "mean_last_half"}]}.""",
         model_input=True,
     ),
+    "evaluate_designs": _doc(
+        """Screen many designs of one model and rank them: best design OF THE SAMPLE,
+        not an optimum. Designs are sampled (Latin hypercube or grid) or listed; up to
+        2000 per call, run in parallel. Feasible designs are ranked by the objective;
+        the top `finalists` are re-run in full and must reproduce their screening
+        values. `request`: {"designs": {"method": "lhs", "count": 40, "seed": 1,
+        "parameters": [{"name": "fsw", "from": "5 kHz", "to": "50 kHz", "scale":
+        "log"}]}, "objective": {"minimize": {"losses": "total_mean_power_w"}},
+        "constraints": [{"signal": "v(out)", "metric": "peak_to_peak_last_half",
+        "max": 0.5}, {"losses": "tj_max_c", "max": 125}], "finalists": 3}. Losses
+        need device cards in the model. Large batches need a larger timeout_s.""",
+        model_input=True,
+    ),
     "get_metrics": _doc(
         """All (or selected) metrics of one recorded signal: full-window and last-half
         mean, rms, min, max, peak-to-peak, integrals."""
@@ -287,6 +300,19 @@ def build_server(workspace: Workspace):
     ) -> dict[str, Any]:
         return guarded(
             t.sweep_tolerance_corners, workspace, request=request, model_yaml=model_yaml,
+            model_path=model_path, example=example, timeout_s=timeout_s,
+        )
+
+    @tool("evaluate_designs", computes)
+    def evaluate_designs(
+        request: dict[str, Any],
+        model_yaml: str | None = None,
+        model_path: str | None = None,
+        example: str | None = None,
+        timeout_s: float | None = None,
+    ) -> dict[str, Any]:
+        return guarded(
+            t.evaluate_designs, workspace, request=request, model_yaml=model_yaml,
             model_path=model_path, example=example, timeout_s=timeout_s,
         )
 
