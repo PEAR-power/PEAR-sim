@@ -36,6 +36,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--parameter", required=True, action="append")
     parser.add_argument("--value-si", type=float, required=True, action="append")
     parser.add_argument("--out", type=Path, required=True)
+    # Lean runs compute the same metrics with less evidence (batch screening).
+    parser.add_argument("--lean", action="store_true")
     return parser
 
 
@@ -50,7 +52,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.model,
             overrides=dict(zip(args.parameter, args.value_si)),
         )
-        result = HybridSimulator(model).simulate()
+        result = HybridSimulator(
+            model, evidence_mode="lean" if args.lean else "full"
+        ).simulate()
         write_result(result, args.out)
     except Exception as exc:
         print(

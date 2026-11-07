@@ -837,6 +837,7 @@ def _run_point_worker(
     point_dir: Path,
     *,
     timeout_s: float,
+    lean: bool = False,
 ) -> Path:
     """Run one simulation in a killable child process and atomically retain success.
 
@@ -858,6 +859,8 @@ def _run_point_worker(
             ["--parameter", parameter, "--value-si", format(value_si, ".17g")]
         )
     command.extend(["--out", str(worker_dir)])
+    if lean:
+        command.append("--lean")
     environment = os.environ.copy()
     environment.pop("PYTHONHOME", None)
     environment.pop("PYTHONPATH", None)
