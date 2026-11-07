@@ -163,7 +163,8 @@ currents stay continuous across them.
 a *declared* compensator — with the ZOH and computation-delay term, because a continuous
 Bode plot on a digitally controlled converter is optimistic by tens of degrees — modal
 resonance audit, event-aligned Fourier/THD, bounded parameter and tolerance-corner
-sweeps.
+sweeps. Sweeps run their points in parallel (`--jobs`, default all cores but one); the
+retained results do not depend on the job count.
 
 **Reuse.** Declared subcircuits let you write a bridge once and instantiate it: the
 twelve-pulse rectifier is one `three_phase_diode_bridge` definition used twice. Expansion

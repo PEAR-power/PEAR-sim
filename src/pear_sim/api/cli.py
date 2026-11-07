@@ -262,6 +262,14 @@ def build_parser() -> argparse.ArgumentParser:
     parameter.add_argument("--expectations", type=Path)
     parameter.add_argument("--out", type=Path, required=True)
     parameter.add_argument("--json", action="store_true")
+    parameter.add_argument(
+        "--jobs",
+        type=int,
+        help=(
+            "Point simulations run at the same time (default: all cores but one). "
+            "Results do not depend on it."
+        ),
+    )
     tolerance_corners = sweep_actions.add_parser(
         "tolerance-corners",
         help="Worst-case-of-the-batch sweep over declared component tolerances",
@@ -271,6 +279,14 @@ def build_parser() -> argparse.ArgumentParser:
     tolerance_corners.add_argument("--expectations", type=Path)
     tolerance_corners.add_argument("--out", type=Path, required=True)
     tolerance_corners.add_argument("--json", action="store_true")
+    tolerance_corners.add_argument(
+        "--jobs",
+        type=int,
+        help=(
+            "Point simulations run at the same time (default: all cores but one). "
+            "Results do not depend on it."
+        ),
+    )
     perturbation = sweep_actions.add_parser(
         "perturbation",
         help="Run a parametric-corner / event-injection campaign with criteria",
@@ -279,6 +295,14 @@ def build_parser() -> argparse.ArgumentParser:
     perturbation.add_argument("--request", type=Path, required=True)
     perturbation.add_argument("--out", type=Path, required=True)
     perturbation.add_argument("--json", action="store_true")
+    perturbation.add_argument(
+        "--jobs",
+        type=int,
+        help=(
+            "Point simulations run at the same time (default: all cores but one). "
+            "Results do not depend on it."
+        ),
+    )
     buck_boundary = sweep_actions.add_parser(
         "buck-boundary",
         help="Verify a canonical ideal buck across CCM, BCM, and DCM",
@@ -665,7 +689,9 @@ def main(argv: list[str] | None = None) -> int:
             if args.sweep_kind == "perturbation":
                 from pear_sim.evidence.perturbation_campaign import run_campaign
 
-                artifacts = run_campaign(args.model, args.request, args.out)
+                artifacts = run_campaign(
+                    args.model, args.request, args.out, jobs=args.jobs
+                )
                 payload = {
                     "ok": True,
                     "run_count": artifacts.run_count,
@@ -688,6 +714,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.request,
                     args.out,
                     expectations_file=args.expectations,
+                    jobs=args.jobs,
                 )
                 payload = {
                     "ok": True,
@@ -709,6 +736,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.request,
                     args.out,
                     expectations_file=args.expectations,
+                    jobs=args.jobs,
                 )
                 successful = (
                     artifacts.execution_status == "pass"

@@ -30,6 +30,7 @@ Claim boundary, restated in every artifact this module writes:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 import csv
 import itertools
 import json
@@ -43,6 +44,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import yaml
 
+from pear_sim.evidence.parallel_points import resolve_jobs, run_ordered
 from pear_sim.spec.model import Model, load_model
 from pear_sim.spec.parameter_envelope import PROVENANCE_SOURCES, ParameterEnvelope
 from pear_sim.spec.perturbation import (
@@ -553,8 +555,19 @@ def run_campaign(
     model_file: str | Path,
     request_file: str | Path,
     output_dir: str | Path,
+    *,
+    jobs: int | None = None,
 ) -> CampaignArtifacts:
-    """Execute one campaign and write its summary and report."""
+    """Execute one campaign and write its summary and report.
+
+    ``jobs`` grid points run at the same time (default: all cores but one).
+    Retained artifacts do not depend on it; only wall time does.
+    """
+
+    try:
+        worker_jobs = resolve_jobs(jobs)
+    except ValueError as exc:
+        raise PerturbationError(str(exc)) from exc
 
     from pear_sim.reporting.perturbation_report import render_campaign_report
 
@@ -600,9 +613,14 @@ def run_campaign(
     rows: list[dict[str, Any]] = []
     failures = 0
 
+    # Each point is materialized first, in process; the point simulations
+    # then run concurrently and are consumed in grid order, so every retained
+    # file matches a serial campaign. The boundary search below stays serial:
+    # each bisection step depends on the previous verdict.
+    prepared: list[tuple[dict[str, Any], Path, Any, Path | None, Exception | None]] = []
     for combination in itertools.product(*(axis.points for axis in axes)):
         label = "|".join(point.label for point in combination)
-        point_id = "p" + format(len(rows), "04d")
+        point_id = "p" + format(len(prepared), "04d")
         point_dir = destination / "points" / point_id
         point_dir.mkdir(parents=True, exist_ok=False)
 
@@ -632,9 +650,25 @@ def run_campaign(
             materialized = _materialize(document, model, spec, point_dir)
             row["materialized_model"] = str(materialized.relative_to(destination))
             row["events"] = [event.as_dict() for event in point_events]
-            run_dir = _run_point(
-                materialized, point_dir, timeout_s=MAX_POINT_WALL_TIME_S
-            )
+        except PerturbationError as exc:
+            prepared.append((row, point_dir, None, None, exc))
+        else:
+            prepared.append((row, point_dir, point_events, materialized, None))
+
+    simulations = run_ordered(
+        [
+            partial(_run_point, materialized, point_dir, timeout_s=MAX_POINT_WALL_TIME_S)
+            for _, point_dir, _, materialized, _ in prepared
+            if materialized is not None
+        ],
+        jobs=worker_jobs,
+    )
+
+    for row, point_dir, point_events, materialized, prepare_error in prepared:
+        try:
+            if prepare_error is not None:
+                raise prepare_error
+            run_dir = next(simulations).unwrap()
             row["run"] = str(run_dir.relative_to(destination))
             row["execution_status"] = "pass"
             row["metrics"] = _point_metrics(

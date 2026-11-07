@@ -19,11 +19,13 @@ from __future__ import annotations
 import itertools
 import json
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any, Mapping
 
 from pear_sim.evidence.evidence_io import evaluate_run
 from pear_sim.evidence.expectations import validate_expectations
+from pear_sim.evidence.parallel_points import resolve_jobs, run_ordered
 from pear_sim.evidence.parameter_sweep import (
     MAX_PARAMETER_SWEEP_POINT_WALL_TIME_S,
     ParameterSweepError,
@@ -199,9 +201,18 @@ def run_tolerance_corners(
     output_dir: str | Path,
     *,
     expectations_file: str | Path | None = None,
+    jobs: int | None = None,
 ) -> ToleranceCornersArtifacts:
-    """Execute the nominal point plus every tolerance corner, retained."""
+    """Execute the nominal point plus every tolerance corner, retained.
 
+    ``jobs`` corner simulations run at the same time (default: all cores but
+    one). Retained artifacts do not depend on it; only wall time does.
+    """
+
+    try:
+        worker_jobs = resolve_jobs(jobs)
+    except ValueError as exc:
+        raise ParameterSweepError(str(exc)) from exc
     model_path = Path(model_file).resolve()
     request_payload, _raw = _read_strict_json(
         Path(request_file), role="tolerance-corners request"
@@ -240,21 +251,34 @@ def run_tolerance_corners(
     rows: list[dict[str, Any]] = []
     execution_failures = 0
     acceptance_statuses: list[str] = []
+    point_dirs = []
     for point in points:
         point_dir = destination / "corners" / point["corner_id"]
         point_dir.mkdir(parents=True, exist_ok=False)
+        point_dirs.append(point_dir)
+    # Corner simulations run concurrently; results are consumed in corner
+    # order, so every retained file matches a serial run.
+    simulations = run_ordered(
+        [
+            partial(
+                _run_point_worker,
+                model_path,
+                point["overrides"],
+                point_dir,
+                timeout_s=MAX_PARAMETER_SWEEP_POINT_WALL_TIME_S,
+            )
+            for point, point_dir in zip(points, point_dirs, strict=True)
+        ],
+        jobs=worker_jobs,
+    )
+    for point, point_dir in zip(points, point_dirs, strict=True):
         row: dict[str, Any] = {
             "corner_id": point["corner_id"],
             "signs": point["signs"],
             "overrides_si": point["overrides"],
         }
         try:
-            run_dir = _run_point_worker(
-                model_path,
-                point["overrides"],
-                point_dir,
-                timeout_s=MAX_PARAMETER_SWEEP_POINT_WALL_TIME_S,
-            )
+            run_dir = next(simulations).unwrap()
             row["execution_status"] = "pass"
             row["run"] = str(run_dir.relative_to(destination))
             metrics_payload = json.loads((run_dir / "metrics.json").read_text())

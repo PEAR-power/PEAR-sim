@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import partial
 import hashlib
 import html
 import json
@@ -35,6 +36,7 @@ from pear_sim.spec.signals import is_signal_expression, signal_unit
 from pear_sim.run.contracts import model_hashes, sha256_file, sha256_json
 from pear_sim.evidence.expectations import validate_expectations
 from pear_sim.evidence.evidence_io import evaluate_run
+from pear_sim.evidence.parallel_points import resolve_jobs, run_ordered
 from pear_sim.limits import MAX_SCHEDULED_GATE_EDGES
 from pear_sim.spec.model import Model, load_model
 from pear_sim.reporting.render import render_schematic
@@ -1149,8 +1151,12 @@ def run_parameter_sweep(
     output_dir: str | Path,
     *,
     expectations_file: str | Path | None = None,
+    jobs: int | None = None,
 ) -> ParameterSweepArtifacts:
     """Execute a strict, retained 1-D sweep over one declared model parameter.
+
+    ``jobs`` point simulations run at the same time (default: all cores but
+    one). Retained artifacts do not depend on it; only wall time does.
 
     Request/model/expectation semantics are validated before the destination is
     created.  Point-local model or solver errors are retained and do not stop later
@@ -1158,6 +1164,10 @@ def run_parameter_sweep(
     verified-run :func:`pear_sim.evidence.evidence_io.evaluate_run` workflow.
     """
 
+    try:
+        worker_jobs = resolve_jobs(jobs)
+    except ValueError as exc:
+        raise ParameterSweepError(str(exc)) from exc
     source_input = Path(model_file)
     source_bytes = _read_bounded_regular_bytes(
         source_input,
@@ -1262,10 +1272,59 @@ def run_parameter_sweep(
     points: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     sweep_wall_time_start = perf_counter()
+
+    def _launch(point_dir: Path, value_si: float) -> Path:
+        # The remaining budget is read when the child actually starts, so the
+        # total wall-time limit means the same with one job or many.
+        remaining_sweep_time = (
+            MAX_PARAMETER_SWEEP_TOTAL_WALL_TIME_S
+            - (perf_counter() - sweep_wall_time_start)
+        )
+        if remaining_sweep_time <= 0.0:
+            raise ParameterSweepError(
+                "Sweep exhausted the total point-worker wall-time budget of "
+                f"{MAX_PARAMETER_SWEEP_TOTAL_WALL_TIME_S:.0f} seconds"
+            )
+        return _run_point_worker(
+            retained_source_path,
+            {normalized.parameter: value_si},
+            point_dir,
+            timeout_s=min(MAX_PARAMETER_SWEEP_POINT_WALL_TIME_S, remaining_sweep_time),
+        )
+
+    # Every point model is loaded first, in process, from the retained
+    # byte-for-byte source artifact (closing the time-of-check/time-of-use gap
+    # if the caller edits the original model while a bounded sweep is running).
+    # Only the child simulations then run concurrently; everything after them
+    # is consumed in point order below, exactly as a serial sweep does.
+    prepared: list[tuple[str, Path, Model | None, Exception | None]] = []
     for index, value_si in enumerate(normalized.values_si):
         point_id = _point_id(normalized.parameter, normalized.dimension, value_si, index)
         point_dir = points_root / point_id
         point_dir.mkdir()
+        try:
+            point_model = load_model(
+                retained_source_path,
+                overrides={normalized.parameter: value_si},
+            )
+            _require_bounded_model_shape(point_model, context=f"point {index}")
+        except Exception as exc:  # retained below at the model_override stage
+            prepared.append((point_id, point_dir, None, exc))
+        else:
+            prepared.append((point_id, point_dir, point_model, None))
+    simulations = run_ordered(
+        [
+            partial(_launch, point_dir, value_si)
+            for (_, point_dir, point_model, _), value_si in zip(
+                prepared, normalized.values_si, strict=True
+            )
+            if point_model is not None
+        ],
+        jobs=worker_jobs,
+    )
+
+    for index, value_si in enumerate(normalized.values_si):
+        point_id, point_dir, point_model, load_error = prepared[index]
         run_dir: Path | None = None
         run_sha256: str | None = None
         projection_records: list[dict[str, Any]] = [
@@ -1281,34 +1340,10 @@ def run_parameter_sweep(
         execution_error: dict[str, str] | None = None
         execution_stage = "model_override"
         try:
-            # Every point is loaded from the retained byte-for-byte source artifact,
-            # closing the time-of-check/time-of-use gap if the caller edits the
-            # original model while a bounded sweep is running.
-            point_model = load_model(
-                retained_source_path,
-                overrides={normalized.parameter: value_si},
-            )
-            _require_bounded_model_shape(point_model, context=f"point {index}")
+            if load_error is not None:
+                raise load_error
             execution_stage = "simulation"
-            remaining_sweep_time = (
-                MAX_PARAMETER_SWEEP_TOTAL_WALL_TIME_S
-                - (perf_counter() - sweep_wall_time_start)
-            )
-            if remaining_sweep_time <= 0.0:
-                raise ParameterSweepError(
-                    "Sweep exhausted the total point-worker wall-time budget of "
-                    f"{MAX_PARAMETER_SWEEP_TOTAL_WALL_TIME_S:.0f} seconds"
-                )
-            point_timeout_s = min(
-                MAX_PARAMETER_SWEEP_POINT_WALL_TIME_S,
-                remaining_sweep_time,
-            )
-            run_dir = _run_point_worker(
-                retained_source_path,
-                {normalized.parameter: value_si},
-                point_dir,
-                timeout_s=point_timeout_s,
-            )
+            run_dir = next(simulations).unwrap()
             execution_stage = "run_bundle"
             metrics, run_sha256 = _read_verified_metrics(
                 run_dir,
