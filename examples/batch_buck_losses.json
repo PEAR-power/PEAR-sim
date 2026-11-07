@@ -1,0 +1,20 @@
+{
+  "schema": "pear-sim/batch-request/v0.1",
+  "label": "Buck: switching frequency and duty for the lowest device losses",
+  "designs": {
+    "method": "lhs",
+    "count": 40,
+    "seed": 1,
+    "parameters": [
+      {"name": "fsw", "from": "5 kHz", "to": "50 kHz", "scale": "log"},
+      {"name": "duty", "from": "35 %", "to": "45 %"}
+    ]
+  },
+  "objective": {"minimize": {"losses": "total_mean_power_w"}},
+  "constraints": [
+    {"signal": "v(out)", "metric": "mean_last_half", "min": 38, "max": 42},
+    {"signal": "v(out)", "metric": "peak_to_peak_last_half", "max": 0.5},
+    {"losses": "tj_max_c", "max": 125}
+  ],
+  "finalists": 3
+}

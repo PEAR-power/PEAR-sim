@@ -248,6 +248,20 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--out", type=Path, required=True)
     compare.add_argument("--json", action="store_true")
 
+    batch = subparsers.add_parser(
+        "batch",
+        help="Screen many designs (sampled or listed), rank them, re-run the finalists",
+    )
+    batch.add_argument("model", type=Path)
+    batch.add_argument("--request", type=Path, required=True)
+    batch.add_argument("--out", type=Path, required=True)
+    batch.add_argument(
+        "--jobs",
+        type=int,
+        help="Designs simulated at the same time (default: all cores but one)",
+    )
+    batch.add_argument("--json", action="store_true")
+
     sweep = subparsers.add_parser(
         "sweep",
         help="Run a bounded, artifact-retaining parameter sweep",
@@ -406,6 +420,27 @@ def build_parser() -> argparse.ArgumentParser:
     annotate.add_argument("--json", action="store_true")
 
     return parser
+
+
+def _print_batch(artifacts) -> None:
+    summary = json.loads(artifacts.summary.read_text(encoding="utf-8"))
+    print(
+        f"Batch {artifacts.status}: {artifacts.design_count} designs, "
+        f"{artifacts.feasible_count} feasible, {artifacts.failed_count} failed"
+    )
+    (sense, selector), = summary["objective"].items()
+    for entry in summary["ranking"][:5]:
+        values = ", ".join(f"{key}={value:.6g}" for key, value in entry["values"].items())
+        parameters = ", ".join(
+            f"{key}={value:.4g}" for key, value in entry["parameters_si"].items()
+        )
+        print(f"  #{entry['rank']} {entry['design_id']}  {parameters}  ->  {values}")
+    for finalist in summary["finalists"]:
+        if finalist["status"] != "pass":
+            print(f"  finalist {finalist['design_id']}: {finalist['status']}")
+    target = " ".join(str(value) for value in selector.values())
+    print(f"  ({sense} {target}; best of the sample, not an optimum)")
+    print(f"  table: {artifacts.designs_csv}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -685,6 +720,30 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0 if accepted else 1
+        if args.command == "batch":
+            from pear_sim.evidence.batch import run_batch
+
+            artifacts = run_batch(args.model, args.request, args.out, jobs=args.jobs)
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "status": artifacts.status,
+                            "design_count": artifacts.design_count,
+                            "feasible_count": artifacts.feasible_count,
+                            "failed_count": artifacts.failed_count,
+                            "best_design": artifacts.best_design,
+                            "output": str(artifacts.output_dir),
+                            "summary": str(artifacts.summary),
+                            "designs_csv": str(artifacts.designs_csv),
+                        },
+                        indent=2,
+                    )
+                )
+            else:
+                _print_batch(artifacts)
+            return 0 if artifacts.status == "pass" else 1
         if args.command == "sweep":
             if args.sweep_kind == "perturbation":
                 from pear_sim.evidence.perturbation_campaign import run_campaign

@@ -107,6 +107,16 @@ First public release of PEARSim, published by PEAR Power.
   line range; a relative `model_path` on a server without a project directory
   explains how to fix it.
 
+### Design exploration
+
+- `pear-sim batch`, `api.evaluate_designs` and the MCP tool `evaluate_designs`: screen
+  up to 2 000 designs of one model (Latin hypercube, grid or an explicit list), rank
+  feasible designs by one objective under any number of constraints (signal metrics,
+  device losses, junction temperature), and re-run the top finalists with full
+  evidence. A finalist must reproduce its screening values exactly or the batch fails.
+  Screening runs are lean and keep only the files the ranking reads. The result is the
+  best design of the sample, not an optimum. See `docs/batch.md`.
+
 ### Performance
 
 - Parameter sweeps, tolerance corners and perturbation grids run their point
@@ -144,8 +154,8 @@ First public release of PEARSim, published by PEAR Power.
   on a phone: tables scroll inside their frame or become cards instead of breaking
   identifiers mid-word.
 - MCP server (`pear-sim mcp`, optional extra `pear-sim[mcp]`, official MCP Python SDK):
-  17 tools (examples, format reference, validation, schematic, simulation, steady state,
-  loop gain, sweeps, selective result reads), resources and prompts. Models inline or
+  18 tools (examples, format reference, validation, schematic, simulation, steady state,
+  loop gain, sweeps, design batches, selective result reads), resources and prompts. Models inline or
   from the project; reads confined to the project and workspace, writes to the
   workspace; computations isolated in a child process with a time limit; actionable
   error hints. Runs are bit-identical to the CLI. The `pear-sim-mcp` launcher package
