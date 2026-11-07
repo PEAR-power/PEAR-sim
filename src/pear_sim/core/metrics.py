@@ -13,6 +13,8 @@ from typing import Any, Callable
 
 import numpy as np
 from numpy.polynomial import Polynomial
+from numpy.polynomial import polynomial as _poly
+from numpy.polynomial import polyutils
 
 from pear_sim.spec.signals import is_declared_signal, is_machine_signal
 from pear_sim.core.circuit import Circuit, CompiledMode
@@ -266,37 +268,66 @@ def _state_values_by_component(circuit: Circuit, state: np.ndarray) -> dict[str,
     }
 
 
+# The dense-state polynomials are handled as raw coefficient arrays with the
+# same numpy.polynomial.polynomial routines the Polynomial class delegates to
+# (polyadd, polymul, polyder, polyroots, polyval). The class adds only object
+# overhead plus an identity domain map, off + scl * x with off = 0, scl = 1;
+# that map is applied literally below so every result is bit-for-bit the one
+# the class produced. On a three-phase SPWM run the class overhead was a
+# quarter of the whole run. tests/test_dense_polynomials.py pins the equality.
+_DOMAIN_OFFSET, _DOMAIN_SCALE = Polynomial([0.0]).mapparms()
+_WINDOW_OFFSET, _WINDOW_SCALE = polyutils.mapparms(Polynomial.window, Polynomial.domain)
+
+
+def _poly_value(coefficients: np.ndarray, points: np.ndarray) -> np.ndarray:
+    return _poly.polyval(_DOMAIN_OFFSET + _DOMAIN_SCALE * points, coefficients)
+
+
+def _poly_derivative(coefficients: np.ndarray) -> np.ndarray:
+    return _poly.polyder(coefficients, 1, _DOMAIN_SCALE)
+
+
+def _poly_roots(coefficients: np.ndarray) -> np.ndarray:
+    return _WINDOW_OFFSET + _WINDOW_SCALE * _poly.polyroots(coefficients)
+
+
 def _dense_step_state_polynomials(
     interpolant: Any,
     state_count: int,
-) -> tuple[Polynomial, ...]:
-    """Reconstruct a solve_ivp step's dense state polynomials in x=(t-t0)/h."""
+) -> tuple[np.ndarray, ...]:
+    """Reconstruct a solve_ivp step's dense state polynomials in x=(t-t0)/h.
+
+    Each entry is a coefficient array, lowest power first.
+    """
 
     kind = type(interpolant).__name__
     if kind in {"RkDenseOutput", "RadauDenseOutput"}:
         factor = float(interpolant.h) if kind == "RkDenseOutput" else 1.0
         return tuple(
-            Polynomial(
+            np.array(
                 np.concatenate(
                     (
                         np.asarray([interpolant.y_old[index]], dtype=float),
                         factor * np.asarray(interpolant.Q[index, :], dtype=float),
                     )
-                )
+                ),
+                dtype=float,
             )
             for index in range(state_count)
         )
 
     if kind == "Dop853DenseOutput":
-        x = Polynomial([0.0, 1.0])
-        one_minus_x = Polynomial([1.0, -1.0])
-        polynomials: list[Polynomial] = []
+        x = np.array([0.0, 1.0])
+        one_minus_x = np.array([1.0, -1.0])
+        polynomials: list[np.ndarray] = []
         for state_index in range(state_count):
-            polynomial = Polynomial([0.0])
+            polynomial = np.array([0.0])
             for index, coefficient in enumerate(reversed(interpolant.F[:, state_index])):
-                polynomial += float(coefficient)
-                polynomial *= x if index % 2 == 0 else one_minus_x
-            polynomial += float(interpolant.y_old[state_index])
+                polynomial = _poly.polyadd(polynomial, float(coefficient))
+                polynomial = _poly.polymul(
+                    polynomial, x if index % 2 == 0 else one_minus_x
+                )
+            polynomial = _poly.polyadd(polynomial, float(interpolant.y_old[state_index]))
             polynomials.append(polynomial)
         return tuple(polynomials)
 
@@ -304,19 +335,25 @@ def _dense_step_state_polynomials(
         step = float(interpolant.t - interpolant.t_old)
         polynomials = []
         for state_index in range(state_count):
-            polynomial = Polynomial([float(interpolant.D[0, state_index])])
-            product = Polynomial([1.0])
+            polynomial = np.array([float(interpolant.D[0, state_index])])
+            product = np.array([1.0])
             for index in range(interpolant.order):
-                product *= Polynomial(
-                    [
-                        float(
-                            (interpolant.t_old - interpolant.t_shift[index])
-                            / interpolant.denom[index]
-                        ),
-                        float(step / interpolant.denom[index]),
-                    ]
+                product = _poly.polymul(
+                    product,
+                    np.array(
+                        [
+                            float(
+                                (interpolant.t_old - interpolant.t_shift[index])
+                                / interpolant.denom[index]
+                            ),
+                            float(step / interpolant.denom[index]),
+                        ]
+                    ),
                 )
-                polynomial += float(interpolant.D[index + 1, state_index]) * product
+                polynomial = _poly.polyadd(
+                    polynomial,
+                    _poly.polymul(float(interpolant.D[index + 1, state_index]), product),
+                )
             polynomials.append(polynomial)
         return tuple(polynomials)
 
@@ -406,7 +443,7 @@ def _dense_state_extrema(
             state_index = mode.circuit.state_index[component.id]
             polynomial = polynomials[state_index]
             candidate_points = [float(point) for point in probe_points]
-            for raw_root in polynomial.deriv().roots():
+            for raw_root in _poly_roots(_poly_derivative(polynomial)):
                 root = complex(raw_root)
                 if not (math.isfinite(root.real) and math.isfinite(root.imag)):
                     continue
@@ -425,7 +462,7 @@ def _dense_state_extrema(
                 )
 
             unique_points = np.asarray(sorted(set(candidate_points)), dtype=float)
-            values = np.asarray(polynomial(unique_points), dtype=float)
+            values = np.asarray(_poly_value(polynomial, unique_points), dtype=float)
             times = dense_start + dense_step * unique_points
             for time, value in zip(times, values, strict=True):
                 consider(component.id, float(value), float(time))

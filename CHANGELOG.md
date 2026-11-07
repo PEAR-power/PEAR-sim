@@ -112,6 +112,13 @@ First public release of PEARSim, published by PEAR Power.
   line range; a relative `model_path` on a server without a project directory
   explains how to fix it.
 
+### Performance
+
+- The diode active-set search skips candidates already known to leave a node floating
+  instead of compiling them (multilevel bridges: about 7× fewer mode compilations,
+  five-level NPC 1.7× faster), and dense-state extrema use raw coefficient arrays.
+  Both are bit-identical: every example bundle matches the unoptimized code file for file.
+
 ### Evidence
 
 - Closed-form oracles written independently of the solver, an ngspice
