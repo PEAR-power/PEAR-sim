@@ -15,6 +15,7 @@ import csv
 import json
 import os
 import re
+import signal as _signal
 import subprocess
 import sys
 from importlib import resources
@@ -245,26 +246,49 @@ def _timeout(timeout_s: float | None) -> float:
     return value
 
 
+def _worker_command() -> list[str]:
+    return [sys.executable, "-m", "pear_sim.mcp.worker"]
+
+
+def _stop_worker_tree(process: subprocess.Popen[str]) -> None:
+    # A sweep worker runs its points in grandchild processes, several at once.
+    # Killing only the worker would leave them running as orphans, so on POSIX
+    # the worker leads its own process group and the whole group is stopped.
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, _signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    else:  # pragma: no cover - Windows has no process groups to signal
+        process.kill()
+    process.communicate()
+
+
 def _run_worker(request: dict[str, Any], timeout_s: float) -> dict[str, Any]:
+    process = subprocess.Popen(
+        _worker_command(),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=os.name == "posix",
+    )
     try:
-        completed = subprocess.run(
-            [sys.executable, "-m", "pear_sim.mcp.worker"],
-            input=json.dumps(request),
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
-            check=False,
-        )
+        stdout, stderr = process.communicate(json.dumps(request), timeout=timeout_s)
     except subprocess.TimeoutExpired as exc:
+        _stop_worker_tree(process)
         raise ToolInputError(
             f"the computation exceeded timeout_s={timeout_s:g} s and was stopped. Shorten "
             "the simulated time span, raise output_step, or pass a larger timeout_s."
         ) from exc
-    lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    except BaseException:
+        _stop_worker_tree(process)
+        raise
+    lines = [line for line in stdout.splitlines() if line.strip()]
     if not lines:
         raise ToolInputError(
-            f"the worker exited with code {completed.returncode} and no result: "
-            f"{completed.stderr.strip()[-800:]}"
+            f"the worker exited with code {process.returncode} and no result: "
+            f"{stderr.strip()[-800:]}"
         )
     payload = json.loads(lines[-1])
     if not payload["ok"]:
