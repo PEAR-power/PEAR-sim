@@ -36,6 +36,7 @@ from pear_sim.core.metrics import (
     _dense_state_extrema,
     _merge_state_extrema,
     _state_values_by_component,
+    electrical_outputs,
 )
 from pear_sim.spec.machines import (
     PHASE_OFFSETS,
@@ -874,6 +875,24 @@ class HybridSimulator:
                     sample_mode.output(output, sample_state, time)
                 )
 
+        kernel_outputs = electrical_outputs(self.model)
+        state_extrema = (
+            rust_backend.state_extrema if self.backend == "rust" else _dense_state_extrema
+        )
+
+        def record_values(time: float, electrical: np.ndarray) -> None:
+            # record() for a kernel segment: electrical outputs arrive as values.
+            recorded_time.append(float(time))
+            position = 0
+            for output in self.model.outputs:
+                if output in declared_signal_outputs:
+                    recorded_signals[output].append(
+                        signal_values.get(declared_signal_outputs[output], 0.0)
+                    )
+                    continue
+                recorded_signals[output].append(float(electrical[position]))
+                position += 1
+
         fire_sampled_controllers(current_time, state, mode)
         fire_signal_task(current_time, state, mode)
         record(current_time, state, mode)
@@ -976,7 +995,7 @@ class HybridSimulator:
                 # roughly half of the most expensive work in the run.
                 report_extrema = self.evidence_mode == "full"
                 if report_extrema:
-                    interval_state_extrema = _dense_state_extrema(
+                    interval_state_extrema = state_extrema(
                         solution,
                         mode,
                         interval_start,
@@ -988,7 +1007,7 @@ class HybridSimulator:
                     if interval_start >= last_half_start and interval_state_extrema is not None:
                         tail_extrema = interval_state_extrema
                     else:
-                        tail_extrema = _dense_state_extrema(
+                        tail_extrema = state_extrema(
                             solution,
                             mode,
                             max(interval_start, last_half_start),
@@ -1019,7 +1038,8 @@ class HybridSimulator:
                         "state_extrema": interval_state_extrema,
                     }
                 )
-            metric_accumulator.add_solution(solution, mode)
+            if self.backend != "rust":
+                metric_accumulator.add_solution(solution, mode)
             harmonic_accumulator.add_solution(solution, mode)
             if machine_driver.active:
                 machine_driver.end_segment(
@@ -1027,13 +1047,28 @@ class HybridSimulator:
                 )
 
             actual_end = float(solution.t[-1])
+            first_sample = sample_index
             while (
                 sample_index < len(sample_times)
                 and sample_times[sample_index] < actual_end - self.time_tolerance
             ):
-                sample_time = float(sample_times[sample_index])
-                record(sample_time, np.asarray(solution.sol(sample_time), dtype=float), mode)
                 sample_index += 1
+            segment_samples = [float(t) for t in sample_times[first_sample:sample_index]]
+            kernel_values = (
+                rust_backend.observe_segment(
+                    solution, mode, metric_accumulator, kernel_outputs, segment_samples
+                )
+                if self.backend == "rust"
+                else None
+            )
+            if kernel_values is not None:
+                # The kernel evaluated every electrical output at the samples
+                # and added the segment's quadrature in the same pass.
+                for row, sample_time in enumerate(segment_samples):
+                    record_values(sample_time, kernel_values[row])
+            else:
+                for sample_time in segment_samples:
+                    record(sample_time, np.asarray(solution.sol(sample_time), dtype=float), mode)
 
             state = np.asarray(solution.y[:, -1], dtype=float)
             at_target = _same_integration_endpoint(actual_end, target_time)

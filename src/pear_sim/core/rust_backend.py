@@ -20,12 +20,16 @@ from scipy.integrate._ivp.common import OdeSolution
 from scipy.integrate._ivp.ivp import OdeResult
 from scipy.integrate._ivp.rk import RkDenseOutput
 
+from pear_sim.core.metrics import _QUADRATURE_NODES, _QUADRATURE_WEIGHTS
 from pear_sim.errors import SimulationError
 
 try:  # optional extra
     import pear_sim_core as _core
 except ImportError:  # pragma: no cover - depends on the environment
     _core = None
+
+_NODES = [float(x) for x in _QUADRATURE_NODES]
+_WEIGHTS = [float(x) for x in _QUADRATURE_WEIGHTS]
 
 _MESSAGES = {
     0: "The solver successfully reached the end of the integration interval.",
@@ -151,7 +155,7 @@ def solve_segment(
     else:
         t_events = None
         y_events = None
-    return OdeResult(
+    result = OdeResult(
         t=ts,
         y=ys,
         sol=OdeSolution(ts, interpolants) if interpolants else None,
@@ -164,3 +168,137 @@ def solve_segment(
         message=_MESSAGES.get(status, out["message"]),
         success=status >= 0,
     )
+    # The raw dense arrays, so observe_segment does not rebuild them.
+    result.pear_raw = out
+    return result
+
+
+def _rows(maps: Sequence[tuple[np.ndarray, float, np.ndarray]], n: int) -> tuple[np.ndarray, list[float]]:
+    coef = np.zeros((len(maps), n))
+    offset: list[float] = []
+    for index, (row, constant, sources) in enumerate(maps):
+        if np.any(np.asarray(sources) != 0.0):
+            raise SimulationError("backend 'rust': an output depends on a waveform source")
+        coef[index, :] = row
+        offset.append(float(constant))
+    return coef, offset
+
+
+def _observer_rows(mode: Any, outputs: Sequence[str], energy: bool) -> tuple:
+    cache = mode.__dict__.setdefault("_pear_observer_rows", {})
+    key = (tuple(outputs), energy)
+    if key not in cache:
+        n = len(mode.circuit.state_components)
+        output_rows = _rows([mode.output_affine(name) for name in outputs], n)
+        if energy:
+            components = mode.circuit.components
+            voltage_rows = _rows([mode.component_voltage_affine(c) for c in components], n)
+            current_rows = _rows(
+                [
+                    (np.zeros(n), 0.0, np.zeros(0))
+                    if c.type == "voltage_probe"
+                    else mode.component_current_affine(c)
+                    for c in components
+                ],
+                n,
+            )
+        else:
+            voltage_rows = current_rows = (np.zeros((0, n)), [])
+        cache[key] = (output_rows, voltage_rows, current_rows)
+    return cache[key]
+
+
+def _window_state(window: Any, outputs: Sequence[str], components: Sequence[str]) -> tuple:
+    energy = window.component_absorbed_energy
+    return (
+        float(window.integrated_interval_s),
+        int(window.quadrature_intervals),
+        [float(window.signal_integrals[name]) for name in outputs],
+        [float(window.signal_square_integrals[name]) for name in outputs],
+        [float(energy[cid]) for cid in components] if energy is not None else [],
+    )
+
+
+def _store_window(window: Any, observed: dict, outputs: Sequence[str], components: Sequence[str]) -> None:
+    window.integrated_interval_s = observed["duration"]
+    window.quadrature_intervals = observed["intervals"]
+    for name, value in zip(outputs, observed["integrals"], strict=True):
+        window.signal_integrals[name] = value
+    for name, value in zip(outputs, observed["squares"], strict=True):
+        window.signal_square_integrals[name] = value
+    if window.component_absorbed_energy is not None:
+        for cid, value in zip(components, observed["energy"], strict=True):
+            window.component_absorbed_energy[cid] = value
+
+
+def observe_segment(
+    solution: OdeResult,
+    mode: Any,
+    accumulator: Any,
+    outputs: Sequence[str],
+    sample_times: Sequence[float],
+) -> np.ndarray | None:
+    """Add the segment's quadrature to ``accumulator`` and sample ``outputs``.
+
+    Replaces ``accumulator.add_solution`` and the per-sample output reads for
+    a kernel segment; returns one row of output values per sample time, or
+    None for a segment without a step (nothing to integrate or sample).
+    """
+
+    if not accumulator.begin_segment(solution, mode):
+        return None
+    raw = solution.pear_raw
+    energy = accumulator._component_energy_requested
+    (out_coef, out_off), (v_coef, v_off), (i_coef, i_off) = _observer_rows(mode, outputs, energy)
+    components = [c.id for c in mode.circuit.components] if energy else []
+    observed = _core.observe_segment(
+        [float(t) for t in solution.t],
+        raw["dense_t_old"].tolist(),
+        raw["dense_t"].tolist(),
+        raw["dense_y_old"],
+        raw["dense_q"],
+        _NODES,
+        _WEIGHTS,
+        float(accumulator.midpoint),
+        out_coef, out_off, v_coef, v_off, i_coef, i_off,
+        [float(t) for t in sample_times],
+        _window_state(accumulator.full, outputs, components),
+        _window_state(accumulator.last_half, outputs, components),
+    )
+    _store_window(accumulator.full, observed["full"], outputs, components)
+    _store_window(accumulator.last_half, observed["last_half"], outputs, components)
+    return np.asarray(observed["samples"]).reshape(len(sample_times), len(outputs))
+
+
+def state_extrema(
+    solution: OdeResult, mode: Any, window_start: float, window_end: float
+) -> dict[str, dict[str, float]]:
+    """Kernel version of metrics._dense_state_extrema for a kernel segment."""
+
+    if solution.sol is None or window_end <= window_start:
+        return {}
+    raw = solution.pear_raw
+    circuit = mode.circuit
+    components = sorted(circuit.state_components, key=lambda component: component.id)
+    order = [circuit.state_index[component.id] for component in components]
+    found = _core.state_extrema(
+        [float(t) for t in solution.t],
+        raw["dense_t_old"].tolist(),
+        raw["dense_t"].tolist(),
+        raw["dense_y_old"],
+        raw["dense_q"],
+        float(window_start),
+        float(window_end),
+        order,
+    )
+    extrema: dict[str, dict[str, float]] = {}
+    for component, index in zip(components, order, strict=True):
+        present, minimum, minimum_time, maximum, maximum_time = found[index]
+        if present:
+            extrema[component.id] = {
+                "minimum": minimum,
+                "minimum_time_s": minimum_time,
+                "maximum": maximum,
+                "maximum_time_s": maximum_time,
+            }
+    return extrema

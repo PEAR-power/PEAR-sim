@@ -125,19 +125,14 @@ First public release of PEARSim, published by PEAR Power.
 ### Performance
 
 - Optional compiled kernel `rust/pear-sim-core` (Rust, PyO3) and `simulate --backend
-  rust`: integrates each segment with a step-for-step port of SciPy's RK45, including
-  terminal events (Brent). Tableau identical to SciPy's bit for bit; error against the
-  exact solution in SciPy's accuracy class; every covered example within 1e-12 of the
-  reference metrics with identical event sequences (CI job `rust-core`). Covers
-  `dopri5` models with DC sources; anything else is refused with the reason. A run
-  records its backend, which is part of `run_sha256`. Speed on the simulation phase:
-  1.05–1.6× so far, because integration is only part of a run. See `docs/rust-core.md`.
-
-- Parameter sweeps, tolerance corners and perturbation grids run their point
-  simulations in parallel (`--jobs N`, default all cores but one). Points are still
-  isolated child processes with their own time limit, and results are consumed in point
-  order, so every retained file is the same as with `--jobs 1`. A timed-out MCP sweep
-  now stops its point processes too, not only its worker.
+  rust`. Inside each segment the kernel integrates (a step-for-step port of SciPy's
+  RK45 with terminal events), samples every output, integrates the metrics and the
+  energy audit, and finds the state extrema. Every covered example agrees with the
+  reference engine within 1e-12 on metrics, samples, energy audit and extrema, with
+  identical event sequences (CI job `rust-core`). Simulation phase 1.2–25× faster
+  (buck 7×, NPC 2–2.6×). Covers `dopri5` models with DC sources; anything else is
+  refused with the reason. A run records its backend, which is part of `run_sha256`.
+  See `docs/rust-core.md`.
 - The diode active-set search skips candidates already known to leave a node floating
   instead of compiling them (multilevel bridges: about 7× fewer mode compilations,
   five-level NPC 1.7× faster), and dense-state extrema use raw coefficient arrays.

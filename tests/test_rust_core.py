@@ -202,3 +202,37 @@ def test_unsupported_models_are_refused_with_the_reason() -> None:
         HybridSimulator(load_model(ROOT / "examples" / "halfwave_rectifier.yaml"), backend="rust")
     with pytest.raises(SimulationError, match="Unknown backend"):
         HybridSimulator(load_model(ROOT / "examples" / "buck.yaml"), backend="fortran")
+
+
+def test_kernel_extrema_match_the_reference_search_on_the_same_steps() -> None:
+    # Same integration result, two extremum searches: NumPy companion-matrix
+    # roots (reference) and the kernel's monotone-piece Brent search.
+    from types import SimpleNamespace
+
+    from pear_sim.core import rust_backend
+    from pear_sim.core.metrics import _dense_state_extrema
+
+    rng = np.random.default_rng(5)
+    checked = 0
+    for _ in range(40):
+        a, c, y0, span = _stable_system(rng)
+        n = y0.size
+        mode = SimpleNamespace(a=a, c=c, source_count=0)
+        solution = rust_backend.solve_segment(
+            mode, 0.0, span, y0, rtol=1e-6, atol=1e-9, max_step=span, events=None
+        )
+        components = [SimpleNamespace(id=f"x{i:02d}") for i in range(n)]
+        mode.circuit = SimpleNamespace(
+            state_components=components,
+            state_index={component.id: i for i, component in enumerate(components)},
+        )
+        for start, end in ((0.0, span), (0.3 * span, 0.8 * span)):
+            reference = _dense_state_extrema(solution, mode, start, end)
+            kernel = rust_backend.state_extrema(solution, mode, start, end)
+            assert reference.keys() == kernel.keys()
+            for state, expected in reference.items():
+                scale = max(abs(expected["minimum"]), abs(expected["maximum"]), 1e-300)
+                for key in ("minimum", "maximum"):
+                    assert abs(kernel[state][key] - expected[key]) <= 1e-13 * scale
+                checked += 1
+    assert checked > 200

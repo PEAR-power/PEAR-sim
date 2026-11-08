@@ -171,7 +171,9 @@ jobs:
       - name: Kernel tests
         run: uv run --no-sync pytest tests/test_rust_core.py
       - name: Every supported example on both engines
-        run: uv run --no-sync python scripts/rust_parity.py --tolerance 1e-12
+        run: |
+          uv run --no-sync python scripts/rust_parity.py --tolerance 1e-12 --mode lean
+          uv run --no-sync python scripts/rust_parity.py --tolerance 1e-12 --mode full
 
   ngspice-oracle:
     # Independent-engine evidence: the differential tests skip silently when no
