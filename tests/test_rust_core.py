@@ -146,7 +146,7 @@ def test_buck_run_matches_the_reference_engine(tmp_path: Path) -> None:
         for key, value in fields.items():
             other = compiled.metrics()[signal][key]
             if isinstance(value, float):
-                assert other == pytest.approx(value, rel=1e-9, abs=1e-9), (signal, key)
+                assert other == pytest.approx(value, rel=1e-12, abs=1e-12), (signal, key)
     run_dir = write_result(compiled, tmp_path / "run")
     manifest = json.loads((run_dir / "run.json").read_text())
     assert manifest["backend"].startswith("rust-core-")

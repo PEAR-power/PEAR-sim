@@ -20,7 +20,7 @@ norm and step control, the same dense output, and the same terminal-event handli
 with a port of SciPy's Brent root finder. It returns the same result shape, so every
 consumer (metrics, extrema, sampling, events) runs unchanged.
 
-Agreement is in tolerances, not bit for bit: BLAS may sum a matrix-vector product in a
+Agreement is in a tight tolerance (1e-12 relative), not bit for bit: BLAS may sum a matrix-vector product in a
 different order than the kernel's loops, and the event guards are read as affine rows
 instead of through the full node solution.
 
@@ -31,7 +31,8 @@ instead of through the full node solution.
 | Tableau vs SciPy | identical, bit for bit |
 | Brent roots vs SciPy | 1 539 of 1 541 identical, the rest within one ulp |
 | Error against the **exact** solution (matrix exponential), 200 random stable systems | same accuracy class as SciPy: median 0.27 vs 0.31 of the tolerance, worst 12.6 for both |
-| All 17 supported examples, both engines | every float metric within 1e-9 relative (worst seen 3.8e-14), identical event sequences |
+| All 17 supported examples, both engines | every float metric within 1e-12 relative (worst seen 3.8e-14), identical event sequences |
+| The gate itself: step-control safety factor 0.9 → 0.89 in the kernel | caught on 15 of 17 examples (deviations 5e-12 to 2.4e-10); the other two take steps fixed by `max_step`, so step control cannot move them |
 
 `tests/test_rust_core.py` pins these; `scripts/rust_parity.py` runs the example gate,
 and the CI job `rust-core` runs both on every change.

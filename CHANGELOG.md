@@ -127,7 +127,7 @@ First public release of PEARSim, published by PEAR Power.
 - Optional compiled kernel `rust/pear-sim-core` (Rust, PyO3) and `simulate --backend
   rust`: integrates each segment with a step-for-step port of SciPy's RK45, including
   terminal events (Brent). Tableau identical to SciPy's bit for bit; error against the
-  exact solution in SciPy's accuracy class; every covered example within 1e-9 of the
+  exact solution in SciPy's accuracy class; every covered example within 1e-12 of the
   reference metrics with identical event sequences (CI job `rust-core`). Covers
   `dopri5` models with DC sources; anything else is refused with the reason. A run
   records its backend, which is part of `run_sha256`. Speed on the simulation phase:

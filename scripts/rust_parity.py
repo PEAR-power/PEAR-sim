@@ -4,7 +4,7 @@ Gate for the optional Rust kernel (pear-sim-core): every float metric must
 agree with the reference engine within a relative tolerance (scaled by the
 signal's own range for values near zero), and the topology event sequence
 must be identical. Prints one line per example and exits non-zero on any
-disagreement. Run: uv run python scripts/rust_parity.py [--tolerance 1e-9]
+disagreement. Run: uv run python scripts/rust_parity.py [--tolerance 1e-12]
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def _worst(reference: dict, compiled: dict) -> tuple[float, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--tolerance", type=float, default=1e-9)
+    parser.add_argument("--tolerance", type=float, default=1e-12)
     parser.add_argument("--mode", choices=("lean", "full"), default="lean")
     args = parser.parse_args()
     failures = 0
@@ -59,9 +59,13 @@ def main() -> int:
             ).simulate()
             timings[backend] = time.process_time() - started
         worst, where = _worst(results["python"].metrics(), results["rust"].metrics())
-        same_events = [(e.kind, e.component) for e in results["python"].events] == [
-            (e.kind, e.component) for e in results["rust"].events
-        ]
+        reference_events, compiled_events = results["python"].events, results["rust"].events
+        same_events = [
+            (e.kind, e.target, e.previous, e.current) for e in reference_events
+        ] == [(e.kind, e.target, e.previous, e.current) for e in compiled_events] and all(
+            abs(a.time - b.time) <= args.tolerance * max(1.0, abs(a.time)) + 1e-15
+            for a, b in zip(reference_events, compiled_events)
+        )
         ok = worst <= args.tolerance and same_events
         failures += not ok
         print(
