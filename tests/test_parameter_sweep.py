@@ -10,6 +10,8 @@ import pytest
 
 import pear_sim.parameter_sweep as parameter_sweep_module
 from pear_sim.parameter_sweep import ParameterSweepError, run_parameter_sweep
+from pear_sim.evidence.parallel_points import run_ordered
+from pear_sim.evidence.worker_pool import PointWorkerPool, WorkerReply, WorkerTimeout
 
 
 ROOT = Path(__file__).parents[1]
@@ -604,14 +606,32 @@ def test_duplicate_outputs_and_oversized_model_text_fail_before_output(
     assert not overflow_destination.exists()
 
 
+def _use_worker_path(monkeypatch: pytest.MonkeyPatch, path: str) -> None:
+    """Route sweep points through one-shot workers or the long-lived pool."""
+
+    if path == "one_shot":
+        monkeypatch.setattr(
+            parameter_sweep_module,
+            "run_pooled",
+            lambda make_tasks, *, jobs: run_ordered(make_tasks(None), jobs=jobs),
+        )
+
+
+@pytest.mark.parametrize("path", ["one_shot", "pooled"])
 def test_point_worker_timeout_is_retained_and_cannot_leave_partial_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    path: str,
 ) -> None:
     def time_out(*args, **kwargs):
         raise parameter_sweep_module.subprocess.TimeoutExpired(args[0], 0.01)
 
+    def pool_time_out(*args, **kwargs):
+        raise WorkerTimeout
+
+    _use_worker_path(monkeypatch, path)
     monkeypatch.setattr(parameter_sweep_module.subprocess, "run", time_out)
+    monkeypatch.setattr(PointWorkerPool, "run", pool_time_out)
     artifacts = run_parameter_sweep(
         _write_model(tmp_path / "model.yaml"),
         _write_request(tmp_path / "request.json", values=["10 ohm"]),
@@ -628,13 +648,13 @@ def test_point_worker_timeout_is_retained_and_cannot_leave_partial_run(
     assert not list(artifacts.output_dir.rglob(".run-worker"))
 
 
+@pytest.mark.parametrize("path", ["one_shot", "pooled"])
 def test_successful_worker_with_unretained_stderr_is_rejected(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    path: str,
 ) -> None:
-    def warn_on_stderr(command, **_kwargs):
-        worker_dir = Path(command[command.index("--out") + 1])
-        worker_dir.mkdir()
+    def pass_payload() -> dict:
         module_path = Path(parameter_sweep_module.__file__).resolve()
         payload = {
             "status": "pass",
@@ -646,14 +666,28 @@ def test_successful_worker_with_unretained_stderr_is_rejected(
                 "version": parameter_sweep_module.__version__,
             },
         }
+        return payload
+
+    def warn_on_stderr(command, **_kwargs):
+        Path(command[command.index("--out") + 1]).mkdir()
         return parameter_sweep_module.subprocess.CompletedProcess(
             command,
             0,
-            stdout=json.dumps(payload).encode("utf-8"),
+            stdout=json.dumps(pass_payload()).encode("utf-8"),
             stderr=b"solver adjusted a requested setting",
         )
 
+    def pool_warn_on_stderr(self, model_path, overrides, out, **_kwargs):
+        out.mkdir()
+        return WorkerReply(
+            returncode=0,
+            stdout=json.dumps(pass_payload()).encode("utf-8"),
+            stderr=b"solver adjusted a requested setting",
+        )
+
+    _use_worker_path(monkeypatch, path)
     monkeypatch.setattr(parameter_sweep_module.subprocess, "run", warn_on_stderr)
+    monkeypatch.setattr(PointWorkerPool, "run", pool_warn_on_stderr)
     artifacts = run_parameter_sweep(
         _write_model(tmp_path / "model.yaml"),
         _write_request(tmp_path / "request.json", values=["10 ohm"]),

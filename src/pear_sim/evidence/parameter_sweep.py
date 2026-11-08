@@ -16,7 +16,6 @@ import hashlib
 import html
 import json
 import math
-import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -36,7 +35,13 @@ from pear_sim.spec.signals import is_signal_expression, signal_unit
 from pear_sim.run.contracts import model_hashes, sha256_file, sha256_json
 from pear_sim.evidence.expectations import validate_expectations
 from pear_sim.evidence.evidence_io import evaluate_run
-from pear_sim.evidence.parallel_points import resolve_jobs, run_ordered
+from pear_sim.evidence.parallel_points import resolve_jobs
+from pear_sim.evidence.worker_pool import (
+    PointWorkerPool,
+    WorkerTimeout,
+    run_pooled,
+    worker_environment,
+)
 from pear_sim.limits import MAX_SCHEDULED_GATE_EDGES
 from pear_sim.spec.model import Model, load_model
 from pear_sim.reporting.render import render_schematic
@@ -838,42 +843,52 @@ def _run_point_worker(
     *,
     timeout_s: float,
     lean: bool = False,
+    pool: PointWorkerPool | None = None,
 ) -> Path:
     """Run one simulation in a killable child process and atomically retain success.
 
     ``overrides`` maps parameter names to SI values; one entry is a 1-D sweep
-    point, several entries are one tolerance corner.
+    point, several entries are one tolerance corner. With ``pool`` the point
+    runs in a long-lived worker (no interpreter start-up per point); the reply
+    is checked exactly as a one-shot worker's is.
     """
 
     worker_dir = point_dir / ".run-worker"
     run_dir = point_dir / "run"
-    command = [
-        sys.executable,
-        "-I",
-        "-m",
-        "pear_sim.evidence.parameter_sweep_worker",
-        str(model_path),
-    ]
-    for parameter, value_si in overrides.items():
-        command.extend(
-            ["--parameter", parameter, "--value-si", format(value_si, ".17g")]
-        )
-    command.extend(["--out", str(worker_dir)])
-    if lean:
-        command.append("--lean")
-    environment = os.environ.copy()
-    environment.pop("PYTHONHOME", None)
-    environment.pop("PYTHONPATH", None)
     try:
-        completed = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            cwd=point_dir,
-            env=environment,
-            timeout=max(0.001, timeout_s),
-        )
-    except subprocess.TimeoutExpired as exc:
+        if pool is not None:
+            completed: Any = pool.run(
+                model_path,
+                overrides,
+                worker_dir,
+                cwd=point_dir,
+                timeout_s=timeout_s,
+                lean=lean,
+            )
+        else:
+            command = [
+                sys.executable,
+                "-I",
+                "-m",
+                "pear_sim.evidence.parameter_sweep_worker",
+                str(model_path),
+            ]
+            for parameter, value_si in overrides.items():
+                command.extend(
+                    ["--parameter", parameter, "--value-si", format(value_si, ".17g")]
+                )
+            command.extend(["--out", str(worker_dir)])
+            if lean:
+                command.append("--lean")
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                cwd=point_dir,
+                env=worker_environment(),
+                timeout=max(0.001, timeout_s),
+            )
+    except (subprocess.TimeoutExpired, WorkerTimeout) as exc:
         shutil.rmtree(worker_dir, ignore_errors=True)
         raise ParameterSweepError(
             f"Point simulation exceeded the {timeout_s:.3f}-second worker budget"
@@ -1276,7 +1291,7 @@ def run_parameter_sweep(
     failures: list[dict[str, Any]] = []
     sweep_wall_time_start = perf_counter()
 
-    def _launch(point_dir: Path, value_si: float) -> Path:
+    def _launch(pool: PointWorkerPool, point_dir: Path, value_si: float) -> Path:
         # The remaining budget is read when the child actually starts, so the
         # total wall-time limit means the same with one job or many.
         remaining_sweep_time = (
@@ -1293,6 +1308,7 @@ def run_parameter_sweep(
             {normalized.parameter: value_si},
             point_dir,
             timeout_s=min(MAX_PARAMETER_SWEEP_POINT_WALL_TIME_S, remaining_sweep_time),
+            pool=pool,
         )
 
     # Every point model is loaded first, in process, from the retained
@@ -1315,9 +1331,9 @@ def run_parameter_sweep(
             prepared.append((point_id, point_dir, None, exc))
         else:
             prepared.append((point_id, point_dir, point_model, None))
-    simulations = run_ordered(
-        [
-            partial(_launch, point_dir, value_si)
+    simulations = run_pooled(
+        lambda pool: [
+            partial(_launch, pool, point_dir, value_si)
             for (_, point_dir, point_model, _), value_si in zip(
                 prepared, normalized.values_si, strict=True
             )
