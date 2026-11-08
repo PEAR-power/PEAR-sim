@@ -124,6 +124,10 @@ First public release of PEARSim, published by PEAR Power.
 
 ### Performance
 
+- Recorded output samples solve the circuit's algebraic unknowns once per sample
+  instead of once per output, and the mode feasibility check reuses the vector it
+  already holds for every diode guard. Same arithmetic, fewer evaluations: every
+  example bundle is identical; buck ~20 % and NPC ~8 % less CPU time.
 - Diode mode selection replays its search for a repeated switch configuration: which
   candidates it visits and what each compiles to depend only on the gates and the
   diode guess, so only the state-dependent feasibility check runs again. The

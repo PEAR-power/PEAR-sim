@@ -685,8 +685,9 @@ class CompiledMode:
         state: np.ndarray,
         conducting: bool,
         time: float | None = None,
+        algebraic: np.ndarray | None = None,
     ) -> float:
-        values = self.algebraic(state, time)
+        values = self.algebraic(state, time) if algebraic is None else algebraic
         if conducting:
             return self.component_current(diode, state, values, time)
         return self.component_voltage(diode, state, values, time) - float(
@@ -694,10 +695,14 @@ class CompiledMode:
         )
 
     def output(
-        self, expression: str, state: np.ndarray, time: float | None = None
+        self,
+        expression: str,
+        state: np.ndarray,
+        time: float | None = None,
+        algebraic: np.ndarray | None = None,
     ) -> float:
         kind, target = self.circuit.output_targets[expression]
-        values = self.algebraic(state, time)
+        values = self.algebraic(state, time) if algebraic is None else algebraic
         if kind == "node_voltage":
             return self.node_voltage(target, state, values, time)
         component = self.circuit.component_by_id[target]
@@ -1657,7 +1662,7 @@ class Circuit:
 
         for diode in self.diodes:
             conducting = diode_states[diode.id]
-            guard = mode.diode_guard(diode, state, conducting, time)
+            guard = mode.diode_guard(diode, state, conducting, time, algebraic)
             if conducting and guard < -diode_tolerance:
                 return False
             if not conducting and guard > diode_tolerance:
