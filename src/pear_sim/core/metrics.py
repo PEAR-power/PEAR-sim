@@ -532,17 +532,28 @@ class _MetricAccumulator:
         for name in electrical_outputs(self.model):
             self._output_maps[name].append(_output_affine_map(mode, name))
 
-    def add_solution(self, solution: Any, mode: CompiledMode) -> None:
+    def begin_segment(self, solution: Any, mode: CompiledMode) -> bool:
+        """Book-keep one integrated segment; False if it has nothing to integrate.
+
+        Shared by the reference quadrature below and the compiled kernel's
+        (pear_sim.core.rust_backend.observe_segment).
+        """
+
         if solution.sol is None or len(solution.t) < 2:
-            return
+            return False
         segment_start = float(solution.t[0])
         segment_end = float(solution.t[-1])
         if segment_end <= segment_start:
-            return
+            return False
         self.topology_segments += 1
         self._record_mode(mode)
         if self.last_half_initial_state is None and segment_start <= self.midpoint <= segment_end:
             self.last_half_initial_state = np.asarray(solution.sol(self.midpoint), dtype=float)
+        return True
+
+    def add_solution(self, solution: Any, mode: CompiledMode) -> None:
+        if not self.begin_segment(solution, mode):
+            return
 
         for raw_start, raw_end in zip(solution.t[:-1], solution.t[1:], strict=True):
             start = float(raw_start)

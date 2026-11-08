@@ -6,6 +6,8 @@
 //! decision about circuits, modes and evidence.
 
 mod brent;
+mod extrema;
+mod observe;
 mod rk45;
 
 use numpy::{IntoPyArray, PyReadonlyArray1, PyReadonlyArray2};
@@ -130,6 +132,8 @@ fn pear_sim_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(integrate_affine_rk45, m)?)?;
     m.add_function(wrap_pyfunction!(brentq_polynomial, m)?)?;
     m.add_function(wrap_pyfunction!(rk45_tableau, m)?)?;
+    m.add_function(wrap_pyfunction!(observe_segment, m)?)?;
+    m.add_function(wrap_pyfunction!(state_extrema, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }
@@ -145,4 +149,155 @@ fn rk45_tableau(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     out.set_item("E", e)?;
     out.set_item("P", p)?;
     Ok(out)
+}
+
+fn rows(coef: &PyReadonlyArray2<'_, f64>, offset: Vec<f64>, n: usize) -> PyResult<observe::Rows> {
+    let view = coef.as_array();
+    let count = offset.len();
+    if count > 0 && (view.nrows() != count || view.ncols() != n) {
+        return Err(PyValueError::new_err("row matrix shape does not match its offsets"));
+    }
+    Ok(observe::Rows {
+        count,
+        n,
+        coef: if count > 0 { view.iter().copied().collect() } else { Vec::new() },
+        offset,
+    })
+}
+
+fn window(duration: f64, intervals: usize, integrals: Vec<f64>, squares: Vec<f64>, energy: Vec<f64>) -> observe::Window {
+    observe::Window { duration, intervals, integrals, squares, energy }
+}
+
+fn window_dict<'py>(py: Python<'py>, w: observe::Window) -> PyResult<Bound<'py, PyDict>> {
+    let out = PyDict::new(py);
+    out.set_item("duration", w.duration)?;
+    out.set_item("intervals", w.intervals)?;
+    out.set_item("integrals", w.integrals)?;
+    out.set_item("squares", w.squares)?;
+    out.set_item("energy", w.energy)?;
+    Ok(out)
+}
+
+/// Sample outputs and add the segment's quadrature to the running window totals.
+///
+/// `window_state` is (duration, intervals, integrals, squares, energy) for the
+/// full window and then for the last-half window.
+#[pyfunction]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn observe_segment<'py>(
+    py: Python<'py>,
+    ts: Vec<f64>,
+    dense_t_old: Vec<f64>,
+    dense_t: Vec<f64>,
+    dense_y_old: PyReadonlyArray1<'py, f64>,
+    dense_q: PyReadonlyArray1<'py, f64>,
+    nodes: Vec<f64>,
+    weights: Vec<f64>,
+    midpoint: f64,
+    output_coef: PyReadonlyArray2<'py, f64>,
+    output_offset: Vec<f64>,
+    voltage_coef: PyReadonlyArray2<'py, f64>,
+    voltage_offset: Vec<f64>,
+    current_coef: PyReadonlyArray2<'py, f64>,
+    current_offset: Vec<f64>,
+    sample_times: Vec<f64>,
+    full_state: (f64, usize, Vec<f64>, Vec<f64>, Vec<f64>),
+    last_state: (f64, usize, Vec<f64>, Vec<f64>, Vec<f64>),
+) -> PyResult<Bound<'py, PyDict>> {
+    let count = dense_t.len();
+    if dense_t_old.len() != count || ts.len() != count + 1 || count == 0 {
+        return Err(PyValueError::new_err("ts must have one more entry than the dense steps"));
+    }
+    let y_old = dense_y_old.as_array();
+    let q = dense_q.as_array();
+    let n = y_old.len() / count;
+    if y_old.len() != n * count || q.len() != n * count * 4 {
+        return Err(PyValueError::new_err("dense arrays do not match the step count"));
+    }
+    let y_old = y_old.to_vec();
+    let q = q.to_vec();
+    let steps: Vec<rk45::Dense> = (0..count)
+        .map(|i| rk45::Dense {
+            t_old: dense_t_old[i],
+            t: dense_t[i],
+            y_old: y_old[i * n..(i + 1) * n].to_vec(),
+            q: q[i * n * 4..(i + 1) * n * 4].to_vec(),
+        })
+        .collect();
+    let outputs = rows(&output_coef, output_offset, n)?;
+    let voltage = rows(&voltage_coef, voltage_offset, n)?;
+    let current = rows(&current_coef, current_offset, n)?;
+    if voltage.count != current.count {
+        return Err(PyValueError::new_err("voltage and current rows differ in count"));
+    }
+    let energy = if voltage.count > 0 { Some(observe::Energy { voltage, current }) } else { None };
+    let full = window(full_state.0, full_state.1, full_state.2, full_state.3, full_state.4);
+    let last = window(last_state.0, last_state.1, last_state.2, last_state.3, last_state.4);
+    let observed = py.allow_threads(|| {
+        observe::observe(&steps, &ts, &nodes, &weights, midpoint, &outputs, energy.as_ref(), &sample_times, full, last)
+    });
+    let out = PyDict::new(py);
+    out.set_item("full", window_dict(py, observed.full)?)?;
+    out.set_item("last_half", window_dict(py, observed.last_half)?)?;
+    out.set_item("samples", observed.samples.into_pyarray(py))?;
+    Ok(out)
+}
+
+fn dense_steps(
+    dense_t_old: &[f64],
+    dense_t: &[f64],
+    dense_y_old: &PyReadonlyArray1<'_, f64>,
+    dense_q: &PyReadonlyArray1<'_, f64>,
+) -> PyResult<(Vec<rk45::Dense>, usize)> {
+    let count = dense_t.len();
+    let y_old = dense_y_old.as_array();
+    let q = dense_q.as_array();
+    if count == 0 || dense_t_old.len() != count {
+        return Err(PyValueError::new_err("dense step arrays are empty or inconsistent"));
+    }
+    let n = y_old.len() / count;
+    if y_old.len() != n * count || q.len() != n * count * 4 {
+        return Err(PyValueError::new_err("dense arrays do not match the step count"));
+    }
+    let y_old = y_old.to_vec();
+    let q = q.to_vec();
+    Ok((
+        (0..count)
+            .map(|i| rk45::Dense {
+                t_old: dense_t_old[i],
+                t: dense_t[i],
+                y_old: y_old[i * n..(i + 1) * n].to_vec(),
+                q: q[i * n * 4..(i + 1) * n * 4].to_vec(),
+            })
+            .collect(),
+        n,
+    ))
+}
+
+/// Per-state (present, minimum, minimum_time, maximum, maximum_time) over a window.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn state_extrema<'py>(
+    py: Python<'py>,
+    ts: Vec<f64>,
+    dense_t_old: Vec<f64>,
+    dense_t: Vec<f64>,
+    dense_y_old: PyReadonlyArray1<'py, f64>,
+    dense_q: PyReadonlyArray1<'py, f64>,
+    window_start: f64,
+    window_end: f64,
+    order: Vec<usize>,
+) -> PyResult<Vec<(bool, f64, f64, f64, f64)>> {
+    let (steps, n) = dense_steps(&dense_t_old, &dense_t, &dense_y_old, &dense_q)?;
+    if ts.len() != steps.len() + 1 || order.iter().any(|&i| i >= n) {
+        return Err(PyValueError::new_err("ts or state order does not match the steps"));
+    }
+    let result = py.allow_threads(|| {
+        extrema::state_extrema(&steps, &ts, window_start, window_end, &order, n)
+    });
+    Ok(result
+        .into_iter()
+        .map(|e| (e.present, e.minimum, e.minimum_time, e.maximum, e.maximum_time))
+        .collect())
 }

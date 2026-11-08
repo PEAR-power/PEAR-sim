@@ -1,9 +1,15 @@
 # Compiled kernel (Rust, optional)
 
-`rust/pear-sim-core` is an optional compiled kernel. It takes over the integration of
-each segment between switching events: Dormand-Prince 5(4) on the segment's affine
-system `x' = A x + c`, with the topology events located inside each step. Everything
-else (loading, mode compilation, the diode active set, metrics, evidence, reports)
+`rust/pear-sim-core` is an optional compiled kernel. It takes over the work inside each
+segment between switching events:
+
+- integration: Dormand-Prince 5(4) on the segment's affine system `x' = A x + c`, with
+  the topology events located inside each step;
+- what is read from it: every recorded output at the sample times, the Gauss-Legendre
+  quadrature of every output (means, RMS) and, in a full run, of every component's
+  absorbed power (the energy audit), and the state extrema.
+
+Everything else (loading, mode compilation, the diode active set, evidence, reports)
 stays in Python, and the Python engine stays the reference.
 
 ```bash
@@ -31,8 +37,17 @@ instead of through the full node solution.
 | Tableau vs SciPy | identical, bit for bit |
 | Brent roots vs SciPy | 1 539 of 1 541 identical, the rest within one ulp |
 | Error against the **exact** solution (matrix exponential), 200 random stable systems | same accuracy class as SciPy: median 0.27 vs 0.31 of the tolerance, worst 12.6 for both |
-| All 17 supported examples, both engines | every float metric within 1e-12 relative (worst seen 3.8e-14), identical event sequences |
+| All 17 supported examples, both engines, lean and full | every metric, every recorded sample, every number of the energy audit and time integrals, and every state extremum within 1e-12 of the reference (worst seen 2.2e-13); identical event sequences, event times within Brent's own bracket (8 eps) |
+| Extremum search vs NumPy on the same steps | within 1e-13 of the state's range on 40 random systems |
 | The gate itself: step-control safety factor 0.9 → 0.89 in the kernel | caught on 15 of 17 examples (deviations 5e-12 to 2.4e-10); the other two take steps fixed by `max_step`, so step control cannot move them |
+| The gate itself: extremum search without derivative roots | caught on 9 of 17 examples (1e-7 to 4e-6) |
+
+Two allowances in the gate, both derived rather than chosen. Event times are compared
+within 8 eps (relative), because `solve_ivp` locates roots with Brent's method at
+xtol = rtol = 4 eps: two correct engines can stop anywhere in that bracket. An extremum
+of one mode interval may differ by as much as that interval's end states do, because it
+often sits on the boundary that such an event time defines. Extremum values are judged
+against the state's run-wide magnitude, not the swing inside a 1e-13 s interval.
 
 `tests/test_rust_core.py` pins these; `scripts/rust_parity.py` runs the example gate,
 and the CI job `rust-core` runs both on every change.
@@ -51,9 +66,18 @@ only reference-engine runs (evidence evaluation, sweeps, run comparison) refuse 
 
 ## Speed, measured
 
-On the simulation phase alone (CPU time, median of three, both engines alternating):
-1.05–1.6× on the covered examples. That is what the profile predicted: integration is
-only part of a run's cost. The rest is reading the dense solution between steps
-(samples, metric quadrature, extrema) and solving the node voltages for each recorded
-output, still in Python. Moving those into the kernel is the next step; the
-integration interface and the parity gate built here are what it will plug into.
+Simulation phase alone, CPU time, median of three, both engines alternating:
+
+| Example | lean | full |
+|---|---|---|
+| buck | 7.4× | 6.8× |
+| buck, discontinuous conduction | 16× | 25× |
+| buck with loss cards | 6.1× | 4.9× |
+| liquid-cooled traction inverter | 2.9× | 2.9× |
+| three-level NPC | 2.0× | 2.6× |
+| five-level NPC | 1.2× | 1.2× |
+
+What remains is Python work around the segments: choosing the next mode after a
+switching edge (the diode active-set search) and building the event descriptions. On the
+NPC inverters that is most of what is left. For a small model run from the command
+line, starting Python and writing the result bundle now cost more than the simulation.
