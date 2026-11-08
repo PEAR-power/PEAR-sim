@@ -28,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterator, Mapping, Sequence, TypeVar
@@ -37,6 +38,9 @@ from pear_sim.evidence.parallel_points import Outcome, run_ordered
 WORKER_MODULE = "pear_sim.evidence.parameter_sweep_worker"
 START_TIMEOUT_S = 60.0
 RECYCLE_AFTER = 200
+# Windows can hold a killed or exited worker's files open for a moment after
+# the process is gone (handle teardown, antivirus scans).
+UNLINK_RETRY_S = 5.0
 
 T = TypeVar("T")
 
@@ -52,6 +56,25 @@ class WorkerReply:
     returncode: int
     stdout: bytes
     stderr: bytes
+
+
+def _remove(path: Path) -> None:
+    """Delete ``path``, waiting out a Windows sharing violation.
+
+    Called right after a worker was killed or exited: on Windows the file can
+    still be locked for a moment, and ``unlink`` would raise PermissionError
+    instead of the point's own failure.
+    """
+
+    deadline = time.monotonic() + UNLINK_RETRY_S
+    while True:
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
 
 
 def worker_environment() -> dict[str, str]:
@@ -215,7 +238,7 @@ class PointWorkerPool:
             line = worker.next_line(timeout_s)
         except queue.Empty:
             self._discard(worker)
-            stderr_path.unlink(missing_ok=True)
+            _remove(stderr_path)
             raise WorkerTimeout from None
         except OSError:  # the worker died before reading the request
             line = None
@@ -223,7 +246,7 @@ class PointWorkerPool:
             captured = stderr_path.read_bytes()
         except FileNotFoundError:
             captured = b""
-        stderr_path.unlink(missing_ok=True)
+        _remove(stderr_path)
         if line is None:
             self._discard(worker)
             return WorkerReply(
