@@ -20,6 +20,7 @@ import pear_sim.api as api
 | `api.report(run_dir, out_dir)` | `ReportArtifacts` | Offline HTML/JSON projection; never recomputes. |
 | `api.evaluate(run_dir, expectations, out_dir)` | `EvidenceArtifacts` | Fail-closed KPI evaluation of a verified bundle. |
 | `api.compare(ref_run, cand_run, profile, out_dir)` | `RunComparisonArtifacts` | Same-physics verified-run comparison. |
+| `api.sensitivity(model, request, out, jobs=None)` | `SensitivityArtifacts` | Morris or Sobol indices; see [sensitivity](sensitivity.md). |
 | `api.evaluate_designs(model, request, out, jobs=None)` | `BatchArtifacts` | Screen, rank and re-run finalists; see [batch](batch.md). |
 | `api.sweep_buck_boundary(model, out, load_ratios=…)` | `BuckBoundarySweepArtifacts` | Likewise `sweep_boost_boundary`, `sweep_inverting_buck_boost_boundary`, `sweep_parameter`. |
 | `api.steady_state(model_or_path)` | `PeriodicSteadyState` | Newton shooting on the one-period cycle map; convergence status retained. |

@@ -43,6 +43,7 @@ from pear_sim.evidence.sweep import (
 from pear_sim.analysis.confidence import build_confidence_card
 from pear_sim.evidence.tolerance_corners import run_tolerance_corners
 from pear_sim.evidence.batch import BatchArtifacts, run_batch
+from pear_sim.evidence.sensitivity import SensitivityArtifacts, run_sensitivity
 from pear_sim.analysis.losses_thermal import (
     build_losses_thermal_observation,
     rainflow_count,
@@ -120,6 +121,8 @@ __all__ = [
     "sweep_parameter",
     "evaluate_designs",
     "BatchArtifacts",
+    "sensitivity",
+    "SensitivityArtifacts",
 ]
 
 
@@ -273,3 +276,4 @@ losses_thermal = build_losses_thermal_observation
 confidence_card = build_confidence_card
 tolerance_corners = run_tolerance_corners
 evaluate_designs = run_batch
+sensitivity = run_sensitivity

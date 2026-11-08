@@ -262,6 +262,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     batch.add_argument("--json", action="store_true")
 
+    sensitivity = subparsers.add_parser(
+        "sensitivity",
+        help="Global sensitivity (Morris screening or Sobol indices) over parameter ranges",
+    )
+    sensitivity.add_argument("model", type=Path)
+    sensitivity.add_argument("--request", type=Path, required=True)
+    sensitivity.add_argument("--out", type=Path, required=True)
+    sensitivity.add_argument(
+        "--jobs",
+        type=int,
+        help="Runs simulated at the same time (default: all cores but one)",
+    )
+    sensitivity.add_argument("--json", action="store_true")
+
     sweep = subparsers.add_parser(
         "sweep",
         help="Run a bounded, artifact-retaining parameter sweep",
@@ -441,6 +455,38 @@ def _print_batch(artifacts) -> None:
     target = " ".join(str(value) for value in selector.values())
     print(f"  ({sense} {target}; best of the sample, not an optimum)")
     print(f"  table: {artifacts.designs_csv}")
+
+
+def _print_sensitivity(artifacts) -> None:
+    summary = json.loads(artifacts.summary.read_text(encoding="utf-8"))
+    print(
+        f"Sensitivity ({artifacts.method}) {artifacts.status}: {artifacts.run_count} runs, "
+        f"{artifacts.failed_count} failed"
+    )
+    for output in summary["outputs"]:
+        print(f"  {output['output']}")
+        if output["status"] != "pass":
+            print(f"    not estimated: {output['reason']}")
+            continue
+        if output.get("note"):
+            print(f"    {output['note']}")
+        by_name = {item["name"]: item for item in output["parameters"]}
+        for name in output["ranking"]:
+            item = by_name[name]
+            if artifacts.method == "morris":
+                low, high = item["mu_star_ci95"]
+                print(
+                    f"    {name:<16} mu*={item['mu_star']:.4g} [{low:.3g}, {high:.3g}]  "
+                    f"sigma={item['sigma']:.3g}"
+                )
+            else:
+                s1_low, s1_high = item["S1_ci95"]
+                st_low, st_high = item["ST_ci95"]
+                print(
+                    f"    {name:<16} ST={item['ST']:.3f} [{st_low:.3f}, {st_high:.3f}]  "
+                    f"S1={item['S1']:.3f} [{s1_low:.3f}, {s1_high:.3f}]"
+                )
+    print("  (over the declared ranges only; see the claim in sensitivity-summary.json)")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -744,6 +790,29 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 _print_batch(artifacts)
             return 0 if artifacts.status == "pass" else 1
+        if args.command == "sensitivity":
+            from pear_sim.evidence.sensitivity import run_sensitivity
+
+            artifacts = run_sensitivity(args.model, args.request, args.out, jobs=args.jobs)
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "status": artifacts.status,
+                            "method": artifacts.method,
+                            "run_count": artifacts.run_count,
+                            "failed_count": artifacts.failed_count,
+                            "output": str(artifacts.output_dir),
+                            "summary": str(artifacts.summary),
+                            "runs_csv": str(artifacts.runs_csv),
+                        },
+                        indent=2,
+                    )
+                )
+            else:
+                _print_sensitivity(artifacts)
+            return 0 if artifacts.status in {"pass", "pass_with_failed_runs"} else 1
         if args.command == "sweep":
             if args.sweep_kind == "perturbation":
                 from pear_sim.evidence.perturbation_campaign import run_campaign
