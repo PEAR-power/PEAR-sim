@@ -858,6 +858,9 @@ class HybridSimulator:
 
         def record(time: float, sample_state: np.ndarray, sample_mode: CompiledMode) -> None:
             recorded_time.append(float(time))
+            # One solve of the algebraic unknowns per sample, shared by every
+            # electrical output (same values output() would compute itself).
+            sample_algebraic: np.ndarray | None = None
             for output in self.model.outputs:
                 if output in machine_outputs:
                     recorded_signals[output].append(
@@ -871,8 +874,10 @@ class HybridSimulator:
                         signal_values.get(declared_signal_outputs[output], 0.0)
                     )
                     continue
+                if sample_algebraic is None:
+                    sample_algebraic = sample_mode.algebraic(sample_state, time)
                 recorded_signals[output].append(
-                    sample_mode.output(output, sample_state, time)
+                    sample_mode.output(output, sample_state, time, sample_algebraic)
                 )
 
         kernel_outputs = electrical_outputs(self.model)
