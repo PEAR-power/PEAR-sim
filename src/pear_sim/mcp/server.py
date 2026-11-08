@@ -134,6 +134,20 @@ DESCRIPTIONS = {
         need device cards in the model. Large batches need a larger timeout_s.""",
         model_input=True,
     ),
+    "sensitivity": _doc(
+        """Global sensitivity of outputs to parameters over declared ranges. "morris"
+        (r*(k+1) runs): mu_star = typical output change across a parameter's whole
+        range, sigma = interaction/non-linearity. "sobol" (N*(k+2) runs, N a power of
+        two): S1 = share of output variance a parameter explains alone, ST = including
+        interactions. Every index has a bootstrap 95 % interval. Parameters are
+        independent and uniform over their ranges, so indices describe the model in
+        THIS box only. `request`: {"method": "sobol", "parameters": [{"name": "duty",
+        "from": "35 %", "to": "45 %"}, {"name": "fsw", "from": "10 kHz", "to": "40
+        kHz", "scale": "log"}], "outputs": [{"signal": "v(out)", "metric":
+        "peak_to_peak_last_half"}, {"losses": "total_mean_power_w"}], "base_samples":
+        64, "seed": 1}. At most 2000 runs; large studies need a larger timeout_s.""",
+        model_input=True,
+    ),
     "get_metrics": _doc(
         """All (or selected) metrics of one recorded signal: full-window and last-half
         mean, rms, min, max, peak-to-peak, integrals."""
@@ -313,6 +327,19 @@ def build_server(workspace: Workspace):
     ) -> dict[str, Any]:
         return guarded(
             t.evaluate_designs, workspace, request=request, model_yaml=model_yaml,
+            model_path=model_path, example=example, timeout_s=timeout_s,
+        )
+
+    @tool("sensitivity", computes)
+    def sensitivity(
+        request: dict[str, Any],
+        model_yaml: str | None = None,
+        model_path: str | None = None,
+        example: str | None = None,
+        timeout_s: float | None = None,
+    ) -> dict[str, Any]:
+        return guarded(
+            t.sensitivity, workspace, request=request, model_yaml=model_yaml,
             model_path=model_path, example=example, timeout_s=timeout_s,
         )
 

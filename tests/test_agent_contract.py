@@ -56,7 +56,7 @@ EXPECTED_TOOLS = {
     "list_examples", "get_example", "get_model_format", "capabilities", "validate_model",
     "render_schematic", "simulate", "steady_state", "loop_gain", "sweep_parameter",
     "sweep_tolerance_corners", "get_metrics", "get_waveform", "get_artifact",
-    "compare_runs", "list_runs", "doctor", "evaluate_designs",
+    "compare_runs", "list_runs", "doctor", "evaluate_designs", "sensitivity",
 }
 
 

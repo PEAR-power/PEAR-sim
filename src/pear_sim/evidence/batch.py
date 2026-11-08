@@ -459,6 +459,64 @@ def _prune_screening_run(run_dir: Path) -> None:
             path.rmdir()
 
 
+def screen_designs(
+    designs: Sequence[Mapping[str, float]],
+    model_path: Path,
+    root: Path,
+    quantities: Sequence[_Quantity],
+    *,
+    jobs: int,
+) -> list[dict[str, Any]]:
+    """Lean-run every design under ``root/<design_id>/run`` and read ``quantities``.
+
+    Runs go concurrently; rows come back in design order. A design that fails to
+    run or verify is kept with its error. Each verified run is pruned to the
+    files the reading needs.
+    """
+
+    point_dirs = []
+    for index in range(len(designs)):
+        point_dir = root / _design_id(index)
+        point_dir.mkdir(parents=True)
+        point_dirs.append(point_dir)
+    outcomes = run_ordered(
+        [
+            partial(
+                _run_point_worker,
+                model_path,
+                dict(design),
+                point_dir,
+                timeout_s=MAX_PARAMETER_SWEEP_POINT_WALL_TIME_S,
+                lean=True,
+            )
+            for design, point_dir in zip(designs, point_dirs, strict=True)
+        ],
+        jobs=jobs,
+    )
+    rows: list[dict[str, Any]] = []
+    for index, (design, outcome) in enumerate(zip(designs, outcomes, strict=True)):
+        row: dict[str, Any] = {
+            "design_id": _design_id(index),
+            "parameters_si": dict(design),
+            "status": "pass",
+            "values": {},
+            "violations": [],
+            "error": None,
+            "run_sha256": None,
+        }
+        try:
+            run_dir = outcome.unwrap()
+            row["run_sha256"], row["values"] = _read_run(
+                run_dir, model_path, design, quantities
+            )
+            _prune_screening_run(run_dir)
+        except Exception as exc:  # retained per design; the batch continues
+            row["status"] = "fail"
+            row["error"] = f"{type(exc).__name__}: {str(exc)[:1000]}"
+        rows.append(row)
+    return rows
+
+
 @dataclass(frozen=True)
 class BatchArtifacts:
     output_dir: Path
@@ -531,45 +589,10 @@ def run_batch(
     started = perf_counter()
 
     # Screening: lean runs, concurrently, consumed in design order.
-    point_dirs = []
-    for index in range(len(request.designs)):
-        point_dir = destination / "designs" / _design_id(index)
-        point_dir.mkdir(parents=True)
-        point_dirs.append(point_dir)
-    screening = run_ordered(
-        [
-            partial(
-                _run_point_worker,
-                retained_model,
-                design,
-                point_dir,
-                timeout_s=MAX_PARAMETER_SWEEP_POINT_WALL_TIME_S,
-                lean=True,
-            )
-            for design, point_dir in zip(request.designs, point_dirs, strict=True)
-        ],
-        jobs=worker_jobs,
+    rows = screen_designs(
+        request.designs, retained_model, destination / "designs", quantities, jobs=worker_jobs
     )
-    rows: list[dict[str, Any]] = []
-    for index, (design, outcome) in enumerate(zip(request.designs, screening, strict=True)):
-        row: dict[str, Any] = {
-            "design_id": _design_id(index),
-            "parameters_si": design,
-            "status": "pass",
-            "values": {},
-            "violations": [],
-            "error": None,
-            "run_sha256": None,
-        }
-        try:
-            run_dir = outcome.unwrap()
-            row["run_sha256"], row["values"] = _read_run(
-                run_dir, retained_model, design, quantities
-            )
-            _prune_screening_run(run_dir)
-        except Exception as exc:  # retained per design; the batch continues
-            row["status"] = "fail"
-            row["error"] = f"{type(exc).__name__}: {str(exc)[:1000]}"
+    for row in rows:
         if row["status"] == "pass":
             row["violations"] = [
                 constraint.quantity.label
@@ -577,7 +600,6 @@ def run_batch(
                 if not constraint.holds(row["values"][constraint.quantity.label])
             ]
         row["feasible"] = row["status"] == "pass" and not row["violations"]
-        rows.append(row)
 
     feasible = [row for row in rows if row["feasible"]]
     sign = 1.0 if request.sense == "minimize" else -1.0

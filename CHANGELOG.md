@@ -116,6 +116,11 @@ First public release of PEARSim, published by PEAR Power.
   evidence. A finalist must reproduce its screening values exactly or the batch fails.
   Screening runs are lean and keep only the files the ranking reads. The result is the
   best design of the sample, not an optimum. See `docs/batch.md`.
+- `pear-sim sensitivity`, `api.sensitivity` and the MCP tool `sensitivity`: global
+  sensitivity over declared parameter ranges. Morris screening (`mu_star`, `sigma`) or
+  Sobol indices (first-order `S1`, total `ST`, Saltelli design), every index with a
+  bootstrap 95 % interval. The estimators are checked against closed forms (a linear
+  function, the Ishigami function) and the ideal buck law. See `docs/sensitivity.md`.
 
 ### Performance
 
@@ -154,8 +159,8 @@ First public release of PEARSim, published by PEAR Power.
   on a phone: tables scroll inside their frame or become cards instead of breaking
   identifiers mid-word.
 - MCP server (`pear-sim mcp`, optional extra `pear-sim[mcp]`, official MCP Python SDK):
-  18 tools (examples, format reference, validation, schematic, simulation, steady state,
-  loop gain, sweeps, design batches, selective result reads), resources and prompts. Models inline or
+  19 tools (examples, format reference, validation, schematic, simulation, steady state,
+  loop gain, sweeps, design batches, sensitivity, selective result reads), resources and prompts. Models inline or
   from the project; reads confined to the project and workspace, writes to the
   workspace; computations isolated in a child process with a time limit; actionable
   error hints. Runs are bit-identical to the CLI. The `pear-sim-mcp` launcher package

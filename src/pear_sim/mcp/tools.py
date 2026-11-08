@@ -1028,6 +1028,36 @@ def evaluate_designs(
     }
 
 
+def sensitivity(
+    workspace: Workspace,
+    *,
+    request: dict[str, Any],
+    model_yaml: str | None = None,
+    model_path: str | None = None,
+    example: str | None = None,
+    timeout_s: float | None = None,
+) -> dict[str, Any]:
+    path = resolve_model(workspace, model_yaml, model_path, example)
+    model = _load(path, None)
+    run_id, out = workspace.new_run_dir(model.name, kind="sensitivity")
+    request_path = _request_file(workspace, request, out, "pear-sim/sensitivity-request/v0.1")
+    result = _run_worker(
+        {"op": "sensitivity", "model": str(path), "request_path": str(request_path), "out": str(out)},
+        _timeout(timeout_s),
+    )
+    summary = json.loads(Path(result["summary"]).read_text(encoding="utf-8"))
+    return {
+        "run_id": run_id,
+        "method": summary["method"],
+        "status": summary["status"],
+        "claim": summary["claim"],
+        "run_count": summary["run_count"],
+        "failed_count": summary["failed_count"],
+        "outputs": _sig(summary["outputs"]),
+        "note": "runs.csv in this bundle lists every run's inputs and outputs",
+    }
+
+
 def sweep_tolerance_corners(
     workspace: Workspace,
     *,

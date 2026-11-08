@@ -110,6 +110,13 @@ def _evaluate_designs(request: dict[str, Any]) -> dict[str, Any]:
     return {"bundle": str(artifacts.output_dir), "summary": str(artifacts.summary)}
 
 
+def _sensitivity(request: dict[str, Any]) -> dict[str, Any]:
+    from pear_sim.evidence.sensitivity import run_sensitivity
+
+    artifacts = run_sensitivity(request["model"], request["request_path"], request["out"])
+    return {"bundle": str(artifacts.output_dir), "summary": str(artifacts.summary)}
+
+
 OPERATIONS = {
     "simulate": _simulate,
     "steady_state": _steady_state,
@@ -117,6 +124,7 @@ OPERATIONS = {
     "sweep_parameter": _sweep_parameter,
     "tolerance_corners": _tolerance_corners,
     "evaluate_designs": _evaluate_designs,
+    "sensitivity": _sensitivity,
 }
 
 
