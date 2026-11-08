@@ -204,3 +204,26 @@ def test_closed_pool_refuses_work(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="closed"):
         pool.run(BUCK, {"quiet": 1.0}, tmp_path / "o", cwd=_point(tmp_path, "p"),
                  timeout_s=30.0, lean=True)
+
+
+def test_a_briefly_locked_stderr_file_does_not_mask_the_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Windows keeps a killed worker's stderr file locked for a moment; the
+    # point must still fail with the budget message, not PermissionError.
+    real_unlink = Path.unlink
+    refusals = {"left": 3}
+
+    def locked_unlink(self: Path, missing_ok: bool = False) -> None:
+        if self.name == ".worker-stderr" and refusals["left"]:
+            refusals["left"] -= 1
+            raise PermissionError(32, "being used by another process")
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", locked_unlink)
+    point_dir = _point(tmp_path, "p")
+    with _fake_pool(tmp_path) as pool:
+        with pytest.raises(ParameterSweepError, match="worker budget"):
+            _run_point_worker(BUCK, {"hang": 1.0}, point_dir, timeout_s=0.5, pool=pool)
+    assert refusals["left"] == 0
+    assert not (point_dir / ".worker-stderr").exists()
