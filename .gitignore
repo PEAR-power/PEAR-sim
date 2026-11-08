@@ -13,3 +13,6 @@ runs/
 dist/
 .pear-sim/
 evals/mcp/results/
+rust/pear-sim-core/target/
+rust/pear-sim-core/dist/
+rust-dist/

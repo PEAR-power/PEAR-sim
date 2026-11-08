@@ -1,0 +1,15 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "pear-sim-core"
+version = "0.1.0"
+description = "Optional compiled kernels for PEARSim (segment integration)."
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26"]
+
+[tool.maturin]
+module-name = "pear_sim_core"
+features = ["pyo3/extension-module"]
