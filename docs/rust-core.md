@@ -31,7 +31,7 @@ instead of through the full node solution.
 | Tableau vs SciPy | identical, bit for bit |
 | Brent roots vs SciPy | 1 539 of 1 541 identical, the rest within one ulp |
 | Error against the **exact** solution (matrix exponential), 200 random stable systems | same accuracy class as SciPy: median 0.27 vs 0.31 of the tolerance, worst 12.6 for both |
-| Every supported example, both engines | every float metric within 1e-9 relative (worst seen 3.8e-14), identical event sequences |
+| All 17 supported examples, both engines | every float metric within 1e-9 relative (worst seen 3.8e-14), identical event sequences |
 
 `tests/test_rust_core.py` pins these; `scripts/rust_parity.py` runs the example gate,
 and the CI job `rust-core` runs both on every change.
