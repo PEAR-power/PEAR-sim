@@ -236,7 +236,7 @@ def write_result(
         {
             "model_sha256": hashes["model_sha256"],
             "request_sha256": hashes["request_sha256"],
-            "backend": "reference-python",
+            "backend": result.backend,
             "pear_sim_version": __version__,
         }
     )
@@ -674,7 +674,7 @@ def write_result(
         # Always present, in both modes: a reader must never have to infer the
         # evidence scope from a missing field.
         "evidence_mode": evidence_mode,
-        "backend": "reference-python",
+        "backend": result.backend,
         "model_schema": result.model.schema,
         "model": result.model.name,
         "model_file": result.model.source_path.name,

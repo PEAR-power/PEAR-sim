@@ -11,6 +11,7 @@ from scipy.integrate import solve_ivp
 
 from pear_sim.core.circuit import Circuit, CompiledMode, STATE_CONSTRAINT_TOLERANCE
 from pear_sim.errors import SimulationError
+from pear_sim.core import rust_backend
 from pear_sim.analysis.harmonics import HarmonicAccumulator
 from pear_sim.limits import MAX_RUN_EVENT_ROWS
 from pear_sim.spec.signals import (
@@ -45,6 +46,7 @@ from pear_sim.spec.machines import (
     salient_torque,
 )
 from pear_sim.spec.model import Model
+
 from pear_sim.spec.waveforms import SineWaveform
 from pear_sim.core.scheduling import (
     _build_gate_schedule,
@@ -59,6 +61,10 @@ from pear_sim.core.scheduling import _pwm_value as _pwm_value  # noqa: F401
 from pear_sim.core.scheduling import _scheduled_edges as _scheduled_edges  # noqa: F401
 from pear_sim.core.scheduling import _ulp_close as _ulp_close  # noqa: F401
 from pear_sim.core.scheduling import scheduled_edges as scheduled_edges  # noqa: F401
+
+#: Engines that can integrate a segment. "rust" is the optional compiled
+#: kernel (pear-sim-core); "python" is the reference.
+BACKENDS = ("python", "rust")
 
 
 @dataclass(frozen=True)
@@ -99,6 +105,10 @@ class SimulationResult:
     #: Evidence scope this run was produced under. Defaults to ``"full"`` so
     #: every existing producer and every hand-built result keeps its meaning.
     evidence_mode: str = "full"
+    #: Engine that integrated the segments. It is part of the run identity
+    #: (run_sha256), so a run from another engine is never mistaken for one
+    #: from the reference implementation.
+    backend: str = "reference-python"
 
     def metrics(self) -> dict[str, dict[str, Any]]:
         """Return time-weighted metrics and explicitly named output-grid statistics.
@@ -272,15 +282,28 @@ def _initial_sampled_gate_values(model: Model) -> dict[str, bool]:
 
 
 class HybridSimulator:
-    def __init__(self, model: Model, *, evidence_mode: str = "full"):
+    def __init__(
+        self, model: Model, *, evidence_mode: str = "full", backend: str = "python"
+    ):
         if evidence_mode not in EVIDENCE_MODES:
             raise SimulationError(
                 f"Unknown evidence mode {evidence_mode!r}; expected one of "
                 + ", ".join(EVIDENCE_MODES)
             )
+        if backend not in BACKENDS:
+            raise SimulationError(
+                f"Unknown backend {backend!r}; expected one of " + ", ".join(BACKENDS)
+            )
         self.evidence_mode = evidence_mode
         self.model = model
         self.circuit = Circuit(model)
+        self.backend = backend
+        if backend == "rust":
+            # Fail closed: a model the compiled kernel does not cover is
+            # refused with the reason, never quietly run on the reference.
+            self.backend_id = rust_backend.require_supported(model, self.circuit)
+        else:
+            self.backend_id = "reference-python"
         span = model.transient.stop - model.transient.start
         self.time_tolerance = max(1e-15, span * 1e-12)
         self.guard_tolerance = 1e-10
@@ -914,17 +937,29 @@ class HybridSimulator:
                 "bdf": "BDF",
             }[settings.solver]
             max_step = settings.max_step or (target_time - current_time)
-            solution = solve_ivp(
-                mode.derivative,
-                (current_time, target_time),
-                state,
-                method=method,
-                rtol=settings.rtol,
-                atol=settings.atol,
-                max_step=max_step,
-                dense_output=True,
-                events=event_functions or None,
-            )
+            if self.backend == "rust":
+                solution = rust_backend.solve_segment(
+                    mode,
+                    current_time,
+                    target_time,
+                    state,
+                    rtol=settings.rtol,
+                    atol=settings.atol,
+                    max_step=max_step,
+                    events=event_functions or None,
+                )
+            else:
+                solution = solve_ivp(
+                    mode.derivative,
+                    (current_time, target_time),
+                    state,
+                    method=method,
+                    rtol=settings.rtol,
+                    atol=settings.atol,
+                    max_step=max_step,
+                    dense_output=True,
+                    events=event_functions or None,
+                )
             integration_steps += max(0, len(solution.t) - 1)
             if not solution.success or solution.sol is None:
                 raise SimulationError(
@@ -1220,6 +1255,7 @@ class HybridSimulator:
             machine_trace=machine_driver.trace,
             signal_trace=signal_trace,
             evidence_mode=self.evidence_mode,
+            backend=self.backend_id,
         )
 
     def _assert_star_invariants(
@@ -1330,6 +1366,7 @@ class HybridSimulator:
 
                 blocked_latch.terminal = True  # type: ignore[attr-defined]
                 blocked_latch.direction = 1.0  # type: ignore[attr-defined]
+                blocked_latch.pear_spec = ("constant", -self.guard_tolerance)  # type: ignore[attr-defined]
                 functions.append(blocked_latch)
                 continue
             guard_coefficients, guard_constant, guard_sources = mode.diode_guard_affine(
@@ -1400,6 +1437,22 @@ class HybridSimulator:
 
             event.terminal = True  # type: ignore[attr-defined]
             event.direction = -1.0 if conducting else 1.0  # type: ignore[attr-defined]
+            # The same guard as data, for the compiled kernel. It reads the
+            # affine row directly; this closure reaches the same value through
+            # the full node solution, so the two agree to rounding.
+            restart_value = self.guard_tolerance if conducting else -self.guard_tolerance
+            if guard_is_identically_zero:
+                event.pear_spec = ("constant", restart_value)  # type: ignore[attr-defined]
+            elif guard_hold is not None:
+                event.pear_spec = ("constant", guard_hold)  # type: ignore[attr-defined]
+            elif not np.any(guard_sources != 0.0):
+                event.pear_spec = (  # type: ignore[attr-defined]
+                    "affine",
+                    np.asarray(guard_coefficients, dtype=float),
+                    float(guard_constant),
+                    segment_start + delay,
+                    restart_value,
+                )
             functions.append(event)
 
         for component in self.circuit.sat_inductors:
@@ -1440,6 +1493,11 @@ class HybridSimulator:
 
                 saturation_event.terminal = True  # type: ignore[attr-defined]
                 saturation_event.direction = 0.0  # type: ignore[attr-defined]
+                unit_row = np.zeros(state_count)
+                unit_row[state_index] = 1.0
+                saturation_event.pear_spec = (  # type: ignore[attr-defined]
+                    "affine", unit_row, -level, segment_start + delay, hold
+                )
                 functions.append(saturation_event)
         return functions
 

@@ -198,6 +198,15 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--decision", type=Path, help="Human-authored review decision JSON")
     simulate.add_argument("--require-review", action="store_true")
     simulate.add_argument(
+        "--backend",
+        choices=("python", "rust"),
+        default="python",
+        help=(
+            "Engine for segment integration. 'rust' needs the optional pear-sim-core "
+            "kernel and refuses, with the reason, any model it does not cover."
+        ),
+    )
+    simulate.add_argument(
         "--lean",
         action="store_true",
         help=(
@@ -1146,7 +1155,9 @@ def main(argv: list[str] | None = None) -> int:
                 "scope": decision["scope"],
             }
         evidence_mode = "lean" if getattr(args, "lean", False) else "full"
-        result = HybridSimulator(model, evidence_mode=evidence_mode).simulate()
+        result = HybridSimulator(
+            model, evidence_mode=evidence_mode, backend=args.backend
+        ).simulate()
         destination = write_result(result, args.out, topology_review=topology_review)
         payload = {
             "ok": True,

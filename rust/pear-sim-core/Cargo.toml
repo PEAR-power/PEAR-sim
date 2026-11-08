@@ -1,0 +1,19 @@
+[package]
+name = "pear-sim-core"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Optional compiled kernels for PEARSim (segment integration)."
+publish = false
+
+[lib]
+name = "pear_sim_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py311"] }
+numpy = "0.23"
+
+[profile.release]
+lto = true
+codegen-units = 1

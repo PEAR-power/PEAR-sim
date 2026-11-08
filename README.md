@@ -171,6 +171,9 @@ grid or a list), ranks them against a declared objective and constraints (for ex
 lowest device losses with output ripple under 0.5 V and every junction under 125 °C) and
 re-runs the finalists in full, checking they reproduce the screening numbers. The winner
 is the best of the sample, not an optimum. See [docs/batch.md](docs/batch.md).
+An optional compiled kernel in Rust (`--backend rust`, [docs/rust-core.md](docs/rust-core.md))
+integrates segments with a step-for-step port of SciPy's RK45; the Python engine stays
+the reference and every covered example is checked against it in CI.
 `pear-sim sensitivity` answers which parameters move which outputs over declared ranges:
 Morris screening or Sobol indices, each with a bootstrap 95 % interval
 ([docs/sensitivity.md](docs/sensitivity.md)).

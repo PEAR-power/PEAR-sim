@@ -36,6 +36,10 @@ src/pear_sim/
   topology/    declarative topology library + comparison
   oracle/      second-engine adapter (ngspice, linear subset)
   errors.py, limits.py, _jsonutil.py at the root
+
+rust/pear-sim-core/  optional compiled kernel (Rust + PyO3): RK45 segment integration
+               with terminal events, mirroring solve_ivp; reached through
+               core/rust_backend.py with `backend="rust"`; Python stays the reference
 ```
 
 Old flat import paths (`pear_sim.solver`, `pear_sim.model`, …) still work via
