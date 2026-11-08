@@ -192,6 +192,7 @@ class PointWorkerPool:
         cwd: Path,
         timeout_s: float,
         lean: bool,
+        backend: str = "python",
     ) -> WorkerReply:
         """Run one point; raise :class:`WorkerTimeout` past ``timeout_s``."""
 
@@ -203,6 +204,7 @@ class PointWorkerPool:
             "values_si": [float(value) for value in overrides.values()],
             "out": str(out),
             "lean": lean,
+            "backend": backend,
             "cwd": str(cwd),
             "stderr_path": str(stderr_path),
         }

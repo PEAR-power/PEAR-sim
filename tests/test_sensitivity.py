@@ -161,6 +161,7 @@ def _request(tmp_path: Path, **change) -> Path:
         ({"parameters": [{"name": "duty", "from": "35 %", "to": "45 %"}]}, "at least two"),
         ({"outputs": [{"signal": "v(out)", "metric": "mean", "max": 3}]}, "takes no bounds"),
         ({"levels": 5}, "levels must be even"),
+        ({"backend": "gpu"}, "backend must be"),
         # 1024 * (3 + 2) = 5120 runs.
         ({"method": "sobol", "base_samples": 1024, "parameters": [
             {"name": n, "from": f, "to": t} for n, f, t in
@@ -206,3 +207,22 @@ def test_buck_mean_output_moves_only_with_duty(tmp_path: Path) -> None:
     assert effect["load"] < 1e-3 and effect["fsw"] < 1e-3
     assert output["ranking"][0] == "duty"
     assert "uniform over its range" in summary["claim"]
+
+
+def test_sensitivity_on_the_compiled_kernel_matches_the_reference(tmp_path: Path) -> None:
+    pytest.importorskip("pear_sim_core")
+    from pear_sim.core import rust_backend
+
+    reference = run_sensitivity(LOSS_BUCK, _request(tmp_path), tmp_path / "py", jobs=4)
+    kernel_request = tmp_path / "rust.json"
+    payload = json.loads(_request(tmp_path).read_text())
+    payload["backend"] = "rust"
+    kernel_request.write_text(json.dumps(payload))
+    kernel = run_sensitivity(LOSS_BUCK, kernel_request, tmp_path / "rs", jobs=4)
+    py = json.loads(reference.summary.read_text())
+    rs = json.loads(kernel.summary.read_text())
+    assert py["backend"] == "reference-python"
+    assert rs["backend"] == rust_backend.kernel_id()
+    for left, right in zip(py["outputs"][0]["parameters"], rs["outputs"][0]["parameters"], strict=True):
+        assert left["name"] == right["name"]
+        assert right["mu_star"] == pytest.approx(left["mu_star"], rel=1e-9, abs=1e-9)

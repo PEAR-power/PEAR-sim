@@ -95,6 +95,8 @@ tests measure the truth, not the code's agreement with itself:
 - Sobol: `base_samples`, a power of two (default 64, 8..1024).
 - `seed` (default 0) makes the study reproducible; `bootstrap` (default 1000) sets the
   number of resamples for the intervals.
+- `backend`: `"python"` (default) or `"rust"`, the engine for every run, as in a
+  [batch](batch.md#request).
 - At most 2 000 runs per study. Runs are lean and go in parallel (`--jobs`).
 
 ## Output

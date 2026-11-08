@@ -45,6 +45,7 @@ from pear_sim.evidence.parameter_sweep import (
     _run_point_worker,
     _safe_run_artifact,
 )
+from pear_sim.core.solver import HybridSimulator
 from pear_sim.spec.model import Model, load_model
 from pear_sim.spec.units import parse_quantity
 
@@ -203,6 +204,26 @@ class _Request:
     constraints: tuple[_Constraint, ...]
     finalists: int
     normalized: dict[str, Any]
+    backend: str  # "python" | "rust"
+    backend_id: str  # the exact engine id every run must record
+
+
+def resolve_backend(value: Any, model: Model) -> tuple[str, str]:
+    """Check a requested engine against the model before anything runs.
+
+    Returns the engine name and the exact id its runs record. The compiled
+    kernel refuses unsupported models here, with the reason, rather than
+    failing every design one by one.
+    """
+
+    name = "python" if value is None else value
+    if name not in {"python", "rust"}:
+        raise BatchError("backend must be 'python' or 'rust'")
+    try:
+        backend_id = HybridSimulator(model, evidence_mode="lean", backend=name).backend_id
+    except Exception as exc:  # unsupported model or kernel not installed
+        raise BatchError(str(exc)) from exc
+    return name, backend_id
 
 
 def _parameter_value(model: Model, parameter: str, raw: Any, *, name: str) -> float:
@@ -349,7 +370,7 @@ def _normalize_request(payload: Any, model: Model) -> _Request:
         raise BatchError(f"batch request schema must be {REQUEST_SCHEMA!r}")
     _reject_unknown(
         payload,
-        {"schema", "label", "designs", "objective", "constraints", "finalists"},
+        {"schema", "label", "designs", "objective", "constraints", "finalists", "backend"},
         name="batch request",
     )
     method, parameters, designs, design_spec = _expand_designs(payload.get("designs"), model)
@@ -390,6 +411,7 @@ def _normalize_request(payload: Any, model: Model) -> _Request:
         or not 0 <= finalists <= MAX_BATCH_FINALISTS
     ):
         raise BatchError(f"finalists must be an integer in 0..{MAX_BATCH_FINALISTS}")
+    backend, backend_id = resolve_backend(payload.get("backend"), model)
 
     normalized = {
         "schema": REQUEST_SCHEMA,
@@ -398,6 +420,7 @@ def _normalize_request(payload: Any, model: Model) -> _Request:
         "objective": {sense: objective.as_dict()},
         "constraints": [constraint.as_dict() for constraint in constraints],
         "finalists": finalists,
+        "backend": backend,
         "expanded_designs": [
             {"design_id": _design_id(index), "parameters_si": design}
             for index, design in enumerate(designs)
@@ -412,6 +435,8 @@ def _normalize_request(payload: Any, model: Model) -> _Request:
         constraints=tuple(constraints),
         finalists=finalists,
         normalized=normalized,
+        backend=backend,
+        backend_id=backend_id,
     )
 
 
@@ -429,11 +454,15 @@ def _read_run(
     model_path: Path,
     overrides: Mapping[str, float],
     quantities: Sequence[_Quantity],
+    *,
+    backend_id: str = "reference-python",
 ) -> tuple[str, dict[str, float]]:
     """Verify one run bundle and read the requested quantities from it."""
 
     expected = load_model(model_path, overrides=dict(overrides))
-    metrics, run_sha256 = _read_verified_metrics(run_dir, expected_model=expected)
+    metrics, run_sha256 = _read_verified_metrics(
+        run_dir, expected_model=expected, expected_backend=backend_id
+    )
     run_manifest = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
     losses = None
     if "losses_thermal" in run_manifest["files"]:
@@ -467,6 +496,8 @@ def screen_designs(
     quantities: Sequence[_Quantity],
     *,
     jobs: int,
+    backend: str = "python",
+    backend_id: str = "reference-python",
 ) -> list[dict[str, Any]]:
     """Lean-run every design under ``root/<design_id>/run`` and read ``quantities``.
 
@@ -490,6 +521,7 @@ def screen_designs(
                 timeout_s=MAX_PARAMETER_SWEEP_POINT_WALL_TIME_S,
                 pool=pool,
                 lean=True,
+                backend=backend,
             )
             for design, point_dir in zip(designs, point_dirs, strict=True)
         ],
@@ -509,7 +541,7 @@ def screen_designs(
         try:
             run_dir = outcome.unwrap()
             row["run_sha256"], row["values"] = _read_run(
-                run_dir, model_path, design, quantities
+                run_dir, model_path, design, quantities, backend_id=backend_id
             )
             _prune_screening_run(run_dir)
         except Exception as exc:  # retained per design; the batch continues
@@ -592,7 +624,13 @@ def run_batch(
 
     # Screening: lean runs, concurrently, consumed in design order.
     rows = screen_designs(
-        request.designs, retained_model, destination / "designs", quantities, jobs=worker_jobs
+        request.designs,
+        retained_model,
+        destination / "designs",
+        quantities,
+        jobs=worker_jobs,
+        backend=request.backend,
+        backend_id=request.backend_id,
     )
     for row in rows:
         if row["status"] == "pass":
@@ -627,6 +665,7 @@ def run_batch(
                 finalist_dir,
                 timeout_s=MAX_PARAMETER_SWEEP_POINT_WALL_TIME_S,
                 pool=pool,
+                backend=request.backend,
             )
             for row, finalist_dir in zip(chosen, finalist_dirs, strict=True)
         ],
@@ -644,7 +683,13 @@ def run_batch(
         }
         try:
             run_dir = outcome.unwrap()
-            _sha, values = _read_run(run_dir, retained_model, row["parameters_si"], quantities)
+            _sha, values = _read_run(
+                run_dir,
+                retained_model,
+                row["parameters_si"],
+                quantities,
+                backend_id=request.backend_id,
+            )
             record["run"] = (run_dir / "run.json").relative_to(destination).as_posix()
             # Lean and full runs must agree exactly; a lean shortcut that
             # changed a ranked number would otherwise pick the wrong winner.
@@ -698,6 +743,7 @@ def run_batch(
             "reproduce their screening values exactly."
         ),
         "status": status,
+        "backend": request.backend_id,
         "method": request.method,
         "objective": request.normalized["objective"],
         "constraints": request.normalized["constraints"],

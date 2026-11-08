@@ -131,7 +131,9 @@ DESCRIPTIONS = {
         "log"}]}, "objective": {"minimize": {"losses": "total_mean_power_w"}},
         "constraints": [{"signal": "v(out)", "metric": "peak_to_peak_last_half",
         "max": 0.5}, {"losses": "tj_max_c", "max": 125}], "finalists": 3}. Losses
-        need device cards in the model. Large batches need a larger timeout_s.""",
+        need device cards in the model. "backend": "rust" runs on the optional compiled
+        kernel (refused with the reason if the model is not covered). Large batches
+        need a larger timeout_s.""",
         model_input=True,
     ),
     "sensitivity": _doc(
@@ -145,7 +147,8 @@ DESCRIPTIONS = {
         "from": "35 %", "to": "45 %"}, {"name": "fsw", "from": "10 kHz", "to": "40
         kHz", "scale": "log"}], "outputs": [{"signal": "v(out)", "metric":
         "peak_to_peak_last_half"}, {"losses": "total_mean_power_w"}], "base_samples":
-        64, "seed": 1}. At most 2000 runs; large studies need a larger timeout_s.""",
+        64, "seed": 1}. Optional "backend": "rust" as in evaluate_designs. At most 2000
+        runs; large studies need a larger timeout_s.""",
         model_input=True,
     ),
     "get_metrics": _doc(

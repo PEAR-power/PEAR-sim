@@ -41,6 +41,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", type=Path)
     # Lean runs compute the same metrics with less evidence (batch screening).
     parser.add_argument("--lean", action="store_true")
+    parser.add_argument("--backend", choices=("python", "rust"), default="python")
     # Stay alive and answer many points (see _serve).
     parser.add_argument("--serve", action="store_true")
     return parser
@@ -64,6 +65,7 @@ def _simulate_point(
     values_si: Sequence[float],
     out: Path,
     lean: bool,
+    backend: str = "python",
 ) -> tuple[int, dict[str, object]]:
     """Run one point; return the exit code and the reply the parent checks."""
 
@@ -74,7 +76,7 @@ def _simulate_point(
             raise ValueError("duplicate --parameter overrides")
         model = load_model(model_path, overrides=dict(zip(parameters, values_si)))
         result = HybridSimulator(
-            model, evidence_mode="lean" if lean else "full"
+            model, evidence_mode="lean" if lean else "full", backend=backend
         ).simulate()
         write_result(result, out)
     except Exception as exc:
@@ -102,7 +104,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )}))
         return 1
     code, payload = _simulate_point(
-        args.model, args.parameter, args.value_si or [], args.out, args.lean
+        args.model, args.parameter, args.value_si or [], args.out, args.lean, args.backend
     )
     print(_reply_text(code, payload))
     return code
@@ -151,6 +153,7 @@ def _serve() -> int:
                     request["values_si"],
                     Path(request["out"]),
                     bool(request["lean"]),
+                    request["backend"],
                 )
         finally:
             sys.stdout.flush()

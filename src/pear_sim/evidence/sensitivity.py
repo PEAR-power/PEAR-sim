@@ -37,6 +37,7 @@ from pear_sim.evidence.batch import (
     _reject_unknown,
     _scaled,
     _Quantity,
+    resolve_backend,
     screen_designs,
 )
 from pear_sim.evidence.parallel_points import resolve_jobs
@@ -299,7 +300,7 @@ def run_sensitivity(
         payload,
         {
             "schema", "label", "method", "parameters", "outputs", "seed",
-            "trajectories", "levels", "base_samples", "bootstrap",
+            "trajectories", "levels", "base_samples", "bootstrap", "backend",
         },
         name="sensitivity request",
     )
@@ -327,6 +328,10 @@ def run_sensitivity(
     if len({quantity.label for quantity in outputs}) != len(outputs):
         raise SensitivityError("outputs names the same quantity twice")
     seed = _positive_int(payload, "seed", 0, 0, 2**31 - 1)
+    try:
+        backend, backend_id = resolve_backend(payload.get("backend"), model)
+    except BatchError as exc:
+        raise SensitivityError(str(exc)) from exc
     bootstrap = _positive_int(payload, "bootstrap", DEFAULT_BOOTSTRAP, 100, 10000)
     dimensions = len(ranges)
 
@@ -373,7 +378,15 @@ def run_sensitivity(
     retained_model.write_bytes(source_bytes)
 
     started = perf_counter()
-    rows = screen_designs(designs, retained_model, destination / "runs", outputs, jobs=worker_jobs)
+    rows = screen_designs(
+        designs,
+        retained_model,
+        destination / "runs",
+        outputs,
+        jobs=worker_jobs,
+        backend=backend,
+        backend_id=backend_id,
+    )
     failed = [row for row in rows if row["status"] != "pass"]
 
     results = []
@@ -449,6 +462,7 @@ def run_sensitivity(
         "claim": CLAIM,
         "status": status,
         "settings": {**settings, "seed": seed, "bootstrap": bootstrap, "confidence": CONFIDENCE},
+        "backend": backend_id,
         "parameters": ranges,
         "run_count": len(rows),
         "failed_count": len(failed),

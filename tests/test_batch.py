@@ -196,8 +196,8 @@ def test_a_finalist_that_disagrees_with_screening_fails_the_batch(
     # Simulate a lean shortcut that changed a ranked number in the last bit.
     real_read = batch._read_run
 
-    def skewed(run_dir, *args):
-        sha, values = real_read(run_dir, *args)
+    def skewed(run_dir, *args, **kwargs):
+        sha, values = real_read(run_dir, *args, **kwargs)
         if "designs" in run_dir.parts:
             values = {key: np.nextafter(value, np.inf) for key, value in values.items()}
         return sha, values
@@ -223,3 +223,60 @@ def test_no_feasible_design_is_its_own_status(tmp_path: Path) -> None:
     artifacts = run_batch(LOSS_BUCK, _request(tmp_path, payload), tmp_path / "out", jobs=1)
     assert artifacts.status == "no_feasible_design"
     assert artifacts.best_design is None
+
+
+# --- engine choice --------------------------------------------------------
+
+
+def test_unknown_backend_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(BatchError, match="backend must be"):
+        run_batch(LOSS_BUCK, _request(tmp_path, _base(backend="gpu")), tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+def test_missing_kernel_is_refused_before_anything_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pear_sim.core import rust_backend
+
+    monkeypatch.setattr(rust_backend, "_core", None)
+    with pytest.raises(BatchError, match="compiled kernel"):
+        run_batch(LOSS_BUCK, _request(tmp_path, _base(backend="rust")), tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+def test_run_from_another_engine_is_refused(tmp_path: Path) -> None:
+    """A run is accepted only from the exact engine the batch asked for."""
+
+    from pear_sim.evidence.parameter_sweep import ParameterSweepError, _read_verified_metrics
+    from pear_sim.spec.model import load_model
+
+    run_batch(LOSS_BUCK, _request(tmp_path, _base(finalists=1)), tmp_path / "out")
+    run_dir = tmp_path / "out/finalists/d0001/run"
+    model = load_model(tmp_path / "out/source-model/model.yaml", overrides={"fsw": 1e4, "duty": 0.4})
+    _read_verified_metrics(run_dir, expected_model=model)  # the engine it ran on
+    with pytest.raises(ParameterSweepError, match="not the requested 'rust-core-"):
+        _read_verified_metrics(run_dir, expected_model=model, expected_backend="rust-core-0.1.0")
+
+
+def test_rust_batch_ranks_like_the_reference_engine(tmp_path: Path) -> None:
+    pytest.importorskip("pear_sim_core")
+    from pear_sim.core import rust_backend
+
+    reference = run_batch(LOSS_BUCK, _request(tmp_path, _base(), "py.json"), tmp_path / "py")
+    kernel = run_batch(
+        LOSS_BUCK, _request(tmp_path, _base(backend="rust"), "rs.json"), tmp_path / "rs"
+    )
+    assert kernel.status == "pass"
+    py = json.loads(reference.summary.read_text())
+    rs = json.loads(kernel.summary.read_text())
+    assert py["backend"] == "reference-python"
+    assert rs["backend"] == rust_backend.kernel_id()
+    # Finalists re-run on the same engine, so they must reproduce screening exactly.
+    assert [record["status"] for record in rs["finalists"]] == ["pass", "pass"]
+    run = json.loads((tmp_path / "rs/designs/d0001/run/run.json").read_text())
+    assert run["backend"] == rust_backend.kernel_id()
+    assert [e["design_id"] for e in rs["ranking"]] == [e["design_id"] for e in py["ranking"]]
+    for left, right in zip(py["ranking"], rs["ranking"], strict=True):
+        for label, value in left["values"].items():
+            assert right["values"][label] == pytest.approx(value, rel=1e-10, abs=1e-12)
