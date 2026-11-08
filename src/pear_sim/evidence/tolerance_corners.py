@@ -25,7 +25,8 @@ from typing import Any, Mapping
 
 from pear_sim.evidence.evidence_io import evaluate_run
 from pear_sim.evidence.expectations import validate_expectations
-from pear_sim.evidence.parallel_points import resolve_jobs, run_ordered
+from pear_sim.evidence.parallel_points import resolve_jobs
+from pear_sim.evidence.worker_pool import run_pooled
 from pear_sim.evidence.parameter_sweep import (
     MAX_PARAMETER_SWEEP_POINT_WALL_TIME_S,
     ParameterSweepError,
@@ -258,14 +259,15 @@ def run_tolerance_corners(
         point_dirs.append(point_dir)
     # Corner simulations run concurrently; results are consumed in corner
     # order, so every retained file matches a serial run.
-    simulations = run_ordered(
-        [
+    simulations = run_pooled(
+        lambda pool: [
             partial(
                 _run_point_worker,
                 model_path,
                 point["overrides"],
                 point_dir,
                 timeout_s=MAX_PARAMETER_SWEEP_POINT_WALL_TIME_S,
+                pool=pool,
             )
             for point, point_dir in zip(points, point_dirs, strict=True)
         ],

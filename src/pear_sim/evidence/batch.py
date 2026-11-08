@@ -33,7 +33,8 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from pear_sim.evidence.parallel_points import resolve_jobs, run_ordered
+from pear_sim.evidence.parallel_points import resolve_jobs
+from pear_sim.evidence.worker_pool import run_pooled
 from pear_sim.evidence.parameter_sweep import (
     MAX_PARAMETER_SWEEP_POINT_WALL_TIME_S,
     _PROJECTION_METRICS,
@@ -479,14 +480,15 @@ def screen_designs(
         point_dir = root / _design_id(index)
         point_dir.mkdir(parents=True)
         point_dirs.append(point_dir)
-    outcomes = run_ordered(
-        [
+    outcomes = run_pooled(
+        lambda pool: [
             partial(
                 _run_point_worker,
                 model_path,
                 dict(design),
                 point_dir,
                 timeout_s=MAX_PARAMETER_SWEEP_POINT_WALL_TIME_S,
+                pool=pool,
                 lean=True,
             )
             for design, point_dir in zip(designs, point_dirs, strict=True)
@@ -616,14 +618,15 @@ def run_batch(
         finalist_dir = destination / "finalists" / row["design_id"]
         finalist_dir.mkdir(parents=True)
         finalist_dirs.append(finalist_dir)
-    full_runs = run_ordered(
-        [
+    full_runs = run_pooled(
+        lambda pool: [
             partial(
                 _run_point_worker,
                 retained_model,
                 row["parameters_si"],
                 finalist_dir,
                 timeout_s=MAX_PARAMETER_SWEEP_POINT_WALL_TIME_S,
+                pool=pool,
             )
             for row, finalist_dir in zip(chosen, finalist_dirs, strict=True)
         ],

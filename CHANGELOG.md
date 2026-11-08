@@ -133,6 +133,14 @@ First public release of PEARSim, published by PEAR Power.
   (buck 7×, NPC 2–2.6×). Covers `dopri5` models with DC sources; anything else is
   refused with the reason. A run records its backend, which is part of `run_sha256`.
   See `docs/rust-core.md`.
+- Long-lived point workers for `batch`, `sensitivity`, `sweep parameter` and
+  `tolerance-corners`: each worker imports Python and PEARSim once and then runs many
+  points, instead of starting a fresh interpreter per point. Each point is still a
+  killable child process with its own captured stderr, warnings, working directory and
+  timeout; a worker that overruns or dies is replaced. Retained bundles are identical
+  to one-shot workers apart from measured wall times (`tests/test_worker_pool.py`).
+  Small models: 950 → 199 ms per point; the 40-design loss-card batch example
+  41 → 24 s on 7 jobs. Workers are recycled after 200 points.
 - The diode active-set search skips candidates already known to leave a node floating
   instead of compiling them (multilevel bridges: about 7× fewer mode compilations,
   five-level NPC 1.7× faster), and dense-state extrema use raw coefficient arrays.

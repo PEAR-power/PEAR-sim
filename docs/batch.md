@@ -37,7 +37,9 @@ out)`) and the MCP tool `evaluate_designs`.
   `finalist_check_failed` and the mismatch is listed, because the ranking would then
   rest on a number the full run does not confirm.
 - Designs run in parallel (`--jobs N`, default all cores but one); the results do not
-  depend on the job count.
+  depend on the job count. Each job is a long-lived worker process that imports
+  PEARSim once and runs many designs; every design still has its own timeout and its
+  own captured stderr, and a worker that hangs or dies is replaced.
 
 ## Request
 
