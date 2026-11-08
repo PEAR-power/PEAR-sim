@@ -124,6 +124,13 @@ First public release of PEARSim, published by PEAR Power.
 
 ### Performance
 
+- Diode mode selection replays its search for a repeated switch configuration: which
+  candidates it visits and what each compiles to depend only on the gates and the
+  diode guess, so only the state-dependent feasibility check runs again. The
+  topology key is also built once per search instead of once per candidate. Five-
+  level NPC over three line periods: mode selection 2.9 → 1.3 s, whole run 7.0 →
+  5.1 s CPU. Every example's bundle is unchanged except wall time
+  (`tests/test_mode_plans.py` holds replayed and fresh searches to exact equality).
 - Optional compiled kernel `rust/pear-sim-core` (Rust, PyO3) and `simulate --backend
   rust`. Inside each segment the kernel integrates (a step-for-step port of SciPy's
   RK45 with terminal events), samples every output, integrates the metrics and the

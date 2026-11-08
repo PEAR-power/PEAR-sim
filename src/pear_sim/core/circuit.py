@@ -14,6 +14,9 @@ from pear_sim.spec.signals import is_declared_signal, is_machine_signal
 from pear_sim.limits import MAX_ACTIVE_SET_CANDIDATES, MAX_IDEAL_DIODES
 from pear_sim.spec.model import Component, Model
 
+# Distinct switch configurations whose active-set search is kept for replay.
+MAX_MODE_PLANS = 4096
+
 # A thyristor is a latching branch: it closes ONLY on a gate edge while
 # forward biased, and reopens ONLY when its own current reaches zero. Both
 # halves matter — without the first it is a diode, without the second it is a
@@ -830,6 +833,8 @@ class Circuit:
         ]
         self.initial_diodes = {component.id: component.initial for component in self.diodes}
         self._cache: dict[Topology, CompiledMode | TopologyError] = {}
+        # Active-set search plans, see _ModePlan. Cleared with the cache.
+        self._plans: dict[tuple[Any, ...], _ModePlan] = {}
         # Floating-node memo for the active-set search. "Node X has no
         # algebraic support" is decided by node X's own KCL row, and that row
         # is stamped ONLY by the components touching X. So once a compile
@@ -904,6 +909,7 @@ class Circuit:
                 self.mutual_by_pair[key] = float(matrix[row, column])
         # Every cached mode carries the old matrix in its compiled form.
         self._cache.clear()
+        self._plans.clear()
         # Floating is structural, not value-dependent, but the memo follows the
         # cache so that "what was learned" never outlives "what it was learned on".
         self._floating_signatures.clear()
@@ -1018,6 +1024,11 @@ class Circuit:
         topology = self.topology(
             gates, diodes, constrained_inductors, saturated_inductors
         )
+        return self._compile_topology(topology, skip_known_floating=skip_known_floating)
+
+    def _compile_topology(
+        self, topology: Topology, *, skip_known_floating: bool = False
+    ) -> CompiledMode:
         cached = self._cache.get(topology)
         if isinstance(cached, TopologyError):
             raise cached
@@ -1086,7 +1097,6 @@ class Circuit:
         self,
         gates: dict[str, bool],
         diode_states: dict[str, bool],
-        state: np.ndarray,
     ) -> tuple[str, ...]:
         """Coupled windings whose own series path is open in this configuration.
 
@@ -1167,9 +1177,6 @@ class Circuit:
             )
         diode_ids = [component.id for component in self.diodes]
         preferred_bits = tuple(preferred_diodes[diode_id] for diode_id in diode_ids)
-        candidates = _hamming_ordered_candidates(
-            preferred_bits, MAX_ACTIVE_SET_CANDIDATES
-        )
         # The latch, expressed as a restriction on the search space: a
         # thyristor may appear CLOSED in a candidate only if it is already
         # conducting (it latched earlier and its current has not reached zero)
@@ -1195,7 +1202,7 @@ class Circuit:
         saturation_candidates = self._saturation_candidates(state)
         failures: list[TopologyError] = []
         preferred_open_windings = self._structurally_open_windings(
-            gates, preferred_diodes, state
+            gates, preferred_diodes
         )
         examined = 0
         any_mode_compiled = False
@@ -1203,7 +1210,15 @@ class Circuit:
         # All configurations within Hamming distance two of the preferred one.
         near_field = 1 + len(diode_ids) + len(diode_ids) * (len(diode_ids) - 1) // 2
         self._active_set_stats["calls"] += 1
-        for bits in candidates:
+        plan = self._mode_plan(
+            gates,
+            preferred_bits,
+            latch_locked,
+            zero_current_inductors,
+            saturation_candidates,
+            preferred_open_windings,
+        )
+        for entry in plan.entries():
             if (
                 beyond_enumeration
                 and not any_mode_compiled
@@ -1227,57 +1242,15 @@ class Circuit:
                     self._active_set_stats["candidates_examined"] += examined
                     self._active_set_stats["anchor_repairs"] += 1
                     return repaired
-            if any(bits[index] for index in latch_locked):
-                # Never counted as examined: these configurations are not
-                # physically reachable, so they are not evidence of search
-                # effort either.
+            if entry is None:
+                # A latch-locked configuration. Never counted as examined:
+                # it is not physically reachable, so it is not evidence of
+                # search effort either.
                 continue
             examined += 1
-            candidate = dict(zip(diode_ids, bits))
-            open_windings = (
-                preferred_open_windings
-                if bits == preferred_bits
-                else self._structurally_open_windings(gates, candidate, state)
-            )
-            modes: list[CompiledMode] = []
-            for saturated in saturation_candidates:
-                try:
-                    modes.append(
-                        self.compile(
-                            gates,
-                            candidate,
-                            open_windings,
-                            saturated,
-                            skip_known_floating=True,
-                        )
-                    )
-                except TopologyError as exc:
-                    failures.append(exc)
-                    # Never freeze a well-posed active inductor merely to satisfy
-                    # a guard. Reduction is a fallback only for a singular
-                    # current-constrained mode. Subsets are tried smallest-first
-                    # so the least-frozen feasible mode always wins.
-                    for constrained_subset in _reduction_subsets(
-                        zero_current_inductors
-                    ):
-                        try:
-                            modes.append(
-                                self.compile(
-                                    gates,
-                                    candidate,
-                                    tuple(
-                                        sorted(
-                                            set(constrained_subset)
-                                            | set(open_windings)
-                                        )
-                                    ),
-                                    saturated,
-                                    skip_known_floating=True,
-                                )
-                            )
-                        except TopologyError as reduced_exc:
-                            failures.append(reduced_exc)
-
+            candidate, modes, entry_failures = entry
+            candidate = dict(candidate)
+            failures.extend(entry_failures)
             if modes:
                 any_mode_compiled = True
             for mode in modes:
@@ -1332,6 +1305,128 @@ class Circuit:
             else "all diode inequalities are inconsistent"
         )
         raise TopologyError(f"No stable ideal-switch configuration found: {detail}")
+
+    def _mode_plan(
+        self,
+        gates: dict[str, bool],
+        preferred_bits: tuple[bool, ...],
+        latch_locked: tuple[int, ...],
+        zero_current_inductors: tuple[str, ...],
+        saturation_candidates: list[tuple[str, ...]],
+        preferred_open_windings: tuple[str, ...],
+    ) -> "_ModePlan":
+        """The active-set search for one configuration, built once, replayed after.
+
+        Which candidates the search visits, in which order, and which modes
+        each one compiles to (or fails with) depend only on the key below —
+        never on the state values or the time. Only the feasibility check
+        does, and stable_mode still runs it on every call. So a repeated
+        configuration (every PWM period of a converter) replays the list
+        instead of rebuilding topologies and re-probing the compile cache.
+
+        The plan is extended lazily: a replay that needs more candidates
+        than the first search visited continues the same enumeration.
+
+        WARNING: anything added to the candidate loop that reads ``state``,
+        ``time`` or ``tolerance`` must go into the key, or replays go wrong.
+        """
+
+        key = (
+            tuple(sorted(gates.items())),
+            preferred_bits,
+            latch_locked,
+            zero_current_inductors,
+            tuple(saturation_candidates),
+        )
+        plan = self._plans.get(key)
+        if plan is None or plan.broken:
+            if len(self._plans) >= MAX_MODE_PLANS:
+                self._plans.clear()  # bounds memory; costs time, never changes a result
+            plan = _ModePlan(
+                self._plan_source(
+                    dict(gates),
+                    preferred_bits,
+                    latch_locked,
+                    zero_current_inductors,
+                    list(saturation_candidates),
+                    preferred_open_windings,
+                )
+            )
+            self._plans[key] = plan
+        return plan
+
+    def _plan_source(
+        self,
+        gates: dict[str, bool],
+        preferred_bits: tuple[bool, ...],
+        latch_locked: tuple[int, ...],
+        zero_current_inductors: tuple[str, ...],
+        saturation_candidates: list[tuple[str, ...]],
+        preferred_open_windings: tuple[str, ...],
+    ) -> Iterator[Any]:
+        diode_ids = [component.id for component in self.diodes]
+        # The Topology key, assembled the way self.topology() does it but with
+        # the gate part sorted once per search instead of once per candidate.
+        gate_items = tuple(sorted(gates.items()))
+        by_id = sorted(range(len(diode_ids)), key=diode_ids.__getitem__)
+        ids_sorted = [diode_ids[index] for index in by_id]
+        for bits in _hamming_ordered_candidates(
+            preferred_bits, MAX_ACTIVE_SET_CANDIDATES
+        ):
+            if any(bits[index] for index in latch_locked):
+                yield None
+                continue
+            candidate = dict(zip(diode_ids, bits))
+            diode_items = tuple(zip(ids_sorted, map(bits.__getitem__, by_id)))
+            open_windings = (
+                preferred_open_windings
+                if bits == preferred_bits
+                else self._structurally_open_windings(gates, candidate)
+            )
+            modes: list[CompiledMode] = []
+            failures: list[TopologyError] = []
+            for saturated in saturation_candidates:
+                try:
+                    modes.append(
+                        self._compile_topology(
+                            Topology(
+                                gate_items,
+                                diode_items,
+                                tuple(sorted(set(open_windings))),
+                                tuple(sorted(set(saturated))),
+                            ),
+                            skip_known_floating=True,
+                        )
+                    )
+                except TopologyError as exc:
+                    failures.append(exc)
+                    # Never freeze a well-posed active inductor merely to satisfy
+                    # a guard. Reduction is a fallback only for a singular
+                    # current-constrained mode. Subsets are tried smallest-first
+                    # so the least-frozen feasible mode always wins.
+                    for constrained_subset in _reduction_subsets(
+                        zero_current_inductors
+                    ):
+                        try:
+                            modes.append(
+                                self._compile_topology(
+                                    Topology(
+                                        gate_items,
+                                        diode_items,
+                                        tuple(
+                                            sorted(
+                                                set(constrained_subset)
+                                                | set(open_windings)
+                                            )
+                                        ),
+                                        tuple(sorted(set(saturated))),
+                                    ),
+                                    skip_known_floating=True,
+                                )
+                            )
+                        except TopologyError as reduced_exc:
+                            failures.append(reduced_exc)
+            yield candidate, tuple(modes), tuple(failures)
 
     def _anchor_repair(
         self,
@@ -1578,6 +1673,43 @@ class Circuit:
         return True
 
 
+class _ModePlan:
+    """The visited candidates of one active-set search, extended on demand.
+
+    Each entry is (diodes, compiled modes, compile failures), or None for a
+    latch-locked configuration the search steps over.
+    """
+
+    def __init__(self, source: Iterator[Any]) -> None:
+        self._source = source
+        self._visited: list[Any] = []
+        self._finished = False
+        # An unexpected error inside the search ends the generator. A plan
+        # that kept going would then look complete while missing candidates,
+        # so it is marked broken and the next call searches afresh.
+        self.broken = False
+
+    def entries(self) -> Iterator[Any]:
+        index = 0
+        while True:
+            if index < len(self._visited):
+                yield self._visited[index]
+            elif self._finished:
+                return
+            else:
+                try:
+                    entry = next(self._source)
+                except StopIteration:
+                    self._finished = True
+                    return
+                except BaseException:
+                    self.broken = True
+                    raise
+                self._visited.append(entry)
+                yield entry
+            index += 1
+
+
 class _SkippedFloatingTopology(TopologyError):
     """A candidate rejected by the floating-node memo instead of compiled.
 
@@ -1738,14 +1870,8 @@ def _hamming_ordered_candidates(
         if remaining <= 0:
             return
         flipped_level = (
-            tuple(
-                not preferred_bits[i] if i in flips else preferred_bits[i]
-                for i in positions
-            )
-            for flips in (
-                frozenset(combination)
-                for combination in itertools.combinations(positions, distance)
-            )
+            _flipped(preferred_bits, combination)
+            for combination in itertools.combinations(positions, distance)
         )
         if math.comb(n, distance) <= remaining:
             level = sorted(flipped_level)
@@ -1754,6 +1880,13 @@ def _hamming_ordered_candidates(
         for bits in level:
             yield bits
             yielded += 1
+
+
+def _flipped(bits: tuple[bool, ...], positions: tuple[int, ...]) -> tuple[bool, ...]:
+    flipped = list(bits)
+    for index in positions:
+        flipped[index] = not flipped[index]
+    return tuple(flipped)
 
 
 def _reduction_subsets(
