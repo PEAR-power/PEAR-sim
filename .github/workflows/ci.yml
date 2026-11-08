@@ -149,6 +149,30 @@ jobs:
             uv run pear-sim simulate "$model" --out "runs/$name" --lean > /dev/null
           done
 
+  rust-core:
+    # The optional compiled kernel (rust/pear-sim-core): build it, then check
+    # it against SciPy, the exact solution and the reference engine on every
+    # example it supports.
+    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.PEAR_SIM_UV_VERSION }}
+          python-version: "3.13.13"
+          enable-cache: true
+      - name: Install locked environment
+        run: uv sync --locked --extra dev
+      - name: Build the kernel
+        run: uvx --from "maturin==1.16.0" maturin build --release --locked -m rust/pear-sim-core/Cargo.toml -o rust-dist
+      - name: Install the kernel
+        run: uv pip install rust-dist/*.whl
+      - name: Kernel tests
+        run: uv run --no-sync pytest tests/test_rust_core.py
+      - name: Every supported example on both engines
+        run: uv run --no-sync python scripts/rust_parity.py --tolerance 1e-9
+
   ngspice-oracle:
     # Independent-engine evidence: the differential tests skip silently when no
     # ngspice binary is present, so this job installs one and makes them run.
