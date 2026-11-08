@@ -113,7 +113,7 @@ _FAKE_WORKER = r"""
 import os, sys, warnings
 import pear_sim.evidence.parameter_sweep_worker as worker
 
-def fake(model, parameters, values, out, lean):
+def fake(model, parameters, values, out, lean, backend="python"):
     mode = parameters[0]
     if mode == "warn":
         warnings.warn("same place every time", RuntimeWarning)

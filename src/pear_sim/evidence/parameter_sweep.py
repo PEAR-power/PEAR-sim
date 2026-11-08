@@ -685,14 +685,22 @@ def _read_verified_metrics(
     run_dir: Path,
     *,
     expected_model: Model,
+    expected_backend: str = "reference-python",
 ) -> tuple[dict[str, Any], str]:
-    """Verify and bind a nested run to the exact parent-resolved sweep point."""
+    """Verify and bind a nested run to the exact parent-resolved sweep point.
+
+    ``expected_backend`` is the exact engine id the caller asked for; a run
+    from any other engine (or another kernel version) is refused.
+    """
 
     run_manifest, _raw = _read_strict_json(run_dir / "run.json", role="run manifest")
     if run_manifest.get("schema") != "pear-sim/run/v0.1":
         raise ParameterSweepError("run.json has an unsupported schema")
-    if run_manifest.get("backend") != "reference-python":
-        raise ParameterSweepError("run.json has an unsupported backend")
+    if run_manifest.get("backend") != expected_backend:
+        raise ParameterSweepError(
+            f"run.json backend {run_manifest.get('backend')!r} is not the requested "
+            f"{expected_backend!r}"
+        )
     expected_hashes = model_hashes(expected_model)
     expected_parameters = {
         name: {
@@ -772,7 +780,7 @@ def _read_verified_metrics(
         {
             "model_sha256": expected_hashes["model_sha256"],
             "request_sha256": expected_hashes["request_sha256"],
-            "backend": "reference-python",
+            "backend": expected_backend,
             "pear_sim_version": __version__,
         }
     )
@@ -844,6 +852,7 @@ def _run_point_worker(
     timeout_s: float,
     lean: bool = False,
     pool: PointWorkerPool | None = None,
+    backend: str = "python",
 ) -> Path:
     """Run one simulation in a killable child process and atomically retain success.
 
@@ -864,6 +873,7 @@ def _run_point_worker(
                 cwd=point_dir,
                 timeout_s=timeout_s,
                 lean=lean,
+                backend=backend,
             )
         else:
             command = [
@@ -880,6 +890,8 @@ def _run_point_worker(
             command.extend(["--out", str(worker_dir)])
             if lean:
                 command.append("--lean")
+            if backend != "python":
+                command.extend(["--backend", backend])
             completed = subprocess.run(
                 command,
                 check=False,

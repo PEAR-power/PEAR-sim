@@ -141,6 +141,11 @@ First public release of PEARSim, published by PEAR Power.
   to one-shot workers apart from measured wall times (`tests/test_worker_pool.py`).
   Small models: 950 → 199 ms per point; the 40-design loss-card batch example
   41 → 24 s on 7 jobs. Workers are recycled after 200 points.
+- `batch` and `sensitivity` take `"backend": "rust"` in the request: every run uses the
+  compiled kernel, checked against the model before anything runs. Runs are accepted
+  only from the exact requested engine id; finalists re-run on the same engine. The
+  loss-card batch example ranks identically to the reference engine (values within
+  2e-12 relative) in 15 s instead of 24 s.
 - The diode active-set search skips candidates already known to leave a node floating
   instead of compiling them (multilevel bridges: about 7× fewer mode compilations,
   five-level NPC 1.7× faster), and dense-state extrema use raw coefficient arrays.

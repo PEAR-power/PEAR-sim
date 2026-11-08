@@ -50,9 +50,19 @@ out)`) and the MCP tool `evaluate_designs`.
   "designs": { ... },
   "objective": {"minimize": { quantity }},
   "constraints": [ { quantity, "min": 38, "max": 42 } ],
-  "finalists": 3
+  "finalists": 3,
+  "backend": "python"
 }
 ```
+
+`backend` (optional) picks the engine for every run of the batch: `"python"` (the
+reference engine, default) or `"rust"` (the optional compiled kernel, see
+[rust-core.md](rust-core.md)). The kernel is checked against the model before anything
+runs; a model it does not cover is refused with the reason. Every run must record
+exactly the requested engine id (e.g. `rust-core-0.1.0`), and finalists re-run on the
+same engine, so they still have to reproduce screening exactly. On the 40-design
+loss-card example the kernel ranks the designs identically to the reference engine,
+with values within 2e-12 relative, in 15 s instead of 24 s on 7 jobs.
 
 ### Designs
 

@@ -169,7 +169,7 @@ jobs:
       - name: Install the kernel
         run: uv pip install rust-dist/*.whl
       - name: Kernel tests
-        run: uv run --no-sync pytest tests/test_rust_core.py
+        run: uv run --no-sync pytest tests/test_rust_core.py "tests/test_batch.py::test_rust_batch_ranks_like_the_reference_engine" "tests/test_sensitivity.py::test_sensitivity_on_the_compiled_kernel_matches_the_reference"
       - name: Every supported example on both engines
         run: |
           uv run --no-sync python scripts/rust_parity.py --tolerance 1e-12 --mode lean
