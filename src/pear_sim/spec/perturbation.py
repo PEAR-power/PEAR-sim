@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 PEAR Power and the PEARSim contributors.
+# PEARSim provenance mark: fac45c9d-2490-41e0-8e53-bbd84e280889
 """Hook B: declared events injected into a run, without editing the netlist.
 
 An event is a property of the *experiment*, not of the circuit, so it is

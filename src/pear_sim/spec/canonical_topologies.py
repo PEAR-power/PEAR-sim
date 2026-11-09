@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 PEAR Power and the PEARSim contributors.
+# PEARSim provenance mark: fac45c9d-2490-41e0-8e53-bbd84e280889
 """Structural recognition of the exact canonical converter topologies.
 
 Extracted verbatim from the boundary-oracle modules (restructuring stage 3,

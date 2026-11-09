@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 PEAR Power and the PEARSim contributors.
+# PEARSim provenance mark: fac45c9d-2490-41e0-8e53-bbd84e280889
 """Bounded evidence for the three-level NPC level-shifted modulator.
 
 The realized gate-event log remains the authoritative record. This module
