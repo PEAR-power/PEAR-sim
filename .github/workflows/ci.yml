@@ -192,6 +192,8 @@ jobs:
       - name: Install locked environment
         run: uv sync --locked --extra dev
       - name: Differential tests against ngspice (none may skip)
+        # pipefail: the default `bash -e` would let tee's exit code hide a failing pytest.
+        shell: bash
         run: uv run pytest tests/test_ngspice_oracle.py -rs | tee ngspice.log && ! grep -q SKIPPED ngspice.log
 
   ngspice-oracle-other-os:
