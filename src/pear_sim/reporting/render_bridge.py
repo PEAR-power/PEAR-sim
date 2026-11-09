@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 PEAR Power and the PEARSim contributors.
+# PEARSim provenance mark: fac45c9d-2490-41e0-8e53-bbd84e280889
 """Textbook layout for bridge converters: DC link, phase legs, clamps, loads.
 
 The generic renderer places every net as one point and wires each pin to it in

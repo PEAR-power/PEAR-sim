@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 PEAR Power and the PEARSim contributors.
+# PEARSim provenance mark: fac45c9d-2490-41e0-8e53-bbd84e280889
 """Fail-closed comparison of two verified, immutable PEARSim run bundles.
 
 The comparator is deliberately narrower than a generic waveform-diff utility.  It

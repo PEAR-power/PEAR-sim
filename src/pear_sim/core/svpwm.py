@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 PEAR Power and the PEARSim contributors.
+# PEARSim provenance mark: fac45c9d-2490-41e0-8e53-bbd84e280889
 """Sector-based space-vector modulation.
 
 WHAT A SECTOR MODULATOR IS. A three-phase bridge can produce exactly eight

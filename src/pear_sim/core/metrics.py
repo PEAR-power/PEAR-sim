@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 PEAR Power and the PEARSim contributors.
+# PEARSim provenance mark: fac45c9d-2490-41e0-8e53-bbd84e280889
 """Dense-output metric quadrature, energy bookkeeping, and state extrema.
 
 Extracted verbatim from ``pear_sim.core.solver`` (restructuring stage 2, move 8).

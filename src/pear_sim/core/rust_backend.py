@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 PEAR Power and the PEARSim contributors.
+# PEARSim provenance mark: fac45c9d-2490-41e0-8e53-bbd84e280889
 """Bridge to the optional compiled kernel ``pear-sim-core`` (Rust).
 
 The kernel integrates one segment of x' = A x + c with Dormand-Prince 5(4)

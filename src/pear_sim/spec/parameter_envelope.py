@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 PEAR Power and the PEARSim contributors.
+# PEARSim provenance mark: fac45c9d-2490-41e0-8e53-bbd84e280889
 """Parameter envelopes: a declared parameter is a scalar OR a drift envelope.
 
 A model parameter has always been one number. This module adds the second

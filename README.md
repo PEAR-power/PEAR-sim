@@ -386,3 +386,7 @@ You may copy, modify and redistribute PEARSim, including commercially. When you 
 the `LICENSE` and `NOTICE` files and the `SPDX-License-Identifier` / copyright header at the
 top of every copied source file, and mark files you changed. This applies equally to code
 moved by hand, by script or by an AI coding agent.
+
+Product source files under `src/` and `rust/` also carry a `PEARSim provenance mark` line
+with a fixed GUID. It has no effect at run time; it keeps copies traceable. Keep it along
+with the rest of the header.
