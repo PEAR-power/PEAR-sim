@@ -165,8 +165,8 @@ small platform drift.
 
 ## CI retention and status semantics
 
-`.github/workflows/numerical-evidence.yml` runs on pull requests, pushes to `main`,
-and manual dispatch. It uses Python 3.12.13, single-thread BLAS settings, and fixed
+`.github/workflows/numerical-evidence.yml` runs every night on `main` (cron,
+02:23 UTC) and on manual dispatch; it does not run on pull requests. It uses Python 3.12.13, single-thread BLAS settings, and fixed
 runner labels (`ubuntu-24.04`, `macos-15`, and `windows-2025`). GitHub refreshes the
 contents of those hosted images over time, so the evidence records the concrete
 runner/image metadata instead of claiming that a label alone is an immutable image.

@@ -169,6 +169,13 @@ First public release of PEARSim, published by PEAR Power.
 - Closed-form oracles written independently of the solver, an ngspice
   differential adapter over the linear subset, per-run physics invariants, and
   a fail-closed capability registry (`pear-sim capabilities --json`).
+- Continuous integration on Linux (x86 and ARM), macOS and Windows: the ngspice
+  differential tests on every platform; the built wheel and sdist of `pear-sim`
+  and `pear-sim-mcp` installed with `uvx` outside the repository and used (CLI
+  run, MCP stdio session); the canonical-buck numerical evidence matrix every
+  night with its bundles kept as artifacts; and a CPU-time benchmark of each
+  pull request against its base, reported in shadow mode (it never blocks;
+  `scripts/perf_cpu.py`).
 
 ### Interfaces
 

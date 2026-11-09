@@ -1,11 +1,16 @@
 name: numerical-evidence
 
-# Cost policy (2026-07-21): this workflow produces the retained canonical-buck numerical evidence
-# matrix on three OSes (30-minute jobs, macOS at a 10x billing multiplier). It
-# is evidence *production*, not regression — a configured workflow was never a
-# claim that a bundle passed — so it runs only on demand.
+# Produces the retained canonical-buck numerical evidence matrix on three OSes
+# and aggregates it. It is evidence *production*, not regression — a configured
+# workflow was never a claim that a bundle passed; the uploaded bundles are.
+# Cost policy: on demand only while the repository was private (macOS minutes
+# billed 10x); since it is public (2026-11) the minutes are free, so it also runs
+# every night on main and keeps the bundles as artifacts. A failing night shows
+# up as a failed scheduled run, not as a blocked pull request.
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "23 2 * * *" # 02:23 UTC daily, off the top of the hour
 
 permissions:
   contents: read
