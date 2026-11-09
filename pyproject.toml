@@ -10,7 +10,7 @@ build-backend = "hatchling.build"
 # - tag "vX.Y.Z", then run the release workflow (.github/workflows/release.yml).
 [project]
 name = "pear-sim"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Headless, deterministic power-electronics simulator with an MCP server for AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
