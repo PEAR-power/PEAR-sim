@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """The thyristor is a LATCH, and each half of that has to be asserted.
 
 Without gate-edge turn-on it is a diode. Without zero-current turn-off it is a

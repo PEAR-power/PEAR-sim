@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Concurrent point execution returns outcomes in declaration order.
 
 The batch producers rely on two properties: outcomes come back in task order

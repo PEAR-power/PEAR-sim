@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Discrete signal blocks: the executable control layer.
 
 WHY A SECOND DOMAIN. The kernel models an electrical network. A drive's

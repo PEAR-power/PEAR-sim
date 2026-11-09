@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """`DesignSpec` — the requirements side of a design job.
 
 A specification describes the JOB, not the circuit: what the converter must

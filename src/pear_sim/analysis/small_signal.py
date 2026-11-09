@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Cycle-averaged small-signal analysis and loop-gain margins.
 
 State-space averaging over the two topologies of a CCM converter at the

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Bounded, deterministic human report for parameter-sweep summaries.
 
 This module is intentionally presentation-only.  It accepts an already produced

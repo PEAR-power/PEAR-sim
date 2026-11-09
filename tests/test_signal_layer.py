@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """The executable signal layer.
 
 The headline test is the signal layer's acceptance criterion: a control law written

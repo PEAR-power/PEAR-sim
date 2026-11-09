@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Bounded, human-facing evidence for three-phase sampled SPWM.
 
 The full per-carrier command record and the realized gate-event log remain separate

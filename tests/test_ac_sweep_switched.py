@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Small-signal AC sweep on the switched model, judged by an internal oracle.
 
 The averaged model in `analysis/small_signal.py` and this sweep answer the

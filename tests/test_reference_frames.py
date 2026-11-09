@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Clarke/Park transforms and P/Q metrics vs closed forms."""
 
 import numpy as np

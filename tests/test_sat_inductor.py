@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Saturable inductor: loader, segment events, energy, closed forms.
 
 The piecewise-linear two-segment flux model: incremental inductance ``value``

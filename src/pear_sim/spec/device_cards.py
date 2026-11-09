@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Device and cooling-path cards: the SHAPE of loss modelling.
 
 A card bundles datasheet-derived lookup tables with per-figure provenance and

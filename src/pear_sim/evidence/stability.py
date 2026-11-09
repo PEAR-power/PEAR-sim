@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Retained stability-analysis bundles: steady state + loop-gain gates.
 
 ``run_stability_analysis`` combines the shooting steady state with the

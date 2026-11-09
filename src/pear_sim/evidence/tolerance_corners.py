@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Tolerance-corner sweeps: worst-case-of-the-batch confidence.
 
 The request declares symmetric or asymmetric tolerances on up to six model

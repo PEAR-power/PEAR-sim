@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Subprocess entry point for the heavy MCP operations.
 
 ``python -m pear_sim.mcp.worker`` reads one JSON request on stdin, runs it

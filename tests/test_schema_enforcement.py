@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """The JSON Schema is enforced by the loader, not merely documented."""
 
 from __future__ import annotations

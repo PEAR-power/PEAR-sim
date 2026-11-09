@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """A field-oriented current controller for a PMSM, written as data.
 
 The structure is the standard textbook one — Park transform on the rotor

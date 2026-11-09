@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Shared strict-JSON primitives for evidence producers and reports.
 
 Only helpers whose previous per-module copies were behaviorally identical

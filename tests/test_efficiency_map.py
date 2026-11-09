@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Efficiency across an operating range — and what makes the figure honest.
 
 Efficiency is a claim about losses, so a model that declares none cannot

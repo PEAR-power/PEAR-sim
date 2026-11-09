@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Five-level multilevel: DNPC bridge, generic band law and anchor repair.
 
 The level-shifted law was written level-generically for the three-level NPC; this module

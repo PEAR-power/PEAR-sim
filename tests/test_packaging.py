@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """The launcher package must always install exactly this version of pear-sim."""
 
 from __future__ import annotations

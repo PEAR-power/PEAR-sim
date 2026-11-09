@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Campaign producer: axes, criteria, provenance enforcement, bisection."""
 
 from __future__ import annotations

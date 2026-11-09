@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Long-lived point workers, so a batch imports Python and PEARSim once per worker.
 
 A point used to cost a fresh interpreter: start Python, import NumPy, SciPy and

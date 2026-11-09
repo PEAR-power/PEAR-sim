@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Is a statistics window on the periodic orbit?
 
 Last-half statistics describe steady state only if the waveform repeats across

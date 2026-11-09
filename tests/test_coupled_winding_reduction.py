@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Zero-current reduction for COUPLED windings.
 
 The kernel could freeze a plain inductor at zero current by replacing it with a

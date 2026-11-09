@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Output-signal expressions and the unit each one carries.
 
 WHY THIS MODULE EXISTS. The physical unit of an output was, until now,

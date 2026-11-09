@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 PEAR Power and the PEARSim contributors.
 //! Brent's root finder, a line-for-line port of SciPy's `brentq`
 //! (scipy/optimize/Zeros/brentq.c). Used to place terminal events inside a
 //! step exactly where `solve_ivp` places them.

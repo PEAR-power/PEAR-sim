@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Event-aligned dense-output Fourier observation for explicit model requests."""
 
 from __future__ import annotations

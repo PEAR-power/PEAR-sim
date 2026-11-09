@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """The optional compiled kernel (pear-sim-core) against SciPy and against the truth.
 
 The kernel mirrors solve_ivp(method="RK45") step for step. Checks, from the

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Clarke/Park reference-frame transforms and P/Q metrics.
 
 Pure post-processing of recorded three-phase signals — nothing here touches

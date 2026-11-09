@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Machine-readable, fail-closed capability declarations for agent clients."""
 
 from __future__ import annotations

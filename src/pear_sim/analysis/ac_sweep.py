@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Small-signal AC sweep on the SWITCHED model (not on an averaged one).
 
 WHY THIS EXISTS. `analysis/small_signal.py` linearises a two-topology cycle

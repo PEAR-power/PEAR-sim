@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Bounded benchmark runners that retain every requested operating point."""
 
 from __future__ import annotations

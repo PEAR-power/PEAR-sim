@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Gradient-engine building blocks: sequence extraction and DesignVector.
 
 Acceptance criteria are asserted literally: extraction reproduces the event log for every listed

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Loss + thermal post-processing over ideal waveforms.
 
 The kernel stays ideal; this producer layers datasheet lookup tables on the

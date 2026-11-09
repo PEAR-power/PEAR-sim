@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Offline SRF-PLL vs known synthetic grids and a simulated weak grid."""
 
 from pathlib import Path

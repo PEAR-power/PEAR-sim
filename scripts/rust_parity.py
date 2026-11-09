@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Run every example the compiled kernel supports on both engines and compare.
 
 Gate for the optional Rust kernel (pear-sim-core): every float metric, every

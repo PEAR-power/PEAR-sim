@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Losses/thermal: synthetic-exact LUT tests, analytic goldens, end to end.
 
 VAL-007 flavour: conduction and switching-energy lookups against closed

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """MCP tool implementations, independent of the MCP SDK.
 
 Each public function takes a :class:`Workspace` plus plain arguments and

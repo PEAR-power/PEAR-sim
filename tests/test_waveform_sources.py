@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Waveform sources: loader, kernel, and fail-closed boundaries.
 
 Numerical assertions compare the production solver against independent closed

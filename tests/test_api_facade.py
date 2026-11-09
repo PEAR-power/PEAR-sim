@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """The typed agent-facing facade in pear_sim.api."""
 
 from __future__ import annotations

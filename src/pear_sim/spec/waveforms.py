@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Time-varying source waveforms (sine/step/pulse/PWL).
 
 A waveform replaces the constant ``value`` of a voltage/current source with an

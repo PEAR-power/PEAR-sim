@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Surface-magnet synchronous machine: expansion, physics, and the splitting error.
 
 Every reference here is closed form. A non-salient PMSM feeding a symmetric

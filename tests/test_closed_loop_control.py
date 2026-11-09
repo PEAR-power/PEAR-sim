@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Sampled PI closed-loop PWM: loader, determinism, and the acceptance gate.
 
 The acceptance-gate scenario is a closed-loop buck regulating v(out) through a

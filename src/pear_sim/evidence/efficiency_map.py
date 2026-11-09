@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Efficiency across an operating range, from declared loss models only.
 
 An efficiency figure is a claim about losses, so this producer refuses to

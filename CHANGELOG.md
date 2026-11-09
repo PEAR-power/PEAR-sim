@@ -7,6 +7,12 @@ break the model format; every break carries a migration note).
 
 ## [Unreleased]
 
+### Changed
+
+- Every Python and Rust source file now carries an `SPDX-License-Identifier: Apache-2.0`
+  and copyright header, checked by a test; README and AGENTS.md spell out the attribution
+  that copying the code requires.
+
 ## [0.1.0] - 2026-11-09
 
 First public release of PEARSim, published by PEAR Power.

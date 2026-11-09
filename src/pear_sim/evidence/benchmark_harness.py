@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Topology-neutral retained-point machinery for verification benchmarks.
 
 The harness owns artifact retention and fail-closed execution semantics only.  It

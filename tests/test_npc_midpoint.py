@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """DC-link midpoint balance as a measured, gated quantity.
 
 The capacitive-link NPC example replaces the stiff +-600 V sources with

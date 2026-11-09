@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Topology-specific observations derived from accepted hybrid solver segments."""
 
 from __future__ import annotations

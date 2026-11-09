@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Textbook layout for bridge converters: DC link, phase legs, clamps, loads.
 
 The generic renderer places every net as one point and wires each pin to it in

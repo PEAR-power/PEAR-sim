@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Magnetically coupled GROUPS, not just pairs.
 
 A three-winding transformer — the arrangement behind a Ddy supply feeding two

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 from pear_sim.capabilities import build_capabilities, get_capability
 from pear_sim.contracts import canonical_json_bytes, sha256_json
 

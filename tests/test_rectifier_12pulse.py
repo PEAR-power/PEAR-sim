@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Twelve-pulse rectifier: harmonic cancellation as the acceptance criterion.
 
 A twelve-pulse rectifier is not "two bridges wired together" — it is two

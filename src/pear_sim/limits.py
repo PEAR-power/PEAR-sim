@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Shared resource limits for portable run producers and consumers."""
 
 MAX_RUN_EVENT_ROWS = 100_000

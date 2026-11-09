@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Families of runs: parametric corners and injected events, with criteria.
 
 A campaign takes one model plus a request describing **axes**, forms their

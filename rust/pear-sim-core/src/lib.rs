@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 PEAR Power and the PEARSim contributors.
 //! Optional compiled kernels for PEARSim.
 //!
 //! The Python package stays the reference implementation. This crate only

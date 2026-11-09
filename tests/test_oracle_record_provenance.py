@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Evidence in the repository must be claimed by a test that regenerates it.
 
 An oracle record is a claim: two independent engines were compared, and here

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Saturating flux maps psi(id, iq) in the machine.
 
 A real reluctance or interior-magnet machine works deep in saturation, where

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Compatibility alias; this module moved to pear_sim.review.review_errors (stage-3 restructuring)."""
 
 import sys

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Periodic steady state (shooting) + averaged loop-gain margins."""
 
 from __future__ import annotations

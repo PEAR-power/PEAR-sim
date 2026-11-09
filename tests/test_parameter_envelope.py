@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Hook A: a parameter may be a scalar, a set of corners, or a distribution."""
 
 from __future__ import annotations

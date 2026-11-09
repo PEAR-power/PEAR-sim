@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Structural recognition of the exact canonical converter topologies.
 
 Extracted verbatim from the boundary-oracle modules (restructuring stage 3,

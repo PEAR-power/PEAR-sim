@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Liquid cold-plate cooling path.
 
 What a cold plate changes is not only a resistance but the REFERENCE

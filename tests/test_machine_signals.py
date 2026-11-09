@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Rotor angle, speed and torque as recorded output signals.
 
 A field-oriented drive controller is built from the rotor angle. Until it is

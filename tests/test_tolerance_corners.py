@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Tolerance-corner sweeps: worst-case-of-the-batch evidence."""
 
 import json

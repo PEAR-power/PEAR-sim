@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Closed-loop dq current control with in-the-loop SRF-PLL (grid tie).
 
 The suite variant runs a reduced 4 kHz carrier with gains chosen from an

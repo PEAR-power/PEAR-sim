@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Constant diode guards must not livelock on float dust.
 
 An open diode antiparallel to a closed ideal switch has a guard with NO state

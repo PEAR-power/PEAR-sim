@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 PEAR Power and the PEARSim contributors.
 //! Dormand-Prince 5(4) on an affine system, mirroring SciPy's `solve_ivp(method="RK45")`.
 //!
 //! Every step follows scipy/integrate/_ivp/rk.py and ivp.py operation for

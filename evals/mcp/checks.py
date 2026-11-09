@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Graders for the MCP agent evaluation.
 
 Every grader receives the agent's final answer and the server workspace it

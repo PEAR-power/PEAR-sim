@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Sector space-vector modulation, judged against an independent oracle.
 
 The capability catalogue has carried `spwm_svpwm_dead_time` as `unsupported`

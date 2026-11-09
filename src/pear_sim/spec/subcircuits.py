@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Declared subcircuits and their compile-time expansion.
 
 A subcircuit is a named, self-contained unit: explicit ``ports``, an explicit

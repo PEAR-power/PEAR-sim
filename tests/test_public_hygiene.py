@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """The public tree must not carry material that does not belong to it.
 
 This repository is published openly. Three classes of text must never enter

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """MCP server for PEARSim, built on the official MCP Python SDK.
 
 Install with ``pip install "pear-sim[mcp]"`` and start with ``pear-sim mcp``.

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Topology library: format, refusals, the engine link.
 
 The decisive acceptance criteria are pinned here:
