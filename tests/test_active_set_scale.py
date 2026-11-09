@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Kernel scale: lazy, budget-bounded diode active-set search.
 
 The former search materialized all 2**n diode configurations and hard-failed

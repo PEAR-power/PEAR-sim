@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Min-max (SVPWM-equivalent) reference injection for three_phase_spwm.
 
 The injection is a pure common-mode shift: line-to-line quantities are

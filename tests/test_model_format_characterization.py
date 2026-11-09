@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Characterization tests for the model-format input layer.
 
 These tests pin behaviour that predates them, so that any change to the

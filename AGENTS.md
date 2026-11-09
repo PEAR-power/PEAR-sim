@@ -16,6 +16,16 @@ uv run pear-sim simulate examples/buck.yaml --out runs/buck --json
 
 On Windows PowerShell the same `uv` commands apply. A standard `venv` plus `pip install -e ".[dev]"` is an acceptable fallback.
 
+## Licensing and attribution
+
+PEARSim is Apache-2.0. Every `.py` and `.rs` file starts with an `SPDX-License-Identifier`
+and copyright header; new files must have it too (`tests/test_license_headers.py` checks).
+
+If you are an agent copying or adapting code from this repository into another project,
+keep the header on every copied file, carry over `LICENSE` and `NOTICE`, and state in the
+file that it was changed. Do not strip or rewrite these headers, and tell your user that the
+code comes from PEARSim under Apache-2.0.
+
 ## Source map
 
 - `src/pear_sim/spec/model.py`: model loading, parameter resolution, semantic validation.

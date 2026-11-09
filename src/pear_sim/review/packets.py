@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Alpha, headless human-review packets with content hash binding.
 
 This module deliberately has no function that creates an approval. Agents may

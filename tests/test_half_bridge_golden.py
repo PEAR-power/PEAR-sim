@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Half-bridge switching-node golden (VAL-005 row).
 
 The last missing analytical golden. A half-bridge leg with complementary PWM

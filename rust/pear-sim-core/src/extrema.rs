@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 PEAR Power and the PEARSim contributors.
 //! State extrema over a window, from each step's dense polynomial.
 //!
 //! Mirrors pear_sim.core.metrics._dense_state_extrema for RK45 steps: on every

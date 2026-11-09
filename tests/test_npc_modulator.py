@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Three-level NPC level-shifted (PD) modulator.
 
 The law under test, restated independently of the scheduler: per carrier

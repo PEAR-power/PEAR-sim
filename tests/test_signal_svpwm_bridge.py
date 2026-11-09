@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """The signal-layer space-vector bridge, and the rail-to-rail short regression.
 
 The point of this bridge: a control law hands over a commanded

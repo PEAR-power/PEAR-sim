@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Versioned, independently evaluated verification benchmarks."""
 
 from pear_sim.benchmarks.boost_boundary import (

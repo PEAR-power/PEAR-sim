@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Deterministic, dependency-free SVG rendering for PEARSim models.
 
 The renderer is deliberately a presentation-only layer.  It consumes an

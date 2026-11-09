@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """One source of truth for the unit an output signal carries.
 
 The rule used to live in six copies of ``"V" if name.startswith("v(") else

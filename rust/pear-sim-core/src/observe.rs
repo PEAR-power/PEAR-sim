@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 PEAR Power and the PEARSim contributors.
 //! What the simulator reads from one integrated segment, computed in place.
 //!
 //! Mirrors pear_sim.core.metrics._MetricAccumulator.add_solution and

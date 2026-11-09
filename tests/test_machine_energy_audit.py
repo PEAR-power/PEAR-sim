@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Energy audit and power accounting for models with machines."""
 
 from __future__ import annotations

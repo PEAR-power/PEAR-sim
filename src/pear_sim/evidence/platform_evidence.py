@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Fail-closed aggregation of the native full-v1 numerical evidence matrix.
 
 The aggregator never runs a simulation and never turns incomplete evidence into a

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 from __future__ import annotations
 
 from dataclasses import dataclass, field as dataclass_field

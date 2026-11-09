@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Filesystem boundary of the MCP server.
 
 An MCP client is a language model acting on someone's behalf, so every path it

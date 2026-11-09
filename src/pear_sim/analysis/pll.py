@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Offline SRF-PLL over recorded three-phase signals (grid interface).
 
 A standard synchronous-reference-frame PLL run as POST-PROCESSING of a

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Errors raised by the alpha human-review contract."""
 
 from pear_sim.errors import PearSimError

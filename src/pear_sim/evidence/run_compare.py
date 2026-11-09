@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Fail-closed comparison of two verified, immutable PEARSim run bundles.
 
 The comparator is deliberately narrower than a generic waveform-diff utility.  It

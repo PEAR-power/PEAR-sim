@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Modal resonance audit: poles of the accepted modes vs what excites them.
 
 The reference values are closed form. For a filter inductor L feeding a

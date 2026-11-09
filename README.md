@@ -379,3 +379,10 @@ Licensed under the [Apache License, Version 2.0](LICENSE). The license does not 
 permission to use the PEAR Power or PEARSim names or logos except as required to describe
 the origin of the software. Third-party datasets, examples and optional backends keep their
 own notices.
+
+### Reusing this code
+
+You may copy, modify and redistribute PEARSim, including commercially. When you do, keep
+the `LICENSE` and `NOTICE` files and the `SPDX-License-Identifier` / copyright header at the
+top of every copied source file, and mark files you changed. This applies equally to code
+moved by hand, by script or by an AI coding agent.

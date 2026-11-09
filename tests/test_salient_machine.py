@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Salient-rotor machine: reluctance torque and a position-dependent matrix.
 
 A synchronous reluctance machine is NON-EXCITED — all of its torque comes

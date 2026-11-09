@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Run independent point workers concurrently and hand results back in order.
 
 Every batch producer (parameter sweep, tolerance corners, perturbation grid)

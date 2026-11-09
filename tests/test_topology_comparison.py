@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Fair comparison of topology finalists.
 
 The acceptance criteria of finalist comparison are all about refusing to fool yourself, so

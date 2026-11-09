@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Imposed shaft speed: the dynamometer case.
 
 With `driven_speed` the mechanical loop is NOT integrated. The shaft is

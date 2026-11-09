@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """The double-exponential shape used to inject a declared analog transient."""
 
 from __future__ import annotations

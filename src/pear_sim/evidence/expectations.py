@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Strict expectation evaluation over existing PEARSim ``metrics.json`` payloads."""
 
 from __future__ import annotations

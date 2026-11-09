@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """A timed-out MCP computation stops its whole process tree.
 
 Sweep tools run their points in grandchild processes, several at once. If a

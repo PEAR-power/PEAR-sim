@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Gate/error primitives shared verbatim by the boundary oracles.
 
 Only helpers whose per-oracle copies were byte-identical live here.  Topology

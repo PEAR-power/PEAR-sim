@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """ngspice differential adapter: a second, independent evidence class.
 
 Where semantics are genuinely comparable — the LINEAR kernel: R/L/C networks

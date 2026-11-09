@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Batch evaluation: sampling, request validation, ranking and the finalist check."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Gradient backend extension: device losses inside the Jacobian.
 
 Loss power becomes a metric the engine can differentiate: conduction energy is

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Global sensitivity: estimators checked against closed forms, then a real circuit.
 
 The estimator tests use functions whose indices are known on paper (a linear

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Global sensitivity: which parameters move which outputs, over declared ranges.
 
 Two methods, both on the batch machinery (lean runs, in parallel):

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Dense-state polynomials as raw arrays are bit-identical to the Polynomial class.
 
 State extrema are found from every accepted step's dense-output polynomial.

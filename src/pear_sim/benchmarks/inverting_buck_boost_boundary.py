@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Independent periodic CCM/BCM/DCM reference for one ideal inverting buck-boost.
 
 The reference equations are derived in this module and use ``x = [iL, u]`` with

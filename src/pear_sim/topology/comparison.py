@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Fair comparison of topology finalists.
 
 This is the place where it is easiest to fool yourself, so the rules are

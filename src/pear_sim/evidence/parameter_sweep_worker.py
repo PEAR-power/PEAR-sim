@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Isolated point worker for bounded parameter-sweep simulations.
 
 This module is an implementation detail.  The parent process owns request

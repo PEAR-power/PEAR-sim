@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Isolated point worker for a perturbation campaign.
 
 Mirrors ``parameter_sweep_worker`` but takes a model that is already complete:

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Measurement chain: noise, quantisation and computational delay.
 
 What a controller SEES stops being what IS. These three blocks are the rest

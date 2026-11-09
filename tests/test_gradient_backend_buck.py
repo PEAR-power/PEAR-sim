@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """The hard gate of the gradient engine: T1 + T2 must be green.
 
 Every declared tolerance below is a measured value with margin, and the

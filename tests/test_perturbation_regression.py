@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Regression witness for the spike that adds parameter envelopes and events.
 
 The parametric-corner hook (A) and the event-injection hook (B) both extend the

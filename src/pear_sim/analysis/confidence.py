@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Per-run confidence card computed from validation coverage.
 
 The card maps the FEATURES a model actually uses onto the versioned

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Agent contract: the SAME semantics through the CLI and the MCP server.
 
 Every scenario that both surfaces support must agree on the semantic anchors

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """The lean evidence mode drops claims, never accuracy.
 
 Every assertion here is deliberately an exact equality: the whole point of the

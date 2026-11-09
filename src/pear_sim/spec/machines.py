@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Rotating-machine declarations and their expansion into circuit branches.
 
 A surface-magnet (non-salient) synchronous machine is, seen from its

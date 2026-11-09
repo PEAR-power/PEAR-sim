@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Replayed active-set search plans must not change a single result.
 
 The diode active-set search keeps, per switch configuration, the list of

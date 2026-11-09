@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Gate for `DesignSpec`.
 
 The acceptance criteria, each pinned by a test:

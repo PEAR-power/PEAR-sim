@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Modal (resonance) audit of the recorded run.
 
 An LC output filter, a DC link, a cable or a parasitic loop all put lightly

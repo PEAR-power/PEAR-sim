@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Gradient-engine gate: the LLC/DAB vertical slice.
 
 Two resonant/isolated topologies, each exercising a distinct piece of the

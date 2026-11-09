@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Gradient backend core: monodromy, shooting, metric sensitivities.
 
 For a DECLARED mode sequence whose every exit is a scheduled gate edge, each

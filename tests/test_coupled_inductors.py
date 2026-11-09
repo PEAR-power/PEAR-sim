@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Coupled inductors / two-winding transformer: loader, kernel, energy.
 
 The reference is an independent linear solution (matrix exponential of the

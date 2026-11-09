@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Programmatic agent-facing API.
 
 One import point for driving PEARSim without shelling out to the CLI:

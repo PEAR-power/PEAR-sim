@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """VAL-001: analytic RL and series-RLC step goldens (partial).
 
 Closed-form references, documented tolerances. The RLC case covers the

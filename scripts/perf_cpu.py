@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """CPU-time benchmark of the solver, for comparing two checkouts on one machine.
 
 Two subcommands:

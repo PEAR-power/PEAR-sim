@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Run the MCP agent evaluation against a real agent CLI.
 
     uv run python evals/mcp/run.py --agent claude [--task ID ...]

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Declared subcircuits: expansion semantics, refusals, equivalence.
 
 The decisive test is bit-identity: the twelve-pulse rectifier rewritten

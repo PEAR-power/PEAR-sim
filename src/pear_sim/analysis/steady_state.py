@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Periodic steady-state analysis via single-cycle shooting.
 
 Finds the state vector ``x*`` that the production hybrid simulator maps onto

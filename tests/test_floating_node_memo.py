@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Floating-node memo in the active-set search changes cost, never outcome.
 
 A diode candidate whose compile fails with "node X has no algebraic support"

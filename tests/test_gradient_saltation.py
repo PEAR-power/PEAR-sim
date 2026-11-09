@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Gradient-engine gate: natural commutation and saltation matrices.
 
 The declared sequence may now contain NATURAL_GUARD exits: the engine solves

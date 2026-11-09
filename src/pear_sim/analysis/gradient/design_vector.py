@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """The design vector theta as a thin, typed layer over model overrides.
 
 The named-parameter contract is deliberately narrow: **theta must be a

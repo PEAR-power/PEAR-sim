@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Talk to an installed ``pear-sim-mcp`` over stdio and check it really works.
 
 Standard library only: CI copies this file to a directory OUTSIDE the

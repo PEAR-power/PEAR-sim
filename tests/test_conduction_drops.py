@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Piecewise-linear conduction: on-resistance and diode forward voltage.
 
 A closed ``ideal_switch`` or a conducting ``diode`` obeys v = V_f + R_on * i

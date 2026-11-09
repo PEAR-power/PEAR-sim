@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Floating inductor-star nodes: reduction, invariant, and boundaries.
 
 A node whose incident components are all plain inductors gets its degenerate

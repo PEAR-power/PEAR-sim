@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """The ``pi`` signal block is shorthand: it must mean exactly the hand-written graph."""
 
 from __future__ import annotations

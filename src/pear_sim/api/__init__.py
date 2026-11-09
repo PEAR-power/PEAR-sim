@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Agent-facing surfaces: CLI, capability declarations, and the typed facade."""
 
 from pear_sim.api.facade import *  # noqa: F401,F403

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Topology library entries — declarative data, never code.
 
 An entry describes one topology the way a selection engine needs it:

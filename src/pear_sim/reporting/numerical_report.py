@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Offline human projection of recorded canonical-buck numerical evidence.
 
 The renderer is deliberately presentation-only: it copies finite JSON evidence,

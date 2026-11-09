@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """PEARSim public API."""
 
 from pear_sim.spec.model import Model, load_model

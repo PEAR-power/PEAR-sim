@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Small linear-algebra primitives shared by independent affine benchmark oracles.
 
 Topology equations remain in each oracle module.  This file only evaluates an

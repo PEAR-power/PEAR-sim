@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """VAL-005 closure items: independent THD golden + retained inverter sweep.
 
 The harmonics producer integrates event-aligned dense output with

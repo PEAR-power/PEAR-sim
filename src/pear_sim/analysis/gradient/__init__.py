@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Gradient backend building blocks.
 
 The explicit mode sequence with provenance and the typed design vector. The

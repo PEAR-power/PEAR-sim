@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Bounded, retained one-dimensional parameter sweeps for agent experiments.
 
 The producer is intentionally strict about its request and deliberately separates

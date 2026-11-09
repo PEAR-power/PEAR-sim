@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Evaluate many designs of one model and rank them against a declared goal.
 
 A batch request names the design parameters, how to choose designs (Latin

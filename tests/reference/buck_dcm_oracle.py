@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Independent test oracle for the canonical ideal buck converter in DCM.
 
 This module deliberately does not import PEARSim's circuit compiler, mode matrices,

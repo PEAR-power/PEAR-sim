@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Deterministic human-facing gate-drive observation builder.
 
 The raw scheduler event log remains authoritative.  This module produces a small,

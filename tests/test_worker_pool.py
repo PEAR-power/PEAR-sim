@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Long-lived point workers must be indistinguishable from one-shot workers.
 
 The pool exists only to skip interpreter start-up per point. Everything the

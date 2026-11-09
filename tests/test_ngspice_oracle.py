@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """ngspice differential adapter: second independent evidence class.
 
 Netlist-emission checks always run; live comparisons need a local ngspice

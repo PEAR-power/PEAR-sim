@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Component model_meta declaration: parsing, resolved-model echo, run warning."""
 
 from __future__ import annotations
