@@ -75,3 +75,11 @@ jobs:
           version: "0.11.28"
       - name: Publish pear-sim-mcp
         run: uv publish dist/mcp/*
+
+  # The registry entry points at pear-sim-mcp on PyPI, so it goes last.
+  publish-registry:
+    needs: publish-mcp
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/mcp-registry.yml
