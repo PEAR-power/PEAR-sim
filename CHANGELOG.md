@@ -7,6 +7,8 @@ break the model format; every break carries a migration note).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-09
+
 First public release of PEARSim, published by PEAR Power.
 
 ### Simulator
