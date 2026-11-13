@@ -3,6 +3,8 @@
 [![CI](https://github.com/PEAR-power/pear-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/PEAR-power/pear-sim/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](#license)
+[![PyPI](https://img.shields.io/pypi/v/pear-sim.svg)](https://pypi.org/project/pear-sim/)
+[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.PEAR--power%2Fpear--sim-blue.svg)](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.PEAR-power/pear-sim)
 
 A headless, deterministic power-electronics simulator you drive from a text file, a
 command line or an AI agent. Models are YAML, runs are directories of hash-manifested
@@ -39,20 +41,22 @@ and the solver settings that produced it. Published by
 
 ## Install
 
-> [!NOTE]
-> The first release to PyPI is pending. Until it is out, install from a source checkout:
->
-> ~~~console
-> git clone https://github.com/PEAR-power/pear-sim && cd pear-sim
-> uv sync --locked --extra dev        # or: pip install -e ".[mcp]"
-> ~~~
-
-Once released:
+PEARSim is on [PyPI](https://pypi.org/project/pear-sim/) as `pear-sim`, and its MCP
+server as [`pear-sim-mcp`](https://pypi.org/project/pear-sim-mcp/), which is also listed
+in the [official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.PEAR-power/pear-sim)
+as `io.github.PEAR-power/pear-sim`.
 
 ~~~console
 pip install pear-sim                # the simulator: CLI and Python API
 pip install "pear-sim[mcp]"         # plus the MCP server (pear-sim mcp)
 uvx pear-sim-mcp                    # or run the MCP server without installing anything
+~~~
+
+To work on PEARSim itself, install from a source checkout:
+
+~~~console
+git clone https://github.com/PEAR-power/pear-sim && cd pear-sim
+uv sync --locked --extra dev        # or: pip install -e ".[mcp]"
 ~~~
 
 Requires Python 3.11+ on Linux, macOS or Windows. Runtime dependencies are numpy, scipy,
@@ -85,7 +89,7 @@ PEARSim ships an [MCP](https://modelcontextprotocol.io) server, so Claude, Codex
 or any other MCP client can write, validate and simulate models for you:
 
 ~~~console
-claude mcp add pear-sim -- uvx pear-sim-mcp                              # after the PyPI release
+claude mcp add pear-sim -- uvx pear-sim-mcp                              # from PyPI
 claude mcp add pear-sim -- uv run --project /path/to/pear-sim pear-sim mcp   # from a checkout
 ~~~
 

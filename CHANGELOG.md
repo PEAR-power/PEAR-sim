@@ -9,6 +9,8 @@ break the model format; every break carries a migration note).
 
 ### Changed
 
+- README: install section now points at the published PyPI packages and the MCP Registry
+  entry (it still said the first release was pending); PyPI and registry badges.
 - Every Python and Rust source file now carries an `SPDX-License-Identifier: Apache-2.0`
   and copyright header, checked by a test; README and AGENTS.md spell out the attribution
   that copying the code requires.
