@@ -6,7 +6,7 @@
   "notes": "linear-subset differential run; RELATIVE budget 1e-3 of each signal's peak-to-peak covers ngspice solver tolerance plus the linearize resampling term on the shared grid",
   "oracle_product": "ngspice",
   "oracle_version_declared": "ngspice-46 done",
-  "pear_sim_version": "0.1.0",
+  "pear_sim_version": "0.1.1",
   "schema": "pear-sim/oracle-comparison/v0.1",
   "signals": {
     "v(mid)": {

@@ -7,13 +7,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pear-sim-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Launcher for the PEARSim power-electronics simulator's MCP server"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [{ name = "PEAR Power and the PEARSim contributors" }]
-dependencies = ["pear-sim[mcp]==0.1.0"]
+dependencies = ["pear-sim[mcp]==0.1.1"]
 
 [project.scripts]
 pear-sim-mcp = "pear_sim.mcp.server:main"
