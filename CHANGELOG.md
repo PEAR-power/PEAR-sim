@@ -7,6 +7,10 @@ break the model format; every break carries a migration note).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-13
+
+Documentation and provenance release; no change to the simulator or its results.
+
 ### Changed
 
 - README: install section now points at the published PyPI packages and the MCP Registry

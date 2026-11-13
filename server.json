@@ -4,12 +4,12 @@
   "title": "PEARSim",
   "description": "Deterministic power-electronics simulator: write, check and simulate converter models; sweeps.",
   "repository": {"url": "https://github.com/PEAR-power/pear-sim", "source": "github"},
-  "version": "0.1.0",
+  "version": "0.1.1",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "pear-sim-mcp",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "transport": {"type": "stdio"}
     }
   ]
