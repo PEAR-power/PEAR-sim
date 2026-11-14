@@ -33,7 +33,8 @@ Workflow that works:
 Claim boundaries you must pass on to the user:
 - Switches and diodes are IDEAL unless the model declares on_resistance /
   forward_voltage (then conduction is v = V_f + R_on*i, still without recovery or
-  switching transitions). Model capacitor ESR and inductor DCR as series resistors.
+  switching transitions). Declare capacitor ESR (`esr`) and inductor DCR (`dcr`) on
+  the component: constant series resistances, no frequency dependence, no ESL.
   Loss cards are post-processed and synthetic in the examples. Do not present
   efficiency or temperatures as validated.
 - Every result carries warnings and a confidence level; report them, don't drop them.

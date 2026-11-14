@@ -15,8 +15,14 @@ localization. The three canonical topologies (buck/boost/inverting) are
 
 Current reach limits:
 
-- **Component set** (`spec/model.py`): resistor, capacitor, inductor,
-  voltage/current source (DC), ideal switch, diode, voltage probe — 8 types.
+- **Component set** (`spec/model.py`, checked 2026-11-14): resistor, capacitor
+  (optional `esr`), inductor and saturating inductor (optional `dcr`), voltage/current
+  source (DC or sine/step/pulse/PWL/double-exponential waveform), ideal switch (optional
+  `on_resistance`), diode (optional `forward_voltage`, `on_resistance`), thyristor,
+  voltage probe — 10 types; plus coupled inductors (`circuit.couplings`), electrical
+  machines and subcircuits, which expand into these. Of the Wall 2 list below, sources,
+  coupled inductors, the saturable inductor and the thyristor exist; controlled sources
+  do not.
 - **Singularity handling** (`core/circuit.py`): at most **one** constrained
   inductor per mode; capacitor loops and general inductor cutsets are rejected
   with `TopologyError`. This is the honest version of what general-purpose

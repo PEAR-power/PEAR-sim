@@ -854,6 +854,34 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
         ],
     },
     {
+        "id": "model.passive_series_parasitics",
+        "status": "experimental",
+        "scope": (
+            "esr on capacitor and dcr on inductor / sat_inductor: a constant series "
+            "resistance, expanded into an ordinary resistor before validation"
+        ),
+        "statement": (
+            "A declared esr or dcr is exactly a resistor in series with the element "
+            "(ids <id>.esr / <id>.dcr, internal node <id>.core), so it shapes the "
+            "waveforms, the loop dynamics (the ESR zero) and the operating point, and "
+            "the energy audit includes its dissipation like any resistor. It also lets "
+            "capacitor banks and a capacitor across a voltage source run, which the "
+            "ideal kernel rejects as a capacitor loop. The value is constant: no "
+            "frequency or temperature dependence, no leakage resistance, no ESL. "
+            "Terminal voltages include the drop across the ESR; initial_voltage sets "
+            "the ideal capacitance."
+        ),
+        "evidence": [
+            "bit-identical waveforms to the same model written with an explicit series "
+            "resistor, on the Python and the Rust backend",
+            "two parallel capacitors fail without esr (with a hint naming them) and run "
+            "with it; the hint stays silent on every shipped example",
+            "NOT yet compared against a closed form or an independent engine: the ESR "
+            "zero and ESR ripple checks, and an ngspice differential on a linear "
+            "network, are the next step",
+        ],
+    },
+    {
         "id": "model.piecewise_linear_conduction",
         "status": "experimental",
         "scope": (

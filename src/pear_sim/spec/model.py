@@ -39,6 +39,7 @@ from pear_sim.spec.controls import (
     parse_signal_svpwm_control,
 )
 from pear_sim.spec.device_cards import LossAnalysisSpec, parse_loss_sections
+from pear_sim.spec.parasitics import expand_passive_parasitics
 from pear_sim.spec.perturbation import (
     ForcedGateWindow,
     parse_forced_gate_windows,
@@ -996,6 +997,9 @@ def load_model(path: str | Path, overrides: dict[str, str] | None = None) -> Mod
     for machine in machines:
         raw_components.extend(machine_branch_definitions(machine))
         machine_couplings.extend(machine_coupling_definitions(machine))
+    # Declared ESR/DCR expand into series resistors here, so every derived
+    # element passes the same validation below (see spec/parasitics.py).
+    raw_components = expand_passive_parasitics(raw_components, parameters)
 
     components: list[Component] = []
     ids: set[str] = set()

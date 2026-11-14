@@ -7,6 +7,15 @@ break the model format; every break carries a migration note).
 
 ## [Unreleased]
 
+### Added
+
+- `esr` on `capacitor` and `dcr` on `inductor` / `sat_inductor`: a constant series
+  resistance, expanded into an ordinary resistor (`<id>.esr`, `<id>.dcr`, internal node
+  `<id>.core`) and bit-identical to writing that resistor by hand. Capacitor banks and a
+  capacitor across a voltage source now run when one capacitor in the loop has an `esr`;
+  the topology error for such a loop names the capacitors and suggests it. New optional
+  fields only: existing models are unchanged.
+
 ## [0.1.1] - 2026-11-13
 
 Documentation and provenance release; no change to the simulator or its results.
