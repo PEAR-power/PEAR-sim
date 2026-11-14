@@ -347,6 +347,7 @@ def write_result(
                 ),
             }
         )
+    warnings.extend(_ripple_current_warnings(result))
     lossy_devices = sorted(
         component.id
         for component in result.model.components
@@ -721,3 +722,62 @@ def write_result(
         },
     )
     return destination
+
+
+def _ripple_current_warnings(result: Any) -> list[dict[str, Any]]:
+    """Compare each rated capacitor's RMS current with its declared rating.
+
+    Judged on the LAST-HALF window: a ripple-current rating is a thermal,
+    long-run limit, and the first half of a run usually carries the start-up
+    transient. A run that integrated no energy (lean mode) cannot measure the
+    current, and says so instead of passing silently.
+    """
+
+    rated = [
+        record
+        for record in getattr(result.model, "passive_parasitics", ())
+        if record.ripple_current_rating_a is not None
+    ]
+    if not rated:
+        return []
+    window = (result.physics_audit or {}).get("last_half")
+    measured = (window or {}).get("capacitor_rms_current_a")
+    if measured is None:
+        return [
+            {
+                "code": "CAPACITOR_RIPPLE_CURRENT_NOT_ASSESSED",
+                "severity": "warning",
+                "scope": "component",
+                "components": sorted(record.component_id for record in rated),
+                "message": (
+                    "A ripple_current_rating is declared but this run integrated no "
+                    "per-component energy (lean evidence mode), so the RMS current was "
+                    "not measured and the rating was NOT checked. Re-run without --lean."
+                ),
+            }
+        ]
+    warnings: list[dict[str, Any]] = []
+    for record in sorted(rated, key=lambda item: item.component_id):
+        current = float(measured[record.component_id])
+        rating = float(record.ripple_current_rating_a)
+        if current > rating:
+            warnings.append(
+                {
+                    "code": "CAPACITOR_RIPPLE_CURRENT_EXCEEDED",
+                    "severity": "warning",
+                    "scope": "component",
+                    "component": record.component_id,
+                    "rms_current_a": current,
+                    "rating_a": rating,
+                    "window": "last_half",
+                    "message": (
+                        f"Capacitor {record.component_id} carries {current:.4g} A RMS over "
+                        f"the last half of the run, above its declared ripple-current "
+                        f"rating of {rating:.4g} A ({100.0 * current / rating:.0f} %). "
+                        "The ESR heating this rating limits is exceeded: add capacitance "
+                        "in parallel, pick a part with a higher rating, or reduce the "
+                        "ripple current."
+                    ),
+                }
+            )
+    return warnings

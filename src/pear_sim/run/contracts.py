@@ -491,6 +491,21 @@ def resolved_model_dict(model: Model) -> dict[str, Any]:
             if model.subcircuit_instances
             else {}
         ),
+        # Emitted only when declared, OUTSIDE `model_sha256`: the expanded
+        # resistors are already physics; this records which user component
+        # each came from and any ripple-current rating (a check, not an input).
+        **(
+            {
+                "passive_parasitics": [
+                    record.as_dict()
+                    for record in sorted(
+                        model.passive_parasitics, key=lambda item: item.resistor_id
+                    )
+                ]
+            }
+            if model.passive_parasitics
+            else {}
+        ),
     }
 
 

@@ -872,16 +872,24 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "ideal kernel rejects as a capacitor loop. The value is constant: no "
             "frequency or temperature dependence, no leakage resistance, no ESL. "
             "Terminal voltages include the drop across the ESR; initial_voltage sets "
-            "the ideal capacitance."
+            "the ideal capacitance. The audit groups the dissipation per component "
+            "and derives each ESR capacitor's RMS current exactly from its ESR energy; "
+            "an optional ripple_current_rating is checked against the last-half RMS "
+            "current, and an unmeasured rating (lean run) is reported as not checked. "
+            "A series dcr does NOT remove a cutset of inductors (a floating star): "
+            "adding dcr to every inductor broke 7 of the 27 shipped examples that "
+            "contain inductors (measured 2026-11-15)."
         ),
         "evidence": [
             "bit-identical waveforms to the same model written with an explicit series "
             "resistor, on the Python and the Rust backend",
             "two parallel capacitors fail without esr (with a hint naming them) and run "
             "with it; the hint stays silent on every shipped example",
-            "NOT yet compared against a closed form or an independent engine: the ESR "
-            "zero and ESR ripple checks, and an ngspice differential on a linear "
-            "network, are the next step",
+            "capacitor RMS current from the ESR energy agrees with the output-signal "
+            "quadrature of the same current to 1e-9 on both windows; the rating check "
+            "is silent 5 % below and rings 5 % above the measured current",
+            "NOT compared against a closed form or an independent engine in this "
+            "repository",
         ],
     },
     {

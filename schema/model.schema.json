@@ -215,6 +215,7 @@
                   "on_resistance": {},
                   "esr": {},
                   "dcr": {},
+                  "ripple_current_rating": {},
                   "forward_voltage": {},
                   "model_meta": {
                     "type": "object",

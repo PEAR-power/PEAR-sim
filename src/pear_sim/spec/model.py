@@ -39,7 +39,7 @@ from pear_sim.spec.controls import (
     parse_signal_svpwm_control,
 )
 from pear_sim.spec.device_cards import LossAnalysisSpec, parse_loss_sections
-from pear_sim.spec.parasitics import expand_passive_parasitics
+from pear_sim.spec.parasitics import PassiveParasitic, expand_passive_parasitics
 from pear_sim.spec.perturbation import (
     ForcedGateWindow,
     parse_forced_gate_windows,
@@ -338,6 +338,11 @@ class Model:
     # `physics_model_dict`, so the canonical IR hash is a function of the
     # flattened component list only.
     subcircuit_instances: tuple[SubcircuitInstance, ...] = ()
+    # Which expanded resistor came from which capacitor/inductor (`esr`/`dcr`),
+    # plus any declared ripple-current rating. Audit bookkeeping, not physics:
+    # the resistors themselves are in `components` and in `model_sha256`, so a
+    # rating (a CHECK on the run, not an input to it) does not move the hash.
+    passive_parasitics: tuple[PassiveParasitic, ...] = ()
 
 
 def _parse_waveform(
@@ -999,7 +1004,7 @@ def load_model(path: str | Path, overrides: dict[str, str] | None = None) -> Mod
         machine_couplings.extend(machine_coupling_definitions(machine))
     # Declared ESR/DCR expand into series resistors here, so every derived
     # element passes the same validation below (see spec/parasitics.py).
-    raw_components = expand_passive_parasitics(raw_components, parameters)
+    raw_components, passive_parasitics = expand_passive_parasitics(raw_components, parameters)
 
     components: list[Component] = []
     ids: set[str] = set()
@@ -1669,4 +1674,5 @@ def load_model(path: str | Path, overrides: dict[str, str] | None = None) -> Mod
         parameter_envelopes=parameter_envelopes,
         forced_gate_windows=forced_gate_windows,
         subcircuit_instances=subcircuit_instances,
+        passive_parasitics=passive_parasitics,
     )
