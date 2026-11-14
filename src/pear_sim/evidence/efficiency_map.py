@@ -15,6 +15,8 @@ and this producer reads each point's `losses-thermal.json` and
 `physics-audit.json` and reports
 
     P_loss  = semiconductor losses from the declared cards
+              + power absorbed by declared series parasitics (`esr`/`dcr`),
+                always: they are parasitic by declaration
               + power absorbed by explicitly modelled resistances that the
                 request names as parasitic (none by default)
     P_out   = P_delivered_by_sources - P_loss
@@ -209,9 +211,29 @@ def build_efficiency_map(
         semiconductor_w, qualifiers = _device_loss_w(losses, float(duration))
         qualifiers["uninstrumented_switching_devices"] = uninstrumented
 
-        parasitic_w = 0.0
         component_energy = window.get("component_absorbed_energy_j") or {}
+        # Declared `esr`/`dcr` resistors are parasitic by declaration and always
+        # counted; naming one again would count its power twice.
+        declared = {
+            str(record["resistor"]): str(record["component"])
+            for record in resolved.get("passive_parasitics") or []
+        }
+        declared_w = 0.0
+        for resistor_id in sorted(declared):
+            if resistor_id not in component_energy:
+                raise EfficiencyMapError(
+                    f"point {index}: declared parasitic {resistor_id!r} is not in "
+                    "the audit's component map"
+                )
+            declared_w += float(component_energy[resistor_id]) / float(duration)
+        parasitic_w = declared_w
         for component_id in parasitic_components:
+            if component_id in declared:
+                raise EfficiencyMapError(
+                    f"{component_id!r} is the declared {component_id.rsplit('.', 1)[-1]} "
+                    f"of {declared[component_id]!r} and is already counted; naming it "
+                    "again would count its power twice"
+                )
             if component_id not in component_energy:
                 raise EfficiencyMapError(
                     f"point {index}: parasitic component {component_id!r} is not in "
@@ -239,6 +261,9 @@ def build_efficiency_map(
                 "loss_power_w": loss_w,
                 "semiconductor_loss_w": semiconductor_w,
                 "parasitic_loss_w": parasitic_w,
+                # Present only when the model declares `esr`/`dcr`, so maps of
+                # models that do not are unchanged.
+                **({"declared_parasitic_loss_w": declared_w} if declared else {}),
                 "output_power_w": output_w,
                 "efficiency": output_w / input_w,
                 "qualifiers": qualifiers,

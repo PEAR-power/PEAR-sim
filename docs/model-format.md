@@ -244,7 +244,7 @@ circuit:
 | `type` | Required fields besides `id`, `p`, `n` | Optional fields | Equation / semantics |
 |---|---|---|---|
 | `resistor` | `value` | — | `v = R i`, `R > 0`. |
-| `capacitor` | `value` | `initial_voltage`, `esr` | `i = C dv/dt`, `C > 0`; the state is `v(p)-v(n)` (with `esr`: the voltage on the ideal capacitance, see §6.1.0a). |
+| `capacitor` | `value` | `initial_voltage`, `esr`, `ripple_current_rating` | `i = C dv/dt`, `C > 0`; the state is `v(p)-v(n)` (with `esr`: the voltage on the ideal capacitance, see §6.1.0a). |
 | `inductor` | `value` | `initial_current`, `dcr` | `v = L di/dt`, `L > 0`; the state is positive from `p` to `n`. |
 | `sat_inductor` | `value`, `l_sat`, `i_sat` | `initial_current`, `dcr` | Saturating inductor: incremental inductance `value` for `|i| <= i_sat`, `l_sat` above it (`0 < l_sat < value`); continuous flux, two-segment piecewise-linear characteristic. A segment crossing is an exact restart event (`saturation_boundary`). Stored energy is computed per segment (not `0.5*L*i^2`). v0.1 limit: one `sat_inductor` per model; no zero-current (DCM) reduction for this element. |
 | `voltage_source` | `value` XOR `waveform` | — | Enforces `v(p)-v(n) = value` or `u(t)` from the waveform. |
@@ -313,7 +313,8 @@ result is bit-identical to writing that resistor by hand. Consequences:
   board would; `v(c1.core)` is the voltage on the ideal capacitance;
 - `initial_voltage` sets the ideal capacitance (the state), `initial_current` the
   inductor current;
-- the dissipation appears in the energy audit as the resistors `c1.esr` / `l1.dcr`;
+- the dissipation appears in the energy audit as the resistors `c1.esr` / `l1.dcr`, and
+  is also grouped per component (see below);
 - the value may be a `${parameter}`, so envelopes, corners, `--set`, sweeps and
   sensitivity apply to it;
 - the ESR also removes the capacitor loops of §6.2: two capacitors in parallel, or a
@@ -323,6 +324,37 @@ result is bit-identical to writing that resistor by hand. Consequences:
 it at the frequency that matters, usually the switching frequency); there is no
 frequency or temperature dependence, no leakage resistance and no ESL. A node named
 `<id>.core` next to a component with a parasitic is rejected.
+
+**Inductor stars.** A series `dcr` does not remove a cutset of inductors (inductors
+that meet at a floating node, e.g. a star-connected load): only a parallel resistance
+would. Because the resistor is added between the inductor and its `n` node, a star wired
+at the `n` side is no longer recognised as one, and such a model ends with a
+`TopologyError`. Measured 2026-11-15 on the shipped examples: adding `dcr` to every inductor breaks
+7 of 27 that contain inductors (three-phase loads with a floating star, transformers,
+the LLC tank). Model the winding resistance there with an explicit resistor on the side
+away from the star.
+
+**Audit and ratings.** For every declared parasitic the energy audit
+(`physics-audit.json`, both windows) reports:
+
+- `parasitic_loss_by_component_w`: mean power dissipated in each component's ESR/DCR,
+  keyed by the component (`{"c1": 0.031, "l1": 0.52}`), and their total energy
+  `parasitic_absorbed_energy_j` (already contained in `resistor_absorbed_energy_j`);
+- `capacitor_rms_current_a`: the RMS current of every capacitor with an `esr`, derived
+  exactly from the ESR's energy, `I_rms = sqrt(E / (ESR * T))`.
+
+`ripple_current_rating` (current, `> 0`, capacitor only, requires `esr`) declares the
+part's ripple-current limit. When the last-half RMS current exceeds it, the run carries
+the warning `CAPACITOR_RIPPLE_CURRENT_EXCEEDED`. A `--lean` run measures no
+per-component energy and carries `CAPACITOR_RIPPLE_CURRENT_NOT_ASSESSED` instead: an
+unchecked rating is never reported as a pass. The rating is a check, not an input: it
+does not change `model_sha256`. Efficiency maps count declared ESR/DCR losses without
+being asked (`declared_parasitic_loss_w`).
+
+```yaml
+- {id: c1, type: capacitor, p: out, n: gnd, value: 100 uF, esr: 20 mohm,
+   ripple_current_rating: 1.2 A}
+```
 
 ### 6.1.1. Time-varying sources (`waveform`)
 

@@ -15,6 +15,13 @@ break the model format; every break carries a migration note).
   capacitor across a voltage source now run when one capacitor in the loop has an `esr`;
   the topology error for such a loop names the capacitors and suggests it. New optional
   fields only: existing models are unchanged.
+- Energy audit of declared parasitics: `parasitic_loss_by_component_w` and
+  `parasitic_absorbed_energy_j` per window, and `capacitor_rms_current_a` for every
+  capacitor with an `esr`. Optional `ripple_current_rating` on a capacitor (requires
+  `esr`): warning `CAPACITOR_RIPPLE_CURRENT_EXCEEDED` above it, and
+  `CAPACITOR_RIPPLE_CURRENT_NOT_ASSESSED` on a `--lean` run. `model.resolved.json` lists
+  the expansions (`passive_parasitics`). Efficiency maps count declared ESR/DCR losses
+  (`declared_parasitic_loss_w`) and refuse to count one twice.
 
 ### Fixed
 

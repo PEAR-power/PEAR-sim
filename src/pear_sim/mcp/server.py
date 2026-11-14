@@ -35,6 +35,8 @@ Claim boundaries you must pass on to the user:
   forward_voltage (then conduction is v = V_f + R_on*i, still without recovery or
   switching transitions). Declare capacitor ESR (`esr`) and inductor DCR (`dcr`) on
   the component: constant series resistances, no frequency dependence, no ESL.
+  A capacitor's `ripple_current_rating` (needs `esr`) is checked against its
+  RMS current; the audit reports `parasitic_loss_by_component_w`.
   Loss cards are post-processed and synthetic in the examples. Do not present
   efficiency or temperatures as validated.
 - Every result carries warnings and a confidence level; report them, don't drop them.

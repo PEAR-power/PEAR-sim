@@ -741,6 +741,47 @@ class _MetricAccumulator:
             ),
             "machine_electromagnetic_energy_j": machine_energy,
             "machine_electromagnetic_mean_power_w": machine_energy / window.integrated_interval_s,
+            **self._parasitic_window(component_energy, window.integrated_interval_s),
+        }
+
+    def _parasitic_window(
+        self, component_energy: dict[str, float], duration: float
+    ) -> dict[str, Any]:
+        """Group expanded ESR/DCR dissipation under the user's component.
+
+        The expanded resistors are ordinary resistors, so their energy is
+        already inside `resistor_absorbed_energy_j` and the balance closes
+        without a special case; this only regroups it. A capacitor's RMS
+        current follows exactly from its ESR's energy, because the ESR carries
+        the capacitor current: I_rms = sqrt(E / (ESR * T)). Absent (not empty)
+        when the model declares no `esr`/`dcr`, so older bundles do not move.
+        """
+
+        records = getattr(self.model, "passive_parasitics", ())
+        if not records:
+            return {}
+        resistance = {
+            component.id: float(component.value)
+            for component in self.circuit.components
+            if component.type == "resistor"
+        }
+        loss_w: dict[str, float] = {}
+        rms_a: dict[str, float] = {}
+        total = 0.0
+        for record in sorted(records, key=lambda item: item.component_id):
+            energy = float(component_energy[record.resistor_id])
+            total += energy
+            loss_w[record.component_id] = energy / duration
+            if record.kind == "esr":
+                # Quadrature noise can leave a vanishing negative energy on a
+                # near-idle capacitor; the RMS of a real current is never imaginary.
+                rms_a[record.component_id] = math.sqrt(
+                    max(energy, 0.0) / (resistance[record.resistor_id] * duration)
+                )
+        return {
+            "parasitic_absorbed_energy_j": total,
+            "parasitic_loss_by_component_w": loss_w,
+            **({"capacitor_rms_current_a": rms_a} if rms_a else {}),
         }
 
     def finalize(

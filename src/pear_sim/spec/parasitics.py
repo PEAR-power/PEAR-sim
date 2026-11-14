@@ -26,24 +26,61 @@ user NODE literally named ``c1.core`` is rejected rather than silently joined.
 
 Declared limits: one frequency-independent value per component (state it at
 the frequency that matters, usually f_sw). No leakage resistance, no ESL.
+
+Audit. Every expansion is recorded as a :class:`PassiveParasitic`, so the
+energy audit can group the expanded resistor's dissipation under the user's
+component and derive a capacitor's RMS current from it exactly
+(I_rms = sqrt(E_esr / (ESR * T)): the ESR carries the capacitor current).
+That identity is why ``ripple_current_rating`` requires an ``esr``: without
+one there is no resistor whose energy measures the current.
 """
 
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Any
 
 from pear_sim.errors import ModelError
 from pear_sim.spec.controls import _resolve
 from pear_sim.spec.units import Quantity
 
-__all__ = ["PARASITIC_FIELDS", "expand_passive_parasitics"]
+__all__ = [
+    "PARASITIC_FIELDS",
+    "RIPPLE_CURRENT_RATING",
+    "PassiveParasitic",
+    "expand_passive_parasitics",
+]
 
 #: Parasitic field -> component types that accept it.
 PARASITIC_FIELDS: dict[str, frozenset[str]] = {
     "esr": frozenset({"capacitor"}),
     "dcr": frozenset({"inductor", "sat_inductor"}),
 }
+
+
+#: Optional thermal limit on a capacitor's RMS current; needs an ``esr``.
+RIPPLE_CURRENT_RATING = "ripple_current_rating"
+
+
+@dataclass(frozen=True)
+class PassiveParasitic:
+    """One expanded series parasitic: which resistor came from which component."""
+
+    component_id: str
+    kind: str  # "esr" | "dcr"
+    resistor_id: str
+    ripple_current_rating_a: float | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        record: dict[str, Any] = {
+            "component": self.component_id,
+            "kind": self.kind,
+            "resistor": self.resistor_id,
+        }
+        if self.ripple_current_rating_a is not None:
+            record["ripple_current_rating_a"] = self.ripple_current_rating_a
+        return record
 
 
 def _check_value(
@@ -60,23 +97,43 @@ def _check_value(
         )
 
 
+def _ripple_rating(raw: dict[str, Any], parameters: dict[str, Quantity]) -> float | None:
+    if RIPPLE_CURRENT_RATING not in raw:
+        return None
+    component_id = raw.get("id")
+    name = f"{component_id}.{RIPPLE_CURRENT_RATING}"
+    if raw.get("type") != "capacitor":
+        raise ModelError(f"{name}: only valid for capacitor, not {raw.get('type')!r}")
+    if "esr" not in raw:
+        raise ModelError(
+            f"{name}: needs an `esr` on the same capacitor; the RMS current is "
+            "measured from the energy the ESR dissipates, and the rating is a "
+            "limit on exactly that heating"
+        )
+    value = _resolve(raw[RIPPLE_CURRENT_RATING], parameters, "current", name=name)
+    if not math.isfinite(value) or value <= 0.0:
+        raise ModelError(f"{name} must be a positive, finite current")
+    return float(value)
+
+
+def _declares(raw: Any) -> bool:
+    return isinstance(raw, dict) and (
+        any(field in raw for field in PARASITIC_FIELDS) or RIPPLE_CURRENT_RATING in raw
+    )
+
+
 def expand_passive_parasitics(
     raw_components: list[Any],
     parameters: dict[str, Quantity],
-) -> list[Any]:
-    """Return ``raw_components`` with every ``esr``/``dcr`` expanded in series.
+) -> tuple[list[Any], tuple[PassiveParasitic, ...]]:
+    """Expand every ``esr``/``dcr`` in series; return components and records.
 
     Components without a parasitic field pass through as the same object, so a
-    model that declares none is unchanged byte for byte.
+    model that declares none is unchanged byte for byte (and has no records).
     """
 
-    declared = [
-        raw
-        for raw in raw_components
-        if isinstance(raw, dict) and any(field in raw for field in PARASITIC_FIELDS)
-    ]
-    if not declared:
-        return raw_components
+    if not any(_declares(raw) for raw in raw_components):
+        return raw_components, ()
 
     user_nodes = {
         raw.get(terminal)
@@ -85,10 +142,12 @@ def expand_passive_parasitics(
         for terminal in ("p", "n")
     }
     expanded: list[Any] = []
+    records: list[PassiveParasitic] = []
     for raw in raw_components:
-        if not isinstance(raw, dict) or not any(field in raw for field in PARASITIC_FIELDS):
+        if not _declares(raw):
             expanded.append(raw)
             continue
+        rating = _ripple_rating(raw, parameters)
         component_id = raw.get("id")
         component_type = raw.get("type")
         present = [field for field in PARASITIC_FIELDS if field in raw]
@@ -111,7 +170,11 @@ def expand_passive_parasitics(
                 f"{component_id}.{field}: node name {core!r} is reserved for the "
                 "expanded parasitic; rename that node"
             )
-        main = {key: value for key, value in raw.items() if key != field}
+        main = {
+            key: value
+            for key, value in raw.items()
+            if key not in (field, RIPPLE_CURRENT_RATING)
+        }
         resistor = {
             "id": f"{component_id}.{field}",
             "type": "resistor",
@@ -127,4 +190,12 @@ def expand_passive_parasitics(
             main["n"] = core
             resistor["p"], resistor["n"] = core, raw.get("n")
             expanded.extend([main, resistor])
-    return expanded
+        records.append(
+            PassiveParasitic(
+                component_id=component_id,
+                kind=field,
+                resistor_id=resistor["id"],
+                ripple_current_rating_a=rating,
+            )
+        )
+    return expanded, tuple(records)
