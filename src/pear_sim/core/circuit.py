@@ -747,6 +747,53 @@ class CompiledMode:
         return float(storage_rate + absorbed)
 
 
+
+def capacitor_loop_hint(components: Iterable[Any], ground: str) -> str:
+    """Name capacitors that close a loop of only capacitors and voltage sources.
+
+    Such a loop fixes a capacitor voltage algebraically, which the ideal kernel
+    cannot integrate; it surfaces as an inconsistent topology. A series ESR on
+    one capacitor in the loop removes it, so the hint says so. Structural only:
+    it never decides whether a run fails, it only explains a failure.
+    """
+
+    edges = [
+        (component.id, component.type, component.p, component.n)
+        for component in components
+        if component.type in {"capacitor", "voltage_source"}
+    ]
+
+    def connected(start: str, goal: str, skip: str) -> bool:
+        seen = {start}
+        frontier = [start]
+        while frontier:
+            node = frontier.pop()
+            if node == goal:
+                return True
+            for edge_id, _type, p, n in edges:
+                if edge_id == skip:
+                    continue
+                for here, there in ((p, n), (n, p)):
+                    if here == node and there not in seen:
+                        seen.add(there)
+                        frontier.append(there)
+        return False
+
+    looped = sorted(
+        edge_id
+        for edge_id, edge_type, p, n in edges
+        if edge_type == "capacitor" and connected(p, n, edge_id)
+    )
+    if not looped:
+        return ""
+    names = ", ".join(looped)
+    subject = f"Capacitor {names} closes" if len(looped) == 1 else f"Capacitors {names} close"
+    return (
+        f". {subject} a loop of only capacitors and voltage "
+        "sources, which the ideal kernel cannot integrate; give at least one "
+        "capacitor in that loop an `esr`"
+    )
+
 class Circuit:
     def __init__(self, model: Model):
         self.model = model
@@ -1306,13 +1353,17 @@ class Circuit:
                 "mode this far from the preferred configuration indicates an "
                 "inconsistent initial diode guess or a modeling error"
                 f"{first_failure}"
+                f"{capacitor_loop_hint(self.components, self.ground)}"
             )
         detail = (
             _failure_text(failures[0])
             if failures
             else "all diode inequalities are inconsistent"
         )
-        raise TopologyError(f"No stable ideal-switch configuration found: {detail}")
+        raise TopologyError(
+            f"No stable ideal-switch configuration found: {detail}"
+            f"{capacitor_loop_hint(self.components, self.ground)}"
+        )
 
     def _mode_plan(
         self,

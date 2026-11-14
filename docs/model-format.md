@@ -244,9 +244,9 @@ circuit:
 | `type` | Required fields besides `id`, `p`, `n` | Optional fields | Equation / semantics |
 |---|---|---|---|
 | `resistor` | `value` | — | `v = R i`, `R > 0`. |
-| `capacitor` | `value` | `initial_voltage` | `i = C dv/dt`, `C > 0`; the state is `v(p)-v(n)`. |
-| `inductor` | `value` | `initial_current` | `v = L di/dt`, `L > 0`; the state is positive from `p` to `n`. |
-| `sat_inductor` | `value`, `l_sat`, `i_sat` | `initial_current` | Saturating inductor: incremental inductance `value` for `|i| <= i_sat`, `l_sat` above it (`0 < l_sat < value`); continuous flux, two-segment piecewise-linear characteristic. A segment crossing is an exact restart event (`saturation_boundary`). Stored energy is computed per segment (not `0.5*L*i^2`). v0.1 limit: one `sat_inductor` per model; no zero-current (DCM) reduction for this element. |
+| `capacitor` | `value` | `initial_voltage`, `esr` | `i = C dv/dt`, `C > 0`; the state is `v(p)-v(n)` (with `esr`: the voltage on the ideal capacitance, see §6.1.0a). |
+| `inductor` | `value` | `initial_current`, `dcr` | `v = L di/dt`, `L > 0`; the state is positive from `p` to `n`. |
+| `sat_inductor` | `value`, `l_sat`, `i_sat` | `initial_current`, `dcr` | Saturating inductor: incremental inductance `value` for `|i| <= i_sat`, `l_sat` above it (`0 < l_sat < value`); continuous flux, two-segment piecewise-linear characteristic. A segment crossing is an exact restart event (`saturation_boundary`). Stored energy is computed per segment (not `0.5*L*i^2`). v0.1 limit: one `sat_inductor` per model; no zero-current (DCM) reduction for this element. |
 | `voltage_source` | `value` XOR `waveform` | — | Enforces `v(p)-v(n) = value` or `u(t)` from the waveform. |
 | `current_source` | `value` XOR `waveform` | — | Enforces the current `value` (or `u(t)`) from `p` to `n`. |
 | `ideal_switch` | `control` | `initial`, `on_resistance` | Closed: `v = R_on·i` (`v=0` when ideal); open: `i=0`. |
@@ -290,6 +290,39 @@ also be bound to a loss card in `loss_analysis` — both would describe the same
 conduction loss. Units are case-sensitive: `mohm` is milliohm, `Mohm` megaohm;
 `milliohm` is the unambiguous spelling. Declaring `0` is the ideal device and keeps
 the model hash unchanged.
+
+### 6.1.0a. Series parasitics (`esr`, `dcr`)
+
+A capacitor can declare its equivalent series resistance and an inductor its winding
+resistance:
+
+```yaml
+- {id: c1, type: capacitor, p: out, n: gnd, value: 100 uF, esr: 20 mohm}
+- {id: c2, type: capacitor, p: out, n: gnd, value: 10 uF, esr: 3 mohm}
+- {id: l1, type: inductor, p: sw, n: out, value: 1 mH, dcr: 45 mohm}
+```
+
+- `esr` (resistance, `> 0`): `capacitor` only.
+- `dcr` (resistance, `> 0`): `inductor` and `sat_inductor`.
+
+Each is shorthand for a resistor in series, added before validation:
+`p --[c1.esr]-- c1.core --| c1 |-- n` and `p --( l1 )-- l1.core --[l1.dcr]-- n`. The
+result is bit-identical to writing that resistor by hand. Consequences:
+
+- terminal voltages such as `v(out)` include the drop across the ESR, as a probe on the
+  board would; `v(c1.core)` is the voltage on the ideal capacitance;
+- `initial_voltage` sets the ideal capacitance (the state), `initial_current` the
+  inductor current;
+- the dissipation appears in the energy audit as the resistors `c1.esr` / `l1.dcr`;
+- the value may be a `${parameter}`, so envelopes, corners, `--set`, sweeps and
+  sensitivity apply to it;
+- the ESR also removes the capacitor loops of §6.2: two capacitors in parallel, or a
+  capacitor across a voltage source, run once one capacitor in the loop has an `esr`.
+
+`0` is rejected: omit the field for an ideal component. The value is constant (state
+it at the frequency that matters, usually the switching frequency); there is no
+frequency or temperature dependence, no leakage resistance and no ESL. A node named
+`<id>.core` next to a component with a parasitic is rejected.
 
 ### 6.1.1. Time-varying sources (`waveform`)
 
@@ -400,7 +433,7 @@ Example: `examples/inverter_three_phase_floating_neutral.yaml` (dead time
 
 ### 6.2. Ideal topology restrictions
 
-Ideal shorts and sources can create a singular or contradictory circuit. The kernel does not add a hidden `gmin` or parasitics. An invalid topology ends with a `TopologyError` describing the closed elements.
+Ideal shorts and sources can create a singular or contradictory circuit. The kernel does not add a hidden `gmin` or parasitics. An invalid topology ends with a `TopologyError` describing the closed elements. A loop of only capacitors and voltage sources (two capacitors in parallel, a capacitor directly across a source) is such a topology; the error then names the capacitors and suggests an `esr` (§6.1.0a).
 
 The reference kernel has one narrow exception to the assumption that every L remains an
 active differential state in every mode. When an inductor current is exactly zero

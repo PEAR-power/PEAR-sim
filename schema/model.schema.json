@@ -213,6 +213,8 @@
                   "initial_voltage": {},
                   "initial_current": {},
                   "on_resistance": {},
+                  "esr": {},
+                  "dcr": {},
                   "forward_voltage": {},
                   "model_meta": {
                     "type": "object",
