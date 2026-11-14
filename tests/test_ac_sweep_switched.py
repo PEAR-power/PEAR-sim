@@ -109,6 +109,48 @@ def test_correlation_recovers_a_synthetic_tone_exactly() -> None:
     assert np.degrees(np.angle(recovered)) == pytest.approx(np.degrees(0.6), abs=0.05)
 
 
+def test_phase_is_referenced_to_absolute_time_when_the_window_starts_off_grid() -> None:
+    """Regression: the reference phase must follow the perturbation, sin(w*t).
+
+    The window start (settle_periods / f) rarely falls on the output grid, so
+    the first sample in the window is up to one output step late. Measuring
+    phase from that sample instead of from absolute time rotated every result
+    by 360*f*(t[0] - start) degrees -- 0.87 deg at 3 kHz on a 1.25 us grid,
+    found by an external validation of the ESR zero (2026-11-14).
+    """
+
+    frequency = 3000.0
+    step = 1.25e-6
+    time = np.arange(0.0, 12.0 / frequency, step)
+    signal = 7.0 + 3.0 * np.sin(2.0 * np.pi * frequency * time + 0.6)
+    start = 8.0 / frequency  # 2.6667 ms: 0.83 us before the next grid point
+    assert time[time >= start][0] - start > 0.5e-6
+    recovered = correlate(time, signal, frequency_hz=frequency, window_start_s=start)
+    assert abs(recovered) == pytest.approx(3.0, rel=1e-4)
+    assert np.degrees(np.angle(recovered)) == pytest.approx(np.degrees(0.6), abs=0.05)
+
+
+def test_switched_phase_does_not_depend_on_where_the_window_starts(averaged) -> None:
+    """Same converter, five settle lengths at 3 kHz on the 1 us output grid.
+
+    60 and 63 periods start the window on a sample; 61, 62 and 64 start it
+    0.33-0.67 us before the next one. Measured before the fix: 161.40-161.55
+    deg (spread 0.15 deg -- reference moved with the first sample AND the late
+    start dropped a period, so the switching ripple leaked in). After: spread
+    0.001 deg. Every settle is ~10 time constants of the lightly damped output
+    filter (2RC = 2 ms), so the 503 Hz resonance has rung out and cannot
+    masquerade as the effect under test.
+    """
+
+    model, _ = averaged
+    phases = [
+        ac_sweep_point(model, "v(out)", frequency_hz=3000.0, amplitude=0.01,
+                       periods=6, settle_periods=settle).phase_deg
+        for settle in (60, 61, 62, 63, 64)
+    ]
+    assert max(phases) - min(phases) < 0.01
+
+
 def test_a_dc_offset_cannot_masquerade_as_gain() -> None:
     frequency = 100.0
     time = np.linspace(0.0, 3.0 / frequency, 9001)

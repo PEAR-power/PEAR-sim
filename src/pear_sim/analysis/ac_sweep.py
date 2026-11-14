@@ -167,21 +167,35 @@ def correlate(
     """
 
     period = 1.0 / frequency_hz
-    mask = time >= window_start_s - 1e-15
-    t = np.asarray(time[mask], dtype=float)
-    y = np.asarray(values[mask], dtype=float)
-    if len(t) < 8:
-        raise AcSweepError("correlation window holds fewer than eight samples")
-    span = t[-1] - t[0]
+    time = np.asarray(time, dtype=float)
+    values = np.asarray(values, dtype=float)
+    # The window is [start, start + whole] EXACTLY, with both ends interpolated
+    # onto it. The output grid rarely holds window_start_s; starting at the
+    # first sample after it instead (as this function once did) had two
+    # effects found by external validation on 2026-11-14:
+    #   - the phase reference moved with that sample, rotating every result by
+    #     360*f*(t[0] - window_start_s) degrees;
+    #   - the late start cost a whole perturbation period, and the shorter
+    #     window no longer spanned whole CARRIER cycles, so the switching
+    #     ripple leaked into the bin (0.7 deg on the canonical buck at 3 kHz).
+    start = max(float(window_start_s), float(time[0]))
+    span = float(time[-1]) - start
     whole = np.floor(span / period + 1e-9) * period
     if whole <= 0.0:
         raise AcSweepError(
             f"correlation window {span:.6g} s is shorter than one perturbation "
             f"period {period:.6g} s"
         )
-    keep = t <= t[0] + whole + 1e-15
-    t, y = t[keep], y[keep]
-    phase = 2.0 * np.pi * frequency_hz * (t - t[0])
+    stop = start + whole
+    inside = (time > start + 1e-15) & (time < stop - 1e-15)
+    if int(np.count_nonzero(inside)) < 6:
+        raise AcSweepError("correlation window holds fewer than eight samples")
+    t = np.concatenate(([start], time[inside], [stop]))
+    y = np.concatenate(
+        ([np.interp(start, time, values)], values[inside], [np.interp(stop, time, values)])
+    )
+    # ABSOLUTE time: the perturbation is sin(w*t) from t = 0.
+    phase = 2.0 * np.pi * frequency_hz * t
     # THE REFERENCE IS THE PERTURBATION ITSELF, WHICH IS A SINE. Projecting
     # onto cos/-sin (the textbook exp(-j*phase) convention) measures phase
     # against a COSINE and reports every result rotated by -90 degrees —

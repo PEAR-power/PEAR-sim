@@ -143,6 +143,9 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "independent derivations, one number",
             "the phase residual tracks a transport lag: 0.77-0.83 of half a "
             "carrier period across two decades, always lagging",
+            "the phase does not depend on where the correlation window starts "
+            "relative to the output grid: spread 0.001 deg over five window "
+            "starts at 3 kHz (0.15 deg before the 2026-11-14 fix)",
             "divergence grows where averaging expires (0.13 % at f_sw/10, "
             "4.4 % at f_sw/4), which is the averaged model failing, not this one",
             "the correlator recovers a synthetic tone's amplitude to 1e-4 and "
