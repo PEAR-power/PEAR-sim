@@ -16,6 +16,17 @@ break the model format; every break carries a migration note).
   the topology error for such a loop names the capacitors and suggests it. New optional
   fields only: existing models are unchanged.
 
+### Fixed
+
+- Switched AC sweep (`analysis/ac_sweep.correlate`): the correlation window now starts
+  exactly at `window_start_s` (endpoints interpolated) and the phase is referenced to
+  absolute time. Before, when the window start fell between output samples, the phase
+  was measured from the first sample (an error of up to 360·f·`output_step` degrees) and
+  the late start dropped a whole perturbation period, letting switching ripple leak into
+  the result. Gains and phases can change slightly for sweeps whose window start was off
+  the output grid; on the canonical buck at 3 kHz the phase spread across window starts
+  falls from 0.15° to 0.001°.
+
 ## [0.1.1] - 2026-11-13
 
 Documentation and provenance release; no change to the simulator or its results.
