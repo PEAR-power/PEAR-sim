@@ -270,6 +270,7 @@ def build_parser() -> argparse.ArgumentParser:
             "declared initial values."
         ),
     )
+    floquet.add_argument("--set", action="append", default=[], metavar="NAME=VALUE")
     floquet.add_argument("--json", action="store_true")
 
     compare = subparsers.add_parser(
@@ -691,7 +692,10 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 start[name] = float(value)
             floquet_artifacts = run_floquet_analysis(
-                args.model, args.out, initial_state=start or None
+                args.model,
+                args.out,
+                initial_state=start or None,
+                overrides=_overrides(args.set) or None,
             )
             payload = {
                 "ok": True,

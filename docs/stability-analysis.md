@@ -123,11 +123,19 @@ uv run pear-sim analyze floquet my_loop.yaml --out runs/f2 \
 ```
 
 The bundle holds `floquet.json` (orbit, multipliers, monodromy, assumptions),
-`floquet-evidence.json` (three blocking gates — `closed_loop_orbit_converged`,
-`multipliers_assessed`, `locally_stable` — and the claim boundary) and
+`floquet-evidence.json` (blocking gates `closed_loop_orbit_converged`,
+`multipliers_assessed`, `locally_stable` and, for a stable verdict,
+`lyapunov_certificate` — plus the claim boundary) and
 `artifact-manifest.json`. Exit code 0: locally stable; 1: evidence retained but
 unstable, not resolved or not assessed; 2: model outside scope or invalid input,
-nothing written.
+nothing written. `--set NAME=VALUE` overrides model parameters, as for
+`simulate`; controller gains are literals in the signal blocks, so another gain
+is another model file.
+
+Agents get the same analysis through the MCP tool `floquet` (same worker and
+code path, so the same numbers): it returns the verdict, the gates, the largest
+multipliers, the orbit state, any violated assumption and the engine's notes —
+including, when Newton stops at a limiter, the advice to pass `initial_state`.
 
 ```python
 from pear_sim.spec.model import load_model

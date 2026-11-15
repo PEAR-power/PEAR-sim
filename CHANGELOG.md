@@ -9,6 +9,12 @@ break the model format; every break carries a migration note).
 
 ### Added
 
+- MCP tool `floquet`: the closed-loop Floquet analysis for agents — verdict, gates,
+  largest multipliers with the oscillation frequency, Lyapunov certificate, orbit state,
+  violated assumptions and the engine's notes (e.g. "pass `initial_state`" when Newton
+  stops at a limiter). `pear-sim analyze floquet` gains `--set NAME=VALUE`, and the
+  evidence records the overrides. `steady_state` on a closed-loop model now points to
+  `floquet` in its error.
 - motulator (Aalto Electric Drives, MIT) as an independent engine for the machine
   models (`pear_sim.oracle.motulator`): a PMSM fed by a balanced sine supply at an
   imposed speed, compared on the same time grid. motulator runs in its own interpreter
@@ -40,7 +46,7 @@ break the model format; every break carries a migration note).
   orbit only; see `docs/stability-analysis.md`. Capability
   `analysis.steady_state.closed_loop_floquet`.
 - `pear-sim analyze floquet MODEL --out DIR [--initial-state NAME=VALUE]`: a retained,
-  hash-manifested bundle (`floquet.json`, `floquet-evidence.json` with three blocking
+  hash-manifested bundle (`floquet.json`, `floquet-evidence.json` with its blocking
   gates) for the closed-loop analysis; exit 0 locally stable, 1 evidence retained but not
   stable or not attestable, 2 refused. The monodromy is analytic (the orbit's mode matrix
   exponentials plus the controlled switching-instant term) and cross-checked against

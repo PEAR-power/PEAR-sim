@@ -62,8 +62,9 @@ def run_floquet_analysis(
     output_dir: str | Path,
     *,
     initial_state: Mapping[str, float] | None = None,
+    overrides: Mapping[str, str] | None = None,
 ) -> FloquetArtifacts:
-    model = load_model(model_file)
+    model = load_model(model_file, None if not overrides else dict(overrides))
     # Scope errors are raised before anything is written: a refused model
     # leaves no half bundle behind.
     result = solve_closed_loop_steady_state(
@@ -133,6 +134,7 @@ def run_floquet_analysis(
             "model": str(Path(model_file)),
             "model_hashes": model_hashes(model),
             "initial_state": None if initial_state is None else dict(initial_state),
+            "overrides": None if not overrides else dict(overrides),
             "gates": gates,
             "stability": result.stability,
             "overall_status": overall,

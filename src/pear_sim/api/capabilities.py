@@ -182,7 +182,8 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
         "id": "analysis.steady_state.closed_loop_floquet",
         "status": "experimental",
         "scope": (
-            "`pear-sim analyze floquet` and the Python API: control laws in the "
+            "`pear-sim analyze floquet`, the MCP `floquet` tool and the Python "
+            "API: control laws in the "
             "signal layer driving signal_pwm, "
             "smooth time-invariant blocks (constant, probe, gain, sum, product, "
             "divide, saturate away from its limits, unit_delay, model-level "

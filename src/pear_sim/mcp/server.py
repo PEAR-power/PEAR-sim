@@ -101,7 +101,8 @@ DESCRIPTIONS = {
         (inductor currents, capacitor voltages) at the start of a switching period and its
         cycle averages, plus a fresh run started ON the orbit that reports steady-state
         ripple and powers. `efficiency_output` (component ids, e.g. ["load"]) adds
-        steady-state efficiency. Needs at least one PWM control.""",
+        steady-state efficiency. Needs at least one PWM control; refuses models with a
+        controller in the loop (use `floquet` for those).""",
         model_input=True,
     ),
     "loop_gain": _doc(
@@ -112,6 +113,27 @@ DESCRIPTIONS = {
         coefficients in s, sensor_gain, f_min_hz, f_max_hz, points, margins
         {min_phase_margin_deg, min_gain_margin_db}, sampling {update_frequency_hz,
         computation_delay_s}.""",
+        model_input=True,
+    ),
+    "floquet": _doc(
+        """Is a CLOSED-LOOP converter stable? Finds the periodic orbit of the exact
+        switching model WITH its digital controller (control law written in signal
+        blocks driving signal_pwm; state = inductor currents, capacitor voltages and
+        every unit_delay register) and returns its Floquet multipliers: all |mu| < 1 =
+        locally stable, any |mu| >= 1 = unstable, and the angle of the dominant mu gives
+        the frequency of the oscillation to expect. No averaging, no declared
+        compensator — unlike loop_gain. A stable verdict also needs a Lyapunov
+        certificate (second, eigenvalue-free check). Claims LOCAL stability of this
+        orbit only. Scope: DC sources, one switching frequency, smooth signal blocks
+        (saturate only away from its limits); natural commutation (DCM) is judged by
+        finite differences alone. Built-in sampled controllers, threshold/lookup
+        blocks, waveform sources, machines and saturable inductors are refused with
+        the reason. If Newton does
+        not converge (often: duty clamped at a limiter), pass `initial_state`
+        {state: SI value} near the orbit, e.g. {"signal:int_prev": duty/ki}. `overrides`
+        change model PARAMETERS only; controller gains are literals in the signal
+        blocks, so edit model_yaml to try other gains. Example:
+        buck_closed_loop_floquet.""",
         model_input=True,
     ),
     "sweep_parameter": _doc(
@@ -298,6 +320,21 @@ def build_server(workspace: Workspace):
         return guarded(
             t.loop_gain, workspace, request=request, model_yaml=model_yaml,
             model_path=model_path, example=example, timeout_s=timeout_s,
+        )
+
+    @tool("floquet", computes)
+    def floquet(
+        model_yaml: str | None = None,
+        model_path: str | None = None,
+        example: str | None = None,
+        overrides: dict[str, str] | None = None,
+        initial_state: dict[str, float] | None = None,
+        timeout_s: float | None = None,
+    ) -> dict[str, Any]:
+        return guarded(
+            t.floquet, workspace, model_yaml=model_yaml, model_path=model_path,
+            example=example, overrides=overrides, initial_state=initial_state,
+            timeout_s=timeout_s,
         )
 
     @tool("sweep_parameter", computes)
