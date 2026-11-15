@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 PEAR Power and the PEARSim contributors.
 """Loop gain by injection on the switching model, gated by Floquet.
 
 The gate is a different method: scaling the controller by the measured gain
