@@ -195,9 +195,10 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "Newton shooting on the production one-period map of the state "
             "augmented with every unit_delay register, then Floquet multipliers "
             "from an analytic monodromy (orbit modes' matrix exponentials plus the "
-            "controlled switching-instant term) cross-checked every run against "
-            "central finite differences; finite differences alone when the orbit "
-            "has a natural commutation. Claims LOCAL "
+            "controlled switching-instant term, and the guard saltation at every "
+            "natural commutation) cross-checked every run against central finite "
+            "differences; finite differences alone when a natural commutation "
+            "coincides with a gate edge or grazes its guard. Claims LOCAL "
             "stability of the computed orbit only; the verdict is withheld when a "
             "multiplier is within its step-size spread of the unit circle, and no "
             "multipliers are reported when a limiter, the duty clamp or the mode "
@@ -205,6 +206,11 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "monodromies disagree."
         ),
         "evidence": [
+            "closed-form oracle for the ideal DCM buck under a sampled PI (three exact "
+            "intervals, the fall time by brentq, implicit-function derivatives — no "
+            "saltation matrix): multipliers agree to 2.7e-13 and the zero multiplier of "
+            "the erased inductor current is reproduced; the oracle itself reaches the "
+            "textbook DCM duty as 1/C",
             "closed-form oracle for the ideal CCM buck under a sampled PI (shared state "
             "matrix: two matrix exponentials plus a switching-instant term), itself "
             "checked against the textbook RLC natural frequencies: multipliers agree "

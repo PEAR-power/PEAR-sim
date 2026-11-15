@@ -129,3 +129,113 @@ def rlc_multipliers(loop: BuckLoop) -> np.ndarray:
     omega0_sq = 1.0 / (loop.inductance_h * loop.capacitance_f)
     root = np.sqrt(complex(alpha * alpha - omega0_sq))
     return np.exp(np.array([-alpha + root, -alpha - root]) * loop.period_s)
+
+
+# ---------------------------------------------------------------------------
+# DCM: the inductor current returns to zero inside every period
+# ---------------------------------------------------------------------------
+#
+# Three intervals from z = [i_L, v_C, r] (switch on, diode on, both off):
+#
+#   1. [0, t_s]       x1 = e^{A t_s} x0 + W(t_s)                 (source on)
+#   2. [t_s, t_s+t_2] x(tau) = e^{A tau} x1 until i_L(t_2) = 0   (free LC)
+#   3. the rest       i_L = 0,  v_C decays with RC:  v(T) = v2 e^{-t_3/(RC)}
+#
+# t_2 is the FIRST root of [e^{A tau} x1]_0, bracketed and solved by brentq.
+# Derivatives by the implicit function theorem on that root, written out by
+# hand (no saltation matrices, no simulator):
+#
+#   dx1 = e^{A t_s} dx0 + (A x1 + b) dt_s
+#   dt_2 = -[e^{A t_2} dx1]_0 / [A x2]_0
+#   dx2 = e^{A t_2} dx1 + A x2 dt_2
+#   dv(T) = e^{-t_3/(RC)} dv2 + v(T)/(RC) (dt_s + dt_2),   di(T) = 0
+#
+# The orbit has e = 0 and i_L(0) = 0 (it starts from the zero-current
+# interval), so v_C(0) = vref and t_s is one scalar root of v(T) = vref.
+
+
+@dataclass(frozen=True)
+class DcmOrbit:
+    duty: float
+    capacitor_voltage_v: float
+    register: float
+    fall_time_s: float
+    monodromy: np.ndarray
+    multipliers: np.ndarray  # sorted by decreasing magnitude
+
+
+def _on_state(loop: BuckLoop, x0: np.ndarray, on_time: float) -> np.ndarray:
+    block = np.zeros((3, 3))
+    block[:2, :2] = loop.a
+    block[:2, 2] = loop.b
+    return expm(loop.a * on_time) @ x0 + expm(block * on_time)[:2, 2]
+
+
+def _fall_time(loop: BuckLoop, x1: np.ndarray, available: float) -> float:
+    def current(tau: float) -> float:
+        return float((expm(loop.a * tau) @ x1)[0])
+
+    grid = np.linspace(0.0, available, 2001)[1:]
+    for low, high in zip(np.concatenate([[0.0], grid[:-1]]), grid, strict=True):
+        if current(high) <= 0.0:
+            if current(low) <= 0.0:
+                return float(low)
+            return float(brentq(current, low, high, xtol=1e-20, rtol=1e-15))
+    raise ValueError("orbit is not in DCM: the inductor current does not reach zero")
+
+
+def solve_dcm(loop: BuckLoop) -> DcmOrbit:
+    period = loop.period_s
+    rc = loop.load_ohm * loop.capacitance_f
+    start = np.array([0.0, loop.vref_v])
+
+    def end_voltage(on_time: float) -> float:
+        x1 = _on_state(loop, start, on_time)
+        fall = _fall_time(loop, x1, period - on_time)
+        x2 = expm(loop.a * fall) @ x1
+        return float(x2[1] * np.exp(-(period - on_time - fall) / rc))
+
+    # Upper bracket: the longest on-time that still leaves the current room to
+    # reach zero (beyond it the orbit is CCM and this oracle does not apply).
+    upper = 0.9 * period
+    while True:
+        try:
+            end_voltage(upper)
+            break
+        except ValueError:
+            upper *= 0.9
+            if upper < 1e-3 * period:
+                raise
+    on_time = brentq(
+        lambda t: end_voltage(t) - loop.vref_v, 1e-4 * period, upper,
+        xtol=1e-20, rtol=1e-15,
+    )
+    x1 = _on_state(loop, start, on_time)
+    fall = _fall_time(loop, x1, period - on_time)
+    x2 = expm(loop.a * fall) @ x1
+    rest = period - on_time - fall
+    decay = np.exp(-rest / rc)
+    v_end = float(x2[1] * decay)
+
+    duty = on_time / period
+    # dt_s/dz from the controller, as in the CCM oracle.
+    dts = period * np.array([0.0, -(loop.kp + loop.ki * period), loop.ki])
+    dx0 = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+    dx1 = expm(loop.a * on_time) @ dx0 + np.outer(loop.a @ x1 + loop.b, dts)
+    propagated = expm(loop.a * fall) @ dx1
+    slope = float((loop.a @ x2)[0])
+    dfall = -propagated[0, :] / slope
+    dx2 = propagated + np.outer(loop.a @ x2, dfall)
+    monodromy = np.zeros((3, 3))
+    monodromy[0, :] = 0.0
+    monodromy[1, :] = decay * dx2[1, :] + v_end / rc * (dts + dfall)
+    monodromy[2, :] = [0.0, -period, 1.0]
+    values = np.linalg.eigvals(monodromy)
+    return DcmOrbit(
+        duty=duty,
+        capacitor_voltage_v=v_end,
+        register=duty / loop.ki,
+        fall_time_s=fall,
+        monodromy=monodromy,
+        multipliers=values[np.argsort(-np.abs(values))],
+    )

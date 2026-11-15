@@ -570,11 +570,16 @@ def _run_cycle(plan: _Plan, z: np.ndarray) -> _CycleRun:
 
 
 #: Events whose instant is either fixed in time (a scheduled gate of a fixed
-#: PWM), set by the controller (a signal_pwm turn-off), or a commutation the
-#: switch manager applies AT that same instant. A natural commutation has its
-#: own state-dependent instant and needs a guard saltation — v1 leaves it to
-#: the finite-difference path.
-_ANALYTIC_EVENT_KINDS = frozenset({"scheduled_gate", "switch_manager"})
+#: PWM), set by the controller (a signal_pwm turn-off), a commutation the
+#: switch manager applies AT that same instant, or a natural commutation (a
+#: diode guard crossing zero at its own state-dependent instant), which gets
+#: the guard saltation S = I + (f+ - f-) g^T / (g . f-).
+_ANALYTIC_EVENT_KINDS = frozenset({"scheduled_gate", "switch_manager", "natural_commutation"})
+
+#: |g . f-| below this (in guard units per second, relative to |g| |f-|) is a
+#: grazing crossing: the saltation is undefined there and the analytic path
+#: steps aside for finite differences.
+_GRAZING_RELATIVE = 1e-9
 
 
 def _graph_jacobian(plan: _Plan, run: _CycleRun, circuit: Circuit) -> dict[str, np.ndarray]:
@@ -649,6 +654,20 @@ def _saltation_term(
     return np.outer(after_edge @ jump, period * duty_row)
 
 
+def _guard_saltation(
+    f_minus: np.ndarray, f_plus: np.ndarray, guard: np.ndarray, slope: float
+) -> np.ndarray:
+    """Saltation at a natural commutation: S = I + (f+ - f-) g^T / (g . f-).
+
+    A perturbation moves the crossing instant by -g.dx / (g . f-); over that
+    shift the state follows f- instead of f+ (or the reverse). Entering a
+    zero-current interval f+ is zero on the frozen current, so S erases that
+    component of the perturbation — the reason a DCM orbit has a multiplier
+    of exactly 0."""
+
+    return np.eye(len(f_minus)) + np.outer(f_plus - f_minus, guard) / slope
+
+
 def _analytic_monodromy(plan: _Plan, run: _CycleRun) -> tuple[np.ndarray | None, str]:
     """Monodromy from the orbit's own compiled modes, without probing.
 
@@ -678,26 +697,73 @@ def _analytic_monodromy(plan: _Plan, run: _CycleRun) -> tuple[np.ndarray | None,
         )
         for interval in intervals
     ]
-    for mode in modes:
-        if mode.constrained_state_indices:
-            return None, "an interval reduces a state (zero-current or inductor-star path)"
-    transitions = [
-        expm(mode.a * (interval["end_s"] - interval["start_s"]))
-        for mode, interval in zip(modes, intervals, strict=True)
-    ]
+    tolerance = 1e-9 * plan.period
+    # Saltation at every natural commutation, applied at the END of the
+    # interval it closes. A diode leaving conduction crosses its current
+    # guard; one entering conduction crosses its voltage guard.
+    diodes = {diode.id: diode for diode in circuit.diodes}
+    scheduled_times = [event.time for event in result.events if event.kind == "scheduled_gate"]
+    saltations: dict[int, np.ndarray] = {}
+    for event in result.events:
+        if event.kind != "natural_commutation":
+            continue
+        boundary = next(
+            (
+                index
+                for index in range(len(intervals) - 1)
+                if abs(intervals[index]["end_s"] - event.time) <= tolerance
+            ),
+            None,
+        )
+        if boundary is None:
+            return None, f"natural commutation of {event.target!r} at no interval boundary"
+        if any(abs(time - event.time) <= tolerance for time in scheduled_times):
+            return None, (
+                f"natural commutation of {event.target!r} coincides with a gate edge "
+                "(the order of the two events is not differentiable)"
+            )
+        before, later = modes[boundary], modes[boundary + 1]
+        guard, _constant, _sources = before.diode_guard_affine(
+            diodes[event.target], bool(event.previous)
+        )
+        guard = np.asarray(guard, dtype=float)
+        x = np.asarray([intervals[boundary]["state_end"][name] for name in plan.circuit_ids])
+        f_minus = before.a @ x + before.c
+        f_plus = later.a @ x + later.c
+        slope = float(guard @ f_minus)
+        scale = float(np.linalg.norm(guard) * np.linalg.norm(f_minus))
+        if scale == 0.0 or abs(slope) <= _GRAZING_RELATIVE * scale:
+            return None, f"grazing natural commutation of {event.target!r}"
+        jump = _guard_saltation(f_minus, f_plus, guard, slope)
+        saltations[boundary] = jump @ saltations.get(boundary, np.eye(n))
+    # A reduced (zero-current) interval holds a state at zero; its matrix has
+    # a zero row there, so the perturbation must already be zero on entry —
+    # which the saltation of the crossing that froze it guarantees
+    # (f+ = 0 on that state). Entered any other way, the rule does not hold.
+    for index, mode in enumerate(modes):
+        frozen = set(mode.constrained_state_indices)
+        if not frozen:
+            continue
+        inherited = set(modes[index - 1].constrained_state_indices) if index else set()
+        if not frozen <= inherited and (index == 0 or index - 1 not in saltations):
+            return None, "a reduced interval is not entered through a natural commutation"
+    steps = []
+    for index, (mode, interval) in enumerate(zip(modes, intervals, strict=True)):
+        step = expm(mode.a * (interval["end_s"] - interval["start_s"]))
+        steps.append(saltations[index] @ step if index in saltations else step)
 
     def after(index: int) -> np.ndarray:
-        """Transition from the end of interval `index` to the period end."""
+        """Linearised map from just after the end of interval `index` to the
+        period end (the saltation closing `index` itself is not included)."""
 
         chain = np.eye(n)
-        for transition in transitions[index + 1 :]:
-            chain = transition @ chain
+        for step in steps[index + 1 :]:
+            chain = step @ chain
         return chain
 
     total = after(-1)  # product of every interval
     monodromy = np.zeros((size, size))
     monodromy[:n, :n] = total
-    tolerance = 1e-9 * plan.period
     for control_id, (block_id, _low, _high) in plan.duty_sources.items():
         duty_row = rows[block_id]
         off_time = float(
