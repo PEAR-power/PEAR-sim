@@ -9,6 +9,14 @@ break the model format; every break carries a migration note).
 
 ### Added
 
+- `core_losses` section: a post-processing core-loss estimate for linear inductors by
+  the improved Generalized Steinmetz Equation (iGSE) over the last declared period of
+  the recorded current (`B = L·i/(N·A_e)`), with material cards carrying Steinmetz
+  ranges, the `ct(T)` temperature factor, mandatory provenance and a validity envelope.
+  New artifact `core-losses.json`, summary entry `core_losses`, capability
+  `electrothermal.core_loss_igse` (experimental). Validated against measured MagNet N87
+  core loss (`tests/test_core_losses_magnet.py`, data subset in `tests/data/`). New
+  optional section only: existing models are unchanged.
 - Lyapunov certificate for a `stable` closed-loop Floquet verdict: `floquet.json` stores `P`
   with `P` and `P - Mᵀ P M` positive definite (checked by Cholesky, eigenvalue-free, valid
   for both computed monodromies), and `analyze floquet` has a blocking

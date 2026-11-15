@@ -155,6 +155,7 @@ Thermal functionality starts only after electrical switching waveforms and event
 | Foster thermal impedance | Later | Step-response benchmark and parameter validation |
 | Cauer thermal network | Later | Network conversion only when numerically and physically justified |
 | Electrothermal iteration | Later | Electrical loss to junction temperature with documented coupling cadence |
+| Core loss of linear inductors (iGSE) | Later | First slice exists as experimental post-processing (`core_losses`, model-format §7b), validated against measured MagNet N87 loss; DC bias, relaxation loss and minor loops are declared omissions |
 | Manufacturer model import | Deferred | Per-format and per-dataset license review required |
 
 The validation plan already reserves cases for conduction and double-pulse losses, Foster impedance, and end-to-end electrothermal behavior. Their presence in the manifest does not mean the components are implemented.
@@ -166,7 +167,7 @@ These domains are useful for complete drive systems but are outside the initial 
 | Domain | Priority | First possible slice |
 |---|---:|---|
 | Ideal transformer and coupled winding refinements | Later | Electrical-domain primitives with energy tests |
-| Lumped magnetic circuit | Deferred | Winding, permeance, air gap, saturation, hysteresis, and core loss require a dedicated formulation |
+| Lumped magnetic circuit | Deferred | Winding, permeance, air gap, saturation, and hysteresis require a dedicated formulation (core loss of a linear inductor exists as post-processing, see the thermal and loss table) |
 | Rotational mechanics | Deferred | Inertia, torque source, damper, spring, position/speed sensors |
 | Translational mechanics | Deferred | Mass, force source, damper, spring, position/speed sensors |
 | Clutch, backlash, friction | Deferred | Hybrid events and collision semantics require a dedicated validation suite |

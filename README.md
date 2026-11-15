@@ -209,7 +209,9 @@ Comparison records live in [`validation/oracle-records/`](validation/oracle-reco
 each carries the deviation actually measured against the tolerance declared, and every
 record must be regenerable by a test in this repository. Agreement between two simulators
 is *verification* (the implementation solves the model it claims to), not *validation*
-against hardware — no claim here rests on measurements. Where a capability has no
+against hardware. One claim rests on measurements: the core-loss estimate is validated
+against measured ferrite loss (Princeton MagNet, TDK N87; `tests/test_core_losses_magnet.py`);
+every other claim is verification. Where a capability has no
 independent comparison at all, its capability entry says so.
 
 Machine-readable status for every capability, including the unsupported ones:
