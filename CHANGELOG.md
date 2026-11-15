@@ -9,6 +9,13 @@ break the model format; every break carries a migration note).
 
 ### Added
 
+- Lyapunov certificate for a `stable` closed-loop Floquet verdict: `floquet.json` stores `P`
+  with `P` and `P - Mᵀ P M` positive definite (checked by Cholesky, eigenvalue-free, valid
+  for both computed monodromies), and `analyze floquet` has a blocking
+  `lyapunov_certificate` gate. The certificate must guarantee a per-cycle decrease of `V` of at least 1e-8
+  (unit-free), so round-off cannot certify a map on the unit circle. Anyone can re-check it from the bundle with two
+  factorisations.
+
 - Closed-loop periodic steady state and Floquet multipliers
   (`pear_sim.analysis.closed_loop.solve_closed_loop_steady_state`, experimental, Python
   API only): Newton shooting on the production cycle map with the state augmented by every

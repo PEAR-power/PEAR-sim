@@ -68,6 +68,8 @@ __all__ = [
     "ClosedLoopSteadyState",
     "ClosedLoopSteadyStateError",
     "FloquetMultiplier",
+    "LyapunovCertificate",
+    "lyapunov_certificate",
     "solve_closed_loop_steady_state",
 ]
 
@@ -78,6 +80,10 @@ DEFAULT_RELATIVE_STEP = 1e-4
 #: 2026-11-15 on the buck/PI gate cases: ~1e-11 to 1e-8 apart; a missing
 #: saltation term moves them by >1e-2.
 METHOD_AGREEMENT_TOLERANCE = 1e-6
+#: A Lyapunov certificate must guarantee V(M z) <= (1 - margin) V(z): a
+#: unit-free decrease far above round-off (~1e-16 on these matrices) and far
+#: below any multiplier a stability verdict could rest on.
+CERTIFICATE_MARGIN = 1e-8
 # Floor of a probe step, in the state's own SI unit. A register that sits at
 # zero (an integrator at a zero-error orbit) still needs a non-zero probe.
 _STEP_FLOOR = 1e-7
@@ -163,6 +169,144 @@ class FloquetMultiplier:
 
 
 @dataclass(frozen=True)
+class LyapunovCertificate:
+    """A quadratic Lyapunov function for the one-cycle map, checkable by hand.
+
+    If ``P`` and ``P - M^T P M`` are both positive definite (each confirmed by
+    a Cholesky factorisation, not by trusting whatever produced ``P``), then
+    ``V(z) = z^T P z`` strictly decreases every cycle, so the orbit is locally
+    asymptotically stable — without computing a single eigenvalue. Anyone can
+    re-check it from ``floquet.json`` with two factorisations.
+
+    ``contraction_bound`` is the largest ``V(M z) / V(z)``: an upper bound on
+    ``|mu|^2`` that the multipliers must respect. ``certifies_other_monodromy``
+    says the SAME ``P`` also passes for the second monodromy this solver
+    computed (finite differences against the analytic one, or the other step
+    size) — a unit-free statement that the certificate is not an artefact of
+    one method's error. (A norm-ball radius was tried and dropped: the state
+    mixes amperes, volts and volt-seconds, so any norm is a choice of units.)
+    """
+
+    found: bool
+    detail: str
+    #: How P was found; irrelevant to validity, recorded for reproduction.
+    construction: str = ""
+    p_matrix: tuple[tuple[float, ...], ...] = ()
+    contraction_bound: float | None = None
+    certifies_other_monodromy: bool | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "check": "cholesky(P) and cholesky(P - M^T P M) both succeed",
+            "found": self.found,
+            "construction": self.construction,
+            "detail": self.detail,
+            "p_matrix": [list(row) for row in self.p_matrix],
+            "contraction_bound": self.contraction_bound,
+            "certifies_other_monodromy": self.certifies_other_monodromy,
+        }
+
+
+def _positive_definite(matrix: np.ndarray) -> bool:
+    try:
+        np.linalg.cholesky(matrix)
+    except np.linalg.LinAlgError:
+        return False
+    return True
+
+
+def _check_candidate(m: np.ndarray, p: np.ndarray) -> float | None:
+    """Contraction bound if ``p`` certifies ``m``, else None.
+
+    Only Cholesky factorisations decide — no eigenvalues of ``m`` — so the
+    verdict is independent of how ``p`` was found.
+    """
+
+    from scipy.linalg import eigh
+
+    p = 0.5 * (p + p.T)
+    if not np.all(np.isfinite(p)) or not _positive_definite(p):
+        return None
+    image = m.T @ p @ m
+    image = 0.5 * (image + image.T)
+    if not _positive_definite(p - image):
+        return None
+    contraction = float(np.max(eigh(image, p, eigvals_only=True)))
+    # Positive definiteness of P - M^T P M alone is decided by round-off when
+    # the true decrease is zero: on a lossless rotation it came out
+    # [-1.3e-17, +1.3e-17] on x86 (refused) and both positive on ARM
+    # (certified a map on the unit circle, CI 2026-11-15). Demand a decrease
+    # that round-off cannot fake.
+    if contraction > 1.0 - CERTIFICATE_MARGIN:
+        return None
+    return contraction
+
+
+def lyapunov_certificate(
+    monodromy: np.ndarray, *, other: np.ndarray | None = None
+) -> LyapunovCertificate:
+    """Search and check a quadratic Lyapunov certificate for ``z -> M z``.
+
+    Candidates: the Lyapunov equation ``M^T P M - P = -I``, and the eigenvector
+    metric ``P = Re(V^-H V^-1)`` (contraction ``max |mu|^2``). A candidate that
+    also certifies ``other`` is preferred, then the tighter contraction.
+    Measured 2026-11-15 on the buck/PI orbit: Q = I gives a valid but nearly
+    empty certificate (contraction 0.99999998, the state mixing units), the
+    eigenvector metric gives 0.9794 = |mu|^2.
+    """
+
+    import warnings
+
+    from scipy.linalg import LinAlgWarning, solve_discrete_lyapunov
+
+    m = np.asarray(monodromy, dtype=float)
+    size = m.shape[0]
+    candidates: list[tuple[str, np.ndarray]] = []
+    try:
+        with warnings.catch_warnings():
+            # On the unit circle the equation is singular by construction; the
+            # Cholesky check below rejects whatever comes out, so the solver's
+            # ill-conditioning warning carries no information here.
+            warnings.simplefilter("ignore", LinAlgWarning)
+            candidates.append(
+                ("lyapunov_equation_q_identity", solve_discrete_lyapunov(m.T, np.eye(size)))
+            )
+    except (np.linalg.LinAlgError, ValueError):
+        pass
+    _values, vectors = np.linalg.eig(m)
+    if np.linalg.cond(vectors) < 1e12:
+        inverse = np.linalg.inv(vectors)
+        candidates.append(("eigenvector_metric", np.real(inverse.conj().T @ inverse)))
+    passing = []
+    for name, p in candidates:
+        contraction = _check_candidate(m, p)
+        if contraction is None:
+            continue
+        both = None if other is None else _check_candidate(np.asarray(other), p) is not None
+        passing.append((not bool(both), contraction, name, 0.5 * (p + p.T), both))
+    if not passing:
+        return LyapunovCertificate(
+            found=False,
+            detail=(
+                "no candidate P passed: P or P - M^T P M is not positive definite "
+                "(a multiplier on or outside the unit circle, or too close to it)"
+            ),
+        )
+    _rank, contraction, name, p, both = min(passing, key=lambda item: item[:2])
+    return LyapunovCertificate(
+        found=True,
+        construction=name,
+        detail=(
+            f"V(z) = z^T P z decreases every cycle by at least a factor {contraction:.6f}"
+            + ("" if both is None else f"; same P certifies the other monodromy: {both}")
+        ),
+        p_matrix=tuple(tuple(float(value) for value in row) for row in p),
+        contraction_bound=contraction,
+        certifies_other_monodromy=both,
+    )
+
+
+@dataclass(frozen=True)
 class ClosedLoopSteadyState:
     converged: bool
     iterations: int
@@ -178,6 +322,7 @@ class ClosedLoopSteadyState:
     notes: tuple[str, ...] = field(default_factory=tuple)
     #: "analytic_saltation" | "central_finite_difference" | "" (none computed)
     monodromy_method: str = ""
+    certificate: LyapunovCertificate | None = None
 
     @property
     def max_multiplier_magnitude(self) -> float | None:
@@ -202,6 +347,9 @@ class ClosedLoopSteadyState:
             "monodromy": [list(row) for row in self.monodromy],
             "assumptions": [item.as_dict() for item in self.assumptions],
             "notes": list(self.notes),
+            "lyapunov_certificate": (
+                None if self.certificate is None else self.certificate.as_dict()
+            ),
         }
 
 
@@ -817,6 +965,8 @@ def solve_closed_loop_steady_state(
         stability = "unstable"
     else:
         stability = "not_resolved"
+    other = fine if analytic is None else coarse
+    certificate = lyapunov_certificate(primary, other=other)
     return ClosedLoopSteadyState(
         converged=True,
         iterations=iterations,
@@ -830,4 +980,5 @@ def solve_closed_loop_steady_state(
         monodromy_method=method,
         assumptions=assumptions,
         notes=tuple(notes),
+        certificate=certificate,
     )
