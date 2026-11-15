@@ -1029,7 +1029,10 @@ newton-metres and dimensionless quantities side by side, so no syntax can infer 
 A `probe` **cannot rename** what it reads — its `unit` must match the unit of the
 source. Block values are **bare numbers**: the unit is already in `unit`, and a second
 record of the same fact is a second thing that can disagree with the first. Times
-(`task.period`, `time_source.start/stop`) carry units as everywhere else.
+(`task.period`, `time_source.start/stop`) carry units as everywhere else. A bare number
+may be written as `"${name}"` when the parameter `name` is itself unit-less
+(`kp: 0.002`): `--set`, `overrides` and parameter sweeps then reach the controller. A
+parameter with a unit in a bare-number field is refused by name.
 
 **Execution order is a function of the graph, not of the order in the file**
 (topological sort, ties broken by id) and is recorded in the bundle.

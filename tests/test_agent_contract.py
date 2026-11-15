@@ -415,10 +415,8 @@ FLOQUET_EXAMPLE = ROOT / "examples" / "buck_closed_loop_floquet.yaml"
 
 def _hot_gains(source: str) -> str:
     """kp=0.08 / ki=150: the design the shipped example names as unstable."""
-    hot = source.replace("gain: 0.002, unit", "gain: 0.08, unit").replace(
-        "gain: 30.0, unit", "gain: 150.0, unit"
-    )
-    assert hot != source
+    hot = source.replace("  kp: 0.002 ", "  kp: 0.08 ").replace("  ki: 30.0 ", "  ki: 150.0 ")
+    assert hot.count("0.08") > source.count("0.08") and "ki: 150.0" in hot
     return hot
 
 
@@ -516,3 +514,20 @@ def test_steady_state_on_a_closed_loop_model_points_to_floquet(workspace: Worksp
     is_error, message = _call(workspace, "steady_state", {"example": "buck_closed_loop_floquet"})
     assert is_error
     assert "closed-loop" in str(message) and "`floquet` tool" in str(message)
+
+
+def test_floquet_overrides_reach_the_controller_gains(workspace: Workspace) -> None:
+    """The same unstable verdict whether the hot gains are written into the model
+    or passed as overrides of its dimensionless parameters."""
+
+    written = _hot_gains(FLOQUET_EXAMPLE.read_text(encoding="utf-8"))
+    start = {"signal:int_prev": 0.5 / 150.0}
+    _, from_yaml = _call(workspace, "floquet", {"model_yaml": written, "initial_state": start})
+    is_error, from_overrides = _call(
+        workspace, "floquet",
+        {"example": "buck_closed_loop_floquet", "overrides": {"kp": "0.08", "ki": "150"},
+         "initial_state": start},
+    )
+    assert not is_error, from_overrides
+    assert from_overrides["stability"] == from_yaml["stability"] == "unstable"
+    assert from_overrides["max_multiplier_magnitude"] == from_yaml["max_multiplier_magnitude"]

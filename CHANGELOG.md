@@ -9,6 +9,11 @@ break the model format; every break carries a migration note).
 
 ### Added
 
+- Signal block values may reference unit-less parameters (`gain: "${kp}"` with
+  `kp: 0.002`), so `--set`, MCP `overrides` and parameter sweeps reach controller gains,
+  limits and initial values. Bit-identical to the literal; a parameter with a unit in a
+  bare-number field is refused by name. `examples/buck_closed_loop_floquet.yaml` now
+  declares `kp`/`ki` as parameters (`--set kp=0.08 --set ki=150` is its unstable design).
 - MCP tool `floquet`: the closed-loop Floquet analysis for agents — verdict, gates,
   largest multipliers with the oscillation frequency, Lyapunov certificate, orbit state,
   violated assumptions and the engine's notes (e.g. "pass `initial_state`" when Newton
