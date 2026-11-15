@@ -1,0 +1,55 @@
+schema: pear-sim/v0.1
+name: pmsm_sine_fed_driven
+
+# Surface-magnet machine fed DIRECTLY by a balanced three-phase sine supply,
+# shaft speed imposed (dynamometer). No converter, no PWM: this is the subset
+# where PEARSim's machine model can be compared with an independent engine
+# (motulator, see src/pear_sim/oracle/motulator.py and
+# tests/test_motulator_oracle.py).
+#
+# 1500 rpm with 4 pole pairs -> 100 Hz electrical; the supply runs at the same
+# 100 Hz. Back-EMF amplitude omega_e*psi_f = 62.8 V; the supply is 70 V
+# leading the back-EMF by 20 degrees (EMF of phase a is -omega_e*psi_f*sin(theta_e),
+# i.e. sine phase 180 deg; supply phase a at 200 deg), so the machine motors with
+# tens of amperes. The
+# currents start at zero and settle with tau = L/R = 40 ms, so the window
+# shows the transient and the approach to the synchronous steady state.
+
+parameters:
+  amplitude: 70 V
+  frequency: 100 Hz
+
+circuit:
+  ground: gnd
+  components:
+    - {id: va, type: voltage_source, p: ta, n: gnd, waveform: {type: sine, amplitude: "${amplitude}", frequency: "${frequency}", phase_deg: 200}}
+    - {id: vb, type: voltage_source, p: tb, n: gnd, waveform: {type: sine, amplitude: "${amplitude}", frequency: "${frequency}", phase_deg: 80}}
+    - {id: vc, type: voltage_source, p: tc, n: gnd, waveform: {type: sine, amplitude: "${amplitude}", frequency: "${frequency}", phase_deg: 320}}
+
+machines:
+  motor:
+    type: pmsm
+    terminals: [ta, tb, tc]
+    neutral: nstar
+    pole_pairs: 4
+    stator_resistance_ohm: 0.05
+    stator_inductance_h: 0.002
+    flux_linkage_wb: 0.1
+    initial_angle_rad: 0.0
+    driven_speed:
+      initial_rad_s: 157.07963267948966
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 40 ms
+    output_step: 10 us
+    solver: dopri5
+    rtol: 1.0e-10
+    atol: 1.0e-12
+
+outputs:
+  - i(motor.a.l)
+  - i(motor.b.l)
+  - i(motor.c.l)
+  - torque(motor)

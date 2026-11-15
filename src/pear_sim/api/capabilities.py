@@ -281,7 +281,9 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "left-Riemann undershoot",
             "a 27 N*m change of torque moves the speed by 1.96e-2 rad/s "
             "(1.25e-4 relative)",
-            "NOT compared against an independent engine: no independent-engine comparison exists, so this carries no compatibility claim",
+            "compared with motulator (Aalto, MIT) as an independent engine, sine-fed machine at an imposed speed (tests/test_motulator_oracle.py, VERIFICATION, not validation): a speed ramp agrees within 2 % of the peak at a 10 us "
+            "step and the difference halves with the step — the first-order error of holding "
+            "the imposed speed per segment, measured rather than asserted",
         ],
     },
     {
@@ -305,8 +307,9 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "closed-form terminal current and braking torque",
             "power identity sum(e*i) == T*omega",
             "sequence-sensitive motoring regression",
-            "NOT compared against an independent engine: no independent-engine comparison exists, so this carries no compatibility claim — "
-            "one reason this stays experimental",
+            "compared with motulator (Aalto, MIT) as an independent engine, sine-fed machine at an imposed speed (tests/test_motulator_oracle.py, VERIFICATION, not validation): at constant speed the engines agree to 1e-9 of the "
+            "peak (gate; measured ~1e-12) — this case is integrated exactly; with converters "
+            "and free mechanics it is still NOT compared, one reason this stays experimental",
         ],
     },
     {
@@ -348,7 +351,8 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "current (the discarded term would be the reluctance voltage "
             "omega*dL/dtheta*i); regression: flux linkage continuous across "
             "every swap",
-            "NOT compared against an independent engine: no independent-engine comparison exists, so this carries no compatibility claim",
+            "compared with motulator (Aalto, MIT) as an independent engine, sine-fed machine at an imposed speed (tests/test_motulator_oracle.py, VERIFICATION, not validation): within 2 % of the peak at a 10 us step, halving with "
+            "the step — the first-order error of holding the inductance matrix per segment",
         ],
     },
     {
@@ -369,7 +373,10 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "increase with its own axis current, checked at load time. Maps "
             "are DECLARED, never derived from geometry: a real one has to "
             "come from field or bench identification, and the shipped "
-            "example is explicitly synthetic."
+            "example is explicitly synthetic. KNOWN DEFECT: driven into "
+            "saturation the run diverges, because the boundary transform "
+            "carries L*i with the DIFFERENTIAL inductances as if it were the "
+            "flux; results in saturation are not to be trusted."
         ),
         "evidence": [
             "a LINEAR map reproduces the constant-Ld/Lq machine exactly: "
@@ -380,7 +387,10 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "saturation measurably changes the answer: at the SAME current "
             "operating point the shipped map yields 7.67 N*m against the "
             "linear twin's 7.85 N*m (-2.3 %)",
-            "NOT compared against an independent engine: no independent-engine comparison exists, so this carries no compatibility claim",
+            "compared with motulator (Aalto, MIT) as an independent engine, sine-fed machine at an imposed speed (tests/test_motulator_oracle.py, VERIFICATION, not validation): in the map's UNSATURATED region within 2 % of the "
+            "peak at 10 us, halving with the step; driven INTO saturation PEARSim DIVERGES "
+            "(i_d runs off the map and the run is refused) where the exact solution stays "
+            "inside it — a KNOWN DEFECT kept as a strict xfail test",
         ],
     },
     {

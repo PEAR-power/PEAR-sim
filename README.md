@@ -201,7 +201,11 @@ independent classes of evidence, and the evidence is kept, not asserted:
    never imports the kernel).
 2. **A second, open engine.** An ngspice differential adapter over the linear subset,
    with a relative budget and the resampling term declared explicitly. Anyone can rerun
-   it: install ngspice and run `uv run pytest tests/test_ngspice_oracle.py`.
+   it: install ngspice and run `uv run pytest tests/test_ngspice_oracle.py`. For the
+   machine models, which SPICE cannot express, the second engine is
+   [motulator](https://github.com/Aalto-Electric-Drives/motulator) (MIT), run as a separate
+   process from its own environment: point `PEAR_SIM_MOTULATOR_PYTHON` at an interpreter
+   with `motulator==0.24.1` and run `uv run pytest tests/test_motulator_oracle.py`.
 3. **Physics invariants.** Per-run energy balance, KCL/KVL structure, mode-coverage
    observations, and analytic self-checks on recognized topologies.
 

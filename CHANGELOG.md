@@ -9,6 +9,14 @@ break the model format; every break carries a migration note).
 
 ### Added
 
+- motulator (Aalto Electric Drives, MIT) as an independent engine for the machine
+  models (`pear_sim.oracle.motulator`): a PMSM fed by a balanced sine supply at an
+  imposed speed, compared on the same time grid. motulator runs in its own interpreter
+  (`PEAR_SIM_MOTULATOR_PYTHON`), never imported by PEARSim; a new CI job installs it.
+  Non-salient at constant speed agrees to ~1e-12; salient rotor, speed ramps and an
+  unsaturated flux map agree within 2 % at a 10 us step with first-order convergence.
+  Example `examples/pmsm_sine_fed_driven.yaml`.
+
 - `esr` on `capacitor` and `dcr` on `inductor` / `sat_inductor`: a constant series
   resistance, expanded into an ordinary resistor (`<id>.esr`, `<id>.dcr`, internal node
   `<id>.core`) and bit-identical to writing that resistor by hand. Capacitor banks and a
@@ -22,6 +30,13 @@ break the model format; every break carries a migration note).
   `CAPACITOR_RIPPLE_CURRENT_NOT_ASSESSED` on a `--lean` run. `model.resolved.json` lists
   the expansions (`passive_parasitics`). Efficiency maps count declared ESR/DCR losses
   (`declared_parasitic_loss_w`) and refuse to count one twice.
+
+### Known issues
+
+- A saturating `flux_map` driven into saturation diverges: the machine driver carries
+  `L*i` with the DIFFERENTIAL inductances across segment boundaries as if it were the
+  flux. Found by the motulator comparison; kept as a strict xfail in
+  `tests/test_motulator_oracle.py` and stated in the capability entry.
 
 ### Fixed
 
