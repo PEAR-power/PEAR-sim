@@ -70,6 +70,31 @@ jobs:
           --ratios 0.9,1,1.1 --out sweeps/inverting-buck-boost-boundary --json
 
 
+  oracle-motulator:
+    # Independent-engine comparison of the machine models with motulator
+    # (MIT), installed in its OWN virtual environment: PEARSim never imports
+    # it, the adapter runs it as a separate process.
+    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.PEAR_SIM_UV_VERSION }}
+          python-version: "3.13.13"
+          enable-cache: true
+      - name: Install locked environment
+        run: uv sync --locked --extra dev
+      - name: Install motulator in a separate environment
+        run: |
+          uv venv --python 3.13.13 "$RUNNER_TEMP/motulator-env"
+          uv pip install --python "$RUNNER_TEMP/motulator-env/bin/python" "motulator==0.24.1"
+      - name: Machine models vs motulator
+        env:
+          PEAR_SIM_MOTULATOR_PYTHON: ${{ runner.temp }}/motulator-env/bin/python
+          PEAR_SIM_REQUIRE_MOTULATOR: "1"
+        run: uv run pytest tests/test_motulator_oracle.py -rxXs
+
   test-other-os:
     # Windows, macOS and ARM minutes are free on public repositories and billed
     # extra (or unavailable) on private ones, so these platforms run once the
