@@ -16,6 +16,15 @@ break the model format; every break carries a migration note).
   matrices) agrees to 2.7e-13 on the multipliers; dropping the saltation is caught by
   the built-in cross-check. A natural commutation coincident with a gate edge, or a
   grazing one, still uses finite differences and says why.
+- Signal block values may reference unit-less parameters (`gain: "${kp}"` with
+  `kp: 0.002`), so `--set`, MCP `overrides` and parameter sweeps reach controller gains,
+  limits and initial values. Bit-identical to the literal; a parameter with a unit in a
+  bare-number field is refused by name. `examples/buck_closed_loop_floquet.yaml` now
+  declares `kp`/`ki` as parameters (`--set kp=0.08 --set ki=150` is its unstable design).
+- The topology error of a model whose `dcr` hides an inductor-only node (a floating
+  star, inductors in series) now names those inductors and the node and says how to
+  model the winding resistance instead. Measured on the shipped examples with `dcr` on
+  every inductor: the hint appears on all 8 that fail and on none of the 19 that run.
 - MCP tool `floquet`: the closed-loop Floquet analysis for agents — verdict, gates,
   largest multipliers with the oscillation frequency, Lyapunov certificate, orbit state,
   violated assumptions and the engine's notes (e.g. "pass `initial_state`" when Newton

@@ -131,9 +131,9 @@ DESCRIPTIONS = {
         the reason. If Newton does
         not converge (often: duty clamped at a limiter), pass `initial_state`
         {state: SI value} near the orbit, e.g. {"signal:int_prev": duty/ki}. `overrides`
-        change model PARAMETERS only; controller gains are literals in the signal
-        blocks, so edit model_yaml to try other gains. Example:
-        buck_closed_loop_floquet.""",
+        change model parameters; a signal block value written as "${kp}" with a
+        unit-less parameter `kp: 0.002` makes the controller gains overridable too,
+        e.g. {"kp": "0.08", "ki": "150"} on the example buck_closed_loop_floquet.""",
         model_input=True,
     ),
     "sweep_parameter": _doc(

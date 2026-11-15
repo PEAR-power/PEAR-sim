@@ -331,9 +331,10 @@ that meet at a floating node, e.g. a star-connected load): only a parallel resis
 would. Because the resistor is added between the inductor and its `n` node, a star wired
 at the `n` side is no longer recognised as one, and such a model ends with a
 `TopologyError`. Measured 2026-11-15 on the shipped examples: adding `dcr` to every inductor breaks
-7 of 27 that contain inductors (three-phase loads with a floating star, transformers,
-the LLC tank). Model the winding resistance there with an explicit resistor on the side
-away from the star.
+8 of the 27 that contain inductors (three-phase loads with a floating star, a wye
+transformer winding, an LCL filter's two series inductors, the LLC tank). The error then
+names those inductors and the node, e.g. "la, lb, lc at node 'star'". Model the winding
+resistance there with an explicit resistor on the side away from that node.
 
 **Audit and ratings.** For every declared parasitic the energy audit
 (`physics-audit.json`, both windows) reports:
@@ -1029,7 +1030,10 @@ newton-metres and dimensionless quantities side by side, so no syntax can infer 
 A `probe` **cannot rename** what it reads — its `unit` must match the unit of the
 source. Block values are **bare numbers**: the unit is already in `unit`, and a second
 record of the same fact is a second thing that can disagree with the first. Times
-(`task.period`, `time_source.start/stop`) carry units as everywhere else.
+(`task.period`, `time_source.start/stop`) carry units as everywhere else. A bare number
+may be written as `"${name}"` when the parameter `name` is itself unit-less
+(`kp: 0.002`): `--set`, `overrides` and parameter sweeps then reach the controller. A
+parameter with a unit in a bare-number field is refused by name.
 
 **Execution order is a function of the graph, not of the order in the file**
 (topological sort, ties broken by id) and is recorded in the bundle.
