@@ -61,14 +61,19 @@ break the model format; every break carries a migration note).
   the expansions (`passive_parasitics`). Efficiency maps count declared ESR/DCR losses
   (`declared_parasitic_loss_w`) and refuse to count one twice.
 
-### Known issues
-
-- A saturating `flux_map` driven into saturation diverges: the machine driver carries
-  `L*i` with the DIFFERENTIAL inductances across segment boundaries as if it were the
-  flux. Found by the motulator comparison; kept as a strict xfail in
-  `tests/test_motulator_oracle.py` and stated in the capability entry.
-
 ### Fixed
+
+- A saturating `flux_map` no longer diverges in saturation. The machine driver carried
+  `L_old*i -> L_new*i` across segment boundaries with the map's DIFFERENTIAL inductances,
+  which equals the flux only while the map is linear; in saturation the current ran off
+  the map (i_d to -67 A and a refusal) at every step size. The boundary now carries the
+  map's true flux and inverts the map for the new currents (Newton on the interpolant's
+  exact Jacobian; a flux the map cannot produce is refused), and the back-EMF inside a
+  segment comes from the part of the map flux the held matrix does not carry. Against
+  motulator the saturated case now converges first order (1.53 % / 0.77 % / 0.39 % of the
+  peak at 10 / 5 / 2.5 us). Results of unsaturated maps change by ~1e-10; constant-Ld/Lq
+  machines are untouched. The test docstring's 0.38 % for the unsaturated map was a stale
+  figure — it measures 0.67 % at 10 us with both the old and the new kernel.
 
 - Periodic steady state (shooting) now refuses closed-loop models by name. Shooting solves
   for circuit state only, so a sampled controller's memory (integrator, unit delays) was

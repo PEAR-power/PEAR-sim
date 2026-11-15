@@ -258,3 +258,122 @@ def test_park_currents_share_the_machine_convention() -> None:
         c * math.cos(angle - o) for c, o in zip(currents, offsets, strict=True)
     )
     assert park_currents(currents, angle)[0] == pytest.approx(expected_d, abs=1e-15)
+
+
+# --------------------------------------------------------------------------
+# Flux conservation across a segment boundary IN SATURATION
+# --------------------------------------------------------------------------
+
+
+def _map_flux_abc(spec, currents, angle):
+    from pear_sim.spec.machines import inverse_park
+
+    i_d, i_q = park_currents(tuple(currents), angle)
+    return np.array(inverse_park(*spec.flux_map.flux(i_d, i_q), angle))
+
+
+def test_flux_inversion_round_trips_deep_in_saturation() -> None:
+    spec = load_model(SATURATING).machines[0]
+    for i_d, i_q in [(0.0, 0.0), (-6.0, 12.0), (-30.0, 35.0), (25.0, -38.0)]:
+        psi_d, psi_q = spec.flux_map.flux(i_d, i_q)
+        found = spec.flux_map.currents_for_flux(psi_d, psi_q, (0.0, 0.0))
+        assert found == pytest.approx((i_d, i_q), abs=1e-9)
+
+
+def test_flux_inversion_refuses_a_flux_beyond_the_map() -> None:
+    from pear_sim.errors import SimulationError
+
+    spec = load_model(SATURATING).machines[0]
+    psi_max = max(max(row) for row in spec.flux_map.psi_d)
+    with pytest.raises(SimulationError, match="cannot produce psi_d"):
+        spec.flux_map.currents_for_flux(psi_max + 0.5, 0.0, (0.0, 0.0))
+
+
+def _boundary(model, currents, turn):
+    """Run one segment boundary; return (tracked flux at the end of the old
+    segment, map flux of the transformed currents, transformed currents)."""
+
+    from pear_sim.core.circuit import Circuit
+    from pear_sim.core.solver import _MachineDriver
+    from pear_sim.spec.machines import inverse_park
+
+    circuit = Circuit(model)
+    driver = _MachineDriver(circuit, model)
+    spec = model.machines[0]
+    state = circuit.initial_state.copy()
+    indices = [circuit.state_index[w] for w in spec.winding_ids]
+    for index, value in zip(indices, currents, strict=True):
+        state[index] = value
+    driver.begin_segment(0.0, state)
+    held = driver._salient_matrices[spec.id].copy()
+    rotor_flux = driver._rotor_flux[spec.id]
+    driver.state[spec.id]["angle_rad"] += turn
+    angle = driver.state[spec.id]["angle_rad"]
+    tracked = held @ np.array(currents) + np.array(inverse_park(*rotor_flux, angle))
+    driver.begin_segment(1e-4, state)
+    after = np.array([state[i] for i in indices])
+    return tracked, _map_flux_abc(spec, after, angle), after, held
+
+
+def test_a_saturated_boundary_conserves_the_map_flux() -> None:
+    """Regression for the saturation runaway (motulator comparison, PR #27).
+
+    The flux the kernel integrated up to the boundary must be the flux the
+    MAP gives for the transformed currents. The old transform carried
+    L_diff_old*i to L_diff_new*i, which equals the map flux only when the
+    map is linear; here, deep in saturation, the same check on the old
+    transform misses by far more than round-off — so this gate can fail.
+    """
+
+    model = load_model(SATURATING)
+    spec = model.machines[0]
+    angle0 = spec.initial_angle_rad
+    from pear_sim.spec.machines import inverse_park
+
+    currents = inverse_park(-30.0, 32.0, angle0)
+    tracked, conserved, after, held = _boundary(model, currents, 0.3)
+    assert np.allclose(conserved, tracked, rtol=0.0, atol=1e-11)
+    assert float(sum(after)) == pytest.approx(0.0, abs=1e-12)
+    # At the segment START the held representation is the true flux.
+    assert np.allclose(
+        held @ np.array(currents)
+        + np.array(inverse_park(*_rotor_flux_at_start(model, currents), angle0)),
+        _map_flux_abc(spec, currents, angle0),
+        atol=1e-12,
+    )
+
+    # The defect, measured: the old L_old*i -> L_new*i transform.
+    angle1 = angle0 + 0.3
+    new_matrix = salient_inductance_matrix(spec, angle1, tuple(currents))
+    old_way = np.linalg.solve(new_matrix, held @ np.array(currents))
+    miss = np.max(np.abs(_map_flux_abc(spec, old_way, angle1) - tracked))
+    assert miss > 1e-3
+
+
+def _rotor_flux_at_start(model, currents):
+    from pear_sim.core.circuit import Circuit
+    from pear_sim.core.solver import _MachineDriver
+
+    circuit = Circuit(model)
+    driver = _MachineDriver(circuit, model)
+    spec = model.machines[0]
+    state = circuit.initial_state.copy()
+    for w, value in zip(spec.winding_ids, currents, strict=True):
+        state[circuit.state_index[w]] = value
+    driver.begin_segment(0.0, state)
+    return driver._rotor_flux[spec.id]
+
+
+def test_a_linear_map_rotor_flux_is_the_magnet() -> None:
+    """For a linear map the flux the held matrix does not carry is exactly
+    the magnet, (psi_f, 0), so the flux-map boundary reduces to the salient
+    transform L_new*i_new = L_old*i_old."""
+
+    from pear_sim.spec.machines import rotor_fixed_flux
+
+    spec = _linear_map()
+    i_d, i_q = park_currents((10.0, -4.0, -6.0), 0.4)
+    axes = spec.flux_map.differential_inductances(i_d, i_q)
+    assert rotor_fixed_flux(spec, i_d, i_q, axes) == pytest.approx(
+        (PSI_F, 0.0), abs=1e-12
+    )

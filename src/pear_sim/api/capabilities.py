@@ -401,7 +401,8 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "machine flux linkage declared as psi_d(i_d,i_q) and "
             "psi_q(i_d,i_q) on a current grid, with the inductance matrix "
             "rebuilt from the map's LOCAL SLOPES at each segment's operating "
-            "point and torque taken from the general form"
+            "point, the map's TRUE flux carried across segment boundaries, "
+            "and torque taken from the general form"
         ),
         "statement": (
             "Saturation and cross-saturation, which constant axis "
@@ -412,10 +413,15 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "increase with its own axis current, checked at load time. Maps "
             "are DECLARED, never derived from geometry: a real one has to "
             "come from field or bench identification, and the shipped "
-            "example is explicitly synthetic. KNOWN DEFECT: driven into "
-            "saturation the run diverges, because the boundary transform "
-            "carries L*i with the DIFFERENTIAL inductances as if it were the "
-            "flux; results in saturation are not to be trusted."
+            "example is explicitly synthetic. Inside a segment the flux is "
+            "held as L_diff*i plus a rotor-fixed remainder chosen so the sum "
+            "equals the map's flux at the segment start; at the boundary that "
+            "flux is carried over and the map is INVERTED for the new "
+            "currents, so the held slopes affect only the first-order "
+            "splitting error, never the flux balance. Cross-saturation "
+            "enters the flux and the torque but not the held matrix, which "
+            "keeps only the axis slopes. A flux the map cannot produce "
+            "(beyond its current axes) is refused, not clamped."
         ),
         "evidence": [
             "a LINEAR map reproduces the constant-Ld/Lq machine exactly: "
@@ -427,9 +433,12 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "operating point the shipped map yields 7.67 N*m against the "
             "linear twin's 7.85 N*m (-2.3 %)",
             "compared with motulator (Aalto, MIT) as an independent engine, sine-fed machine at an imposed speed (tests/test_motulator_oracle.py, VERIFICATION, not validation): in the map's UNSATURATED region within 2 % of the "
-            "peak at 10 us, halving with the step; driven INTO saturation PEARSim DIVERGES "
-            "(i_d runs off the map and the run is refused) where the exact solution stays "
-            "inside it — a KNOWN DEFECT kept as a strict xfail test",
+            "peak at 10 us, halving with the step; driven INTO saturation (exact peak "
+            "15.7 A in the +-40 A map) 1.53 % at 10 us, 0.77 % at 5 us, 0.39 % at 2.5 us — "
+            "first order, where before the 2026-11-15 fix the run diverged at every step",
+            "the boundary conserves the map flux to 6e-17 Wb at a deep-saturation "
+            "operating point where the former L_old*i -> L_new*i transform missed by "
+            "0.014 Wb of 0.093 Wb (tests/test_flux_maps.py)",
         ],
     },
     {

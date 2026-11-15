@@ -1274,6 +1274,16 @@ machines:
 derivatives of the map at the segment's operating point. The chord `ψ/i` would give
 **the right flux and the wrong dynamics** — an error that looks correct in steady state.
 
+**Flux, not `L·i`, crosses a segment boundary.** Inside a segment the flux is
+held as `L_diff·i + ψ_r(θ)`, where the rotor-fixed remainder `ψ_r = ψ_map(i) − L_diff·i`
+makes the sum equal the map's flux at the segment start and supplies the back-EMF.
+At the boundary that flux is carried over and the map is **inverted** for the new
+currents, so the slopes affect only the first-order splitting error, never the flux
+balance. (Before 2026-11-15 the boundary carried `L_old·i → L_new·i`, which is the flux
+only for a linear map; in saturation the run diverged.) A flux the map cannot produce
+— beyond its current axes — is refused, not clamped. Cross-saturation enters the flux
+and the torque but not the held matrix, which keeps only the axis slopes.
+
 **Torque** from the general form `T = 1.5·p·(ψd·iq − ψq·id)`, valid both in
 saturation and outside it.
 

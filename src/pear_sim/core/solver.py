@@ -45,9 +45,13 @@ from pear_sim.spec.machines import (
     PHASE_OFFSETS,
     back_emf_waveform,
     electromagnetic_torque,
+    inverse_park,
     mapped_torque,
+    park_currents,
+    rotor_fixed_flux,
     salient_inductance_matrix,
     salient_torque,
+    saturated_axis_inductances,
 )
 from pear_sim.spec.model import Model
 
@@ -1823,6 +1827,10 @@ class _MachineDriver:
         # THIS origin at the held speed.
         self.segment_start: float | None = None
         self._salient_matrices: dict[str, Any] = {}
+        # Mapped machines only: the (d, q) flux that turns with the rotor
+        # during the current segment (see `rotor_fixed_flux`). Absent for
+        # every other machine, whose back-EMF stays the plain magnet term.
+        self._rotor_flux: dict[str, tuple[float, float]] = {}
         # Snapshot of the mechanical state as it entered the current segment.
         # Sampling MUST read this and never `self.state`, because the solver
         # calls `end_segment` — which advances `self.state` — BEFORE it records
@@ -1857,19 +1865,17 @@ class _MachineDriver:
 
         self.segment_start = float(segment_start)
         for spec in self.machines:
+            if spec.is_saturating:
+                self._begin_mapped_segment(spec, state)
+                continue
             if not spec.is_salient:
                 continue
             # A salient rotor changes the winding inductance matrix as it
             # turns. It is HELD across the segment exactly as the speed is,
             # so the electrical side stays strictly linear inside the
             # segment and the splitting error is of the same measurable kind.
-            segment_currents = None
-            if spec.is_saturating and state is not None:
-                segment_currents = tuple(
-                    float(state[index]) for index in self.current_indices[spec.id]
-                )
             new_matrix = salient_inductance_matrix(
-                spec, self.state[spec.id]["angle_rad"], segment_currents
+                spec, self.state[spec.id]["angle_rad"]
             )
             previous = self._salient_matrices.get(spec.id)
             self.circuit.set_group_inductance_matrix(spec.winding_ids, new_matrix)
@@ -1922,6 +1928,7 @@ class _MachineDriver:
                     electrical_angle=mechanical["angle_rad"],
                     segment_start=segment_start,
                     phase_offset=offset,
+                    rotor_flux=self._rotor_flux.get(spec.id),
                 )
                 self.circuit.set_source_waveform(
                     source_id,
@@ -1932,6 +1939,71 @@ class _MachineDriver:
                         phase_rad=phase,
                     ),
                 )
+
+    def _begin_mapped_segment(
+        self, spec: Any, state: "np.ndarray | None"
+    ) -> None:
+        """Carry the TRUE map flux across a segment boundary.
+
+        Inside a segment the kernel integrates
+
+            v - R*i = L_held * di/dt + e(t),   e = d/dt psi_r(theta(t)),
+
+        so the flux it tracks is ``psi(t) = L_held*i(t) + psi_r(theta(t))``,
+        and at the segment start that equals the map's flux exactly (that is
+        how psi_r is chosen, `rotor_fixed_flux`). Its derivative is the
+        winding voltage, so it is the physically continuous quantity.
+
+        At the boundary that flux is evaluated with the matrix and psi_r the
+        segment was integrated with, projected onto the rotor axes at the new
+        angle, and the current is whatever the MAP says produces it:
+        ``psi_map(i_new) = psi_end``. Only then is the new held matrix read
+        at the new operating point.
+
+        THE DEFECT THIS REPLACES carried ``L_diff_old*i_old`` to
+        ``L_diff_new*i_new``. That conserves the true flux only while the
+        flux is linear in current. In saturation the differential slope sits
+        below the chord psi/i, so ``L*i`` under-counts the flux, the
+        under-count changes as L falls, and every boundary pushed the current
+        further out — i_d ran to -67 A and the map refused, at every step
+        size alike. For a linear map psi_r is the magnet and the inverse is
+        ``L^-1``, so this reduces exactly to the salient transform above.
+        """
+
+        flux_map = spec.flux_map
+        angle = self.state[spec.id]["angle_rad"]
+        previous = self._salient_matrices.get(spec.id)
+        if state is not None:
+            indices = [self.circuit.state_index[w] for w in spec.winding_ids]
+            currents = np.array([state[i] for i in indices], dtype=float)
+        else:
+            indices = None
+            currents = np.zeros(3, dtype=float)
+        if previous is not None and indices is not None:
+            rotor_d, rotor_q = self._rotor_flux[spec.id]
+            flux_abc = previous @ currents + np.array(
+                inverse_park(rotor_d, rotor_q, angle), dtype=float
+            )
+            target_d, target_q = park_currents(tuple(flux_abc), angle)
+            guess = park_currents(tuple(currents), angle)
+            i_d, i_q = flux_map.currents_for_flux(
+                target_d, target_q, guess, machine_id=f"machine {spec.id}"
+            )
+            # The zero-sequence current is not the map's business: a
+            # floating star keeps it zero, and it is carried unchanged.
+            zero_sequence = float(np.mean(currents))
+            currents = np.array(inverse_park(i_d, i_q, angle), dtype=float)
+            currents += zero_sequence
+            for index, value in zip(indices, currents, strict=True):
+                state[index] = float(value)
+        operating = tuple(float(value) for value in currents)
+        new_matrix = salient_inductance_matrix(spec, angle, operating)
+        self.circuit.set_group_inductance_matrix(spec.winding_ids, new_matrix)
+        self._salient_matrices[spec.id] = new_matrix
+        i_d, i_q = park_currents(operating, angle)
+        self._rotor_flux[spec.id] = rotor_fixed_flux(
+            spec, i_d, i_q, saturated_axis_inductances(spec, operating, angle)
+        )
 
     def sample(self, expression: str, state: np.ndarray, time: float) -> float:
         """Instantaneous value of a machine signal at ``time``.
