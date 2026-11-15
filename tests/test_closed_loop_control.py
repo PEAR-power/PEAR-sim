@@ -321,3 +321,52 @@ def test_p32_discrete_aware_margins_call_the_limit_cycle(tmp_path: Path) -> None
     assert hot_discrete.phase_margin_deg < -5.0
     assert hot_discrete.gain_margin_db is not None
     assert hot_discrete.gain_margin_db < 0.0
+
+
+@pytest.mark.parametrize(
+    "example",
+    ["buck_closed_loop.yaml", "buck_closed_loop_signals.yaml"],
+)
+def test_shooting_refuses_closed_loop_models_by_name(example: str) -> None:
+    """Shooting solves for circuit state only; a sampled controller's memory
+    (integrator, unit delays) is outside it. The refusal must say so — the
+    previous message blamed a missing PWM control the model has."""
+
+    from pear_sim.analysis.steady_state import (
+        SteadyStateError,
+        solve_periodic_steady_state,
+    )
+
+    model = load_model(ROOT / "examples" / example)
+    assert model.sampled_controls
+    with pytest.raises(SteadyStateError, match="closed-loop") as caught:
+        solve_periodic_steady_state(model)
+    assert "requires at least one PWM control" not in str(caught.value)
+
+
+def test_shooting_refuses_a_mixed_model_instead_of_resetting_the_controller() -> None:
+    """A model with a fixed PWM leg AND a sampled loop passed the old guard
+    (it only looked at fixed controls) and would have been shot with the
+    controller restarted from its declared memory every cycle — a fixed
+    point of the wrong map, reported as converged. It must be refused."""
+
+    from dataclasses import replace
+
+    from pear_sim.analysis.steady_state import (
+        SteadyStateError,
+        solve_periodic_steady_state,
+    )
+    from pear_sim.spec.controls import PwmControl
+
+    model = load_model(ROOT / "examples" / "buck_closed_loop.yaml")
+    (sampled,) = model.sampled_controls.values()
+    fixed = PwmControl(
+        id="fixed_leg", frequency=sampled.frequency, duty=0.5, phase=0.0
+    )
+    # Drop the load-step source: it is a waveform source, which shooting
+    # refuses for an unrelated reason and would mask the gap under test.
+    dc_only = tuple(c for c in model.components if c.id != "istep")
+    assert len(dc_only) == len(model.components) - 1
+    mixed = replace(model, components=dc_only, controls={"fixed_leg": fixed})
+    with pytest.raises(SteadyStateError, match="closed-loop"):
+        solve_periodic_steady_state(mixed)
