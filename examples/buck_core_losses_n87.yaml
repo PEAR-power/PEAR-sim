@@ -1,0 +1,98 @@
+schema: pear-sim/v0.1
+name: buck_core_losses_n87
+
+# Buck 48 V -> 24 V, 100 kHz, 4 A, with a core-loss estimate on its inductor
+# (section core_losses, iGSE on the recorded i(l1) over the last period).
+#
+# Core geometry is ILLUSTRATIVE (roughly an ETD29-size ferrite core), not a
+# catalogue part: Ae = 76 mm^2, Ve = 5.47 cm^3, 12 turns.
+#   B = L*i/(N*Ae): ripple 2.55 A -> dB_pp ~ 0.13 T, i_max ~ 5.3 A -> |B|max ~ 0.27 T.
+#
+# Material coefficients: TDK N87 Steinmetz ranges copied from the MAS
+# material database (Apache-2.0, see NOTICE). CAUTION: MAS refits Steinmetz
+# coefficients from measured points and prefers Princeton MagNet data where
+# it exists (MAS scripts/refit-steinmetz.py), so these numbers are NOT
+# independent of MagNet. The repository's validation of iGSE against MagNet
+# (tests/test_core_losses_magnet.py) therefore does not use them: it fits on
+# MagNet sinusoids and predicts MagNet triangles and trapezoids.
+
+parameters:
+  vin: 48 V
+  fsw: 100 kHz
+  period: 10 us
+  duty: 50 %
+  load: 6 ohm
+  l: 47 uH
+  c: 100 uF
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+    - {id: q1, type: ideal_switch, p: in, n: sw, control: pwm, initial: on}
+    - {id: d1, type: diode, p: gnd, n: sw, initial: off}
+    # Warm start at the ideal steady-state valley current and output voltage.
+    - {id: l1, type: inductor, p: sw, n: out, value: "${l}", initial_current: 2.7234 A}
+    - {id: c1, type: capacitor, p: out, n: gnd, value: "${c}", initial_voltage: 24 V}
+    - {id: load, type: resistor, p: out, n: gnd, value: "${load}"}
+
+controls:
+  pwm:
+    type: pwm
+    frequency: "${fsw}"
+    duty: "${duty}"
+    phase: 0 s
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 400 us
+    output_step: 50 ns
+    solver: dopri5
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs:
+  - v(out)
+  - i(l1)
+
+core_losses:
+  evaluation_temperature_c: 100
+  period: "${period}"
+  materials:
+    n87:
+      provenance:
+        source: >-
+          MAS core_materials.ndjson record 'N87' (TDK), steinmetz ranges;
+          Power-Supply-Manufacturers-Association/MAS commit 3b88349 (2026-11-15),
+          file sha256 ecc2b0daab0ae26c1c6deb588b0043d32a5f004c4bb12c5585ffc160673f9178
+      validity:
+        temperature_min_c: 25
+        temperature_max_c: 120
+        flux_density_peak_max_t: 0.39
+        notes: >-
+          0.39 T is the MAS saturation flux density of N87 at 100 degC; the
+          Steinmetz fit itself states no flux-density span.
+      steinmetz_ranges:
+        - frequency_min_hz: 25000
+          frequency_max_hz: 150000
+          k: 3.033588306643161
+          alpha: 1.5224303492213431
+          beta: 2.887871015513804
+          ct0: 1.4927840709486713
+          ct1: 0.022452893513793756
+          ct2: 0.000109661227033876
+        - frequency_min_hz: 150000
+          frequency_max_hz: 1000000
+          k: 0.0001190999921020533
+          alpha: 2.187913366666177
+          beta: 2.335358947447829
+          ct0: 1.2504668180113665
+          ct1: 0.011870520511274928
+          ct2: 7.407391163281085e-05
+  inductors:
+    l1:
+      material: n87
+      turns: 12
+      effective_area_m2: 7.6e-5
+      effective_volume_m3: 5.47e-6

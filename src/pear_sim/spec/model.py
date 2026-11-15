@@ -38,6 +38,7 @@ from pear_sim.spec.controls import (
     parse_signal_pwm_control,
     parse_signal_svpwm_control,
 )
+from pear_sim.spec.core_loss_cards import CoreLossSpec, parse_core_loss_section
 from pear_sim.spec.device_cards import LossAnalysisSpec, parse_loss_sections
 from pear_sim.spec.parasitics import PassiveParasitic, expand_passive_parasitics
 from pear_sim.spec.perturbation import (
@@ -322,6 +323,10 @@ class Model:
     )
     couplings: tuple[InductorCoupling, ...] = ()
     loss_analysis: LossAnalysisSpec | None = None
+    # Post-processing core-loss estimate on recorded inductor currents. Like
+    # loss_analysis it is a CHECK on the run, not an input to it, so it does
+    # not enter the physics hash.
+    core_losses: CoreLossSpec | None = None
     machines: tuple[MachineSpec, ...] = ()
     signals: "SignalGraph | None" = None
     # Declared drift envelopes, keyed by parameter name. Empty for every model
@@ -955,6 +960,7 @@ def load_model(path: str | Path, overrides: dict[str, str] | None = None) -> Mod
             "device_cards",
             "cooling",
             "loss_analysis",
+            "core_losses",
             "machines",
             "signals",
             "subcircuits",
@@ -1654,6 +1660,34 @@ def load_model(path: str | Path, overrides: dict[str, str] | None = None) -> Mod
                     "signal"
                 )
 
+    core_losses = parse_core_loss_section(data.get("core_losses"), parameters)
+    if core_losses is not None:
+        coupled = {item.first for item in couplings} | {item.second for item in couplings}
+        for binding in core_losses.bindings:
+            target = components_by_id.get(binding.inductor_id)
+            if target is None or target.type != "inductor":
+                raise ModelError(
+                    f"core_losses.inductors.{binding.inductor_id} must reference a "
+                    "linear inductor component (B = L*i/(N*Ae) holds for nothing else)"
+                )
+            if binding.inductor_id in coupled:
+                raise ModelError(
+                    f"core_losses.inductors.{binding.inductor_id}: the inductor is "
+                    "magnetically coupled; its flux is not L*i of its own current"
+                )
+            if f"i({binding.inductor_id})" not in outputs:
+                raise ModelError(
+                    f"core_losses requires i({binding.inductor_id}) among the outputs: "
+                    "the estimate works only on recorded, auditable signals"
+                )
+        if core_losses.period_s > transient.stop - transient.start:
+            raise ModelError("core_losses.period is longer than the transient window")
+        if core_losses.period_s / transient.output_step < 64:
+            raise ModelError(
+                "core_losses needs at least 64 recorded samples per period: reduce "
+                "analysis.transient.output_step below core_losses.period / 64"
+            )
+
     return Model(
         schema=schema,
         name=name,
@@ -1669,6 +1703,7 @@ def load_model(path: str | Path, overrides: dict[str, str] | None = None) -> Mod
         sampled_controls=sampled_controls,
         couplings=tuple(couplings),
         loss_analysis=loss_analysis,
+        core_losses=core_losses,
         machines=machines,
         signals=signal_graph,
         parameter_envelopes=parameter_envelopes,

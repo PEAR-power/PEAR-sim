@@ -760,6 +760,39 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
         "evidence": [],
     },
     {
+        "id": "electrothermal.core_loss_igse",
+        "status": "experimental",
+        "scope": (
+            "core loss of linear inductors by the improved Generalized Steinmetz "
+            "Equation (iGSE) over the last declared period of the recorded current, "
+            "B = L*i/(N*Ae), from a declared material card at a declared core "
+            "temperature, as POST-PROCESSING"
+        ),
+        "statement": (
+            "One major hysteresis loop per period: an inductor whose flux reverses "
+            "more than twice per period is reported not_estimated, never "
+            "approximated. Saturating and coupled inductors are refused. DC-bias "
+            "dependence, relaxation (i2GSE) loss and core self-heating are NOT "
+            "modelled; B_dc is recorded so a reader can see where that omission "
+            "bites. Out-of-range frequency, flux density above the card's envelope "
+            "and a non-periodic window surface as flags. A loss number is only as "
+            "good as the card: the repository's example card (MAS N87) is not "
+            "covered by the validation below."
+        ),
+        "evidence": [
+            "closed forms solved by other methods: ki vs numerical quadrature, "
+            "iGSE == Steinmetz for a sinusoid, piecewise-linear triangle formula, "
+            "buck run vs the ideal-triangle closed form (tests/test_core_losses.py)",
+            "VALIDATION against measurement: Princeton MagNet TDK N87, zero DC bias, "
+            "25 and 90 degC — coefficients fitted on measured sinusoids predict "
+            "measured triangles and trapezoids within median 20 % / 95th percentile "
+            "60 %, a gate the shape-blind Steinmetz answer fails "
+            "(tests/test_core_losses_magnet.py)",
+            "NOT validated: other materials, DC bias, temperatures outside 25-90 degC, "
+            "and any published coefficient set",
+        ],
+    },
+    {
         "id": "electrothermal.loss_and_temperature",
         "status": "experimental",
         "scope": (
