@@ -748,6 +748,55 @@ class CompiledMode:
 
 
 
+def dcr_star_hint(components: Iterable[Any], ground: str, parasitics: Iterable[Any]) -> str:
+    """Name inductors whose ``dcr`` sits at a node where only inductors meet.
+
+    Such a node (a floating star, or two inductors in series) is an inductor
+    cutset the kernel handles on its own. The ``dcr`` expansion puts its
+    resistor between the inductor and its ``n`` node, so the node then sees
+    resistors instead of inductors: the cutset is no longer recognised and
+    the run fails as an inconsistent topology. Structural only, like
+    :func:`capacitor_loop_hint`: it explains a failure, it never causes one.
+    """
+
+    dcr_of = {
+        record.resistor_id: record.component_id
+        for record in parasitics
+        if record.kind == "dcr"
+    }
+    if not dcr_of:
+        return ""
+    # The node between an inductor and its own dcr ("l1.core") always holds an
+    # inductor and a dcr resistor; it is the expansion, not a star.
+    internal = {f"{component_id}.core" for component_id in dcr_of.values()}
+    incident: dict[str, list[Any]] = {}
+    for component in components:
+        if component.type == "voltage_probe":
+            continue  # draws no current: not part of any cutset
+        for node in (component.p, component.n):
+            incident.setdefault(node, []).append(component)
+    stars: dict[str, list[str]] = {}
+    for node, members in incident.items():
+        if node == ground or node in internal or len(members) < 2:
+            continue
+        if not all(m.type == "inductor" or m.id in dcr_of for m in members):
+            continue
+        hidden = sorted(dcr_of[m.id] for m in members if m.id in dcr_of)
+        if hidden:
+            stars[node] = hidden
+    if not stars:
+        return ""
+    where = "; ".join(f"{', '.join(ids)} at node {node!r}" for node, ids in sorted(stars.items()))
+    return (
+        f". Inductors with a `dcr` meet where only inductors meet ({where}): the "
+        "series resistor is placed on the inductor's `n` side, so the kernel no "
+        "longer sees that inductor-only node and cannot resolve it. Remove `dcr` "
+        "from those inductors and model the winding resistance as an explicit "
+        "`resistor` on the side away from that node (docs/model-format.md, "
+        "'Inductor stars')"
+    )
+
+
 def capacitor_loop_hint(components: Iterable[Any], ground: str) -> str:
     """Name capacitors that close a loop of only capacitors and voltage sources.
 
@@ -1354,6 +1403,7 @@ class Circuit:
                 "inconsistent initial diode guess or a modeling error"
                 f"{first_failure}"
                 f"{capacitor_loop_hint(self.components, self.ground)}"
+                f"{dcr_star_hint(self.components, self.ground, self.model.passive_parasitics)}"
             )
         detail = (
             _failure_text(failures[0])
@@ -1363,6 +1413,7 @@ class Circuit:
         raise TopologyError(
             f"No stable ideal-switch configuration found: {detail}"
             f"{capacitor_loop_hint(self.components, self.ground)}"
+            f"{dcr_star_hint(self.components, self.ground, self.model.passive_parasitics)}"
         )
 
     def _mode_plan(
