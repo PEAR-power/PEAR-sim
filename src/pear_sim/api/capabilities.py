@@ -212,6 +212,9 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "(max difference 1.2e-8 / 3.5e-6; a register-mapping mutation gives 6.9e-3)",
             "healthy vs ~4 kHz limit-cycle PI gains on a buck: stable vs unstable at "
             "~3.9 kHz, agreeing with the discrete-aware averaged margins",
+            "a stable verdict carries a quadratic Lyapunov certificate checked by "
+            "Cholesky for both monodromies (closed-form cases: diagonal, rotation, "
+            "non-normal; rejects the unit circle and the unstable design)",
         ],
     },
     {

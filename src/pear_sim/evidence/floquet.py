@@ -18,6 +18,9 @@ Blocking gates, all fail closed:
 - ``locally_stable`` — every multiplier is inside the unit circle by more than
   its uncertainty. ``unstable`` and ``not_resolved`` both fail: a number that
   cannot be told from 1 does not attest stability.
+- ``lyapunov_certificate`` (when locally stable) — an eigenvalue-free witness:
+  ``P`` with ``P`` and ``P - M^T P M`` positive definite by Cholesky, valid for
+  both computed monodromies; stored in ``floquet.json`` for anyone to re-check.
 
 A passing bundle says "this orbit of this exact model is locally stable" —
 not global stability, not robustness to parameter changes.
@@ -100,6 +103,24 @@ def run_floquet_analysis(
                     f"+- {largest.uncertainty!r} at {largest.frequency_hz!r} Hz",
                 )
             )
+            if result.stability == "stable":
+                # Second, eigenvalue-free witness of the same verdict: a
+                # quadratic Lyapunov function checked by Cholesky, for both
+                # monodromies. A stable verdict without it is two methods
+                # disagreeing, which fails closed.
+                certificate = result.certificate
+                certified = (
+                    certificate is not None
+                    and certificate.found
+                    and certificate.certifies_other_monodromy is not False
+                )
+                gates.append(
+                    _gate(
+                        "lyapunov_certificate",
+                        "pass" if certified else "fail",
+                        "no certificate" if certificate is None else certificate.detail,
+                    )
+                )
     overall = "pass" if all(gate["status"] == "pass" for gate in gates) else "fail"
 
     evidence_path = destination / "floquet-evidence.json"

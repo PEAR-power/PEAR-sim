@@ -415,7 +415,9 @@ def test_cli_retains_a_manifested_bundle_and_exit_codes_carry_the_verdict(
         "closed_loop_orbit_converged",
         "multipliers_assessed",
         "locally_stable",
+        "lyapunov_certificate",
     ]
+    assert all(gate["status"] == "pass" for gate in evidence["gates"])
     assert "not validation against hardware" in evidence["claim_boundary"]
     manifest = json.loads((stable_out / "artifact-manifest.json").read_text())
     listed = {entry["path"] for entry in manifest["artifacts"]}
@@ -441,3 +443,96 @@ def test_cli_retains_a_manifested_bundle_and_exit_codes_carry_the_verdict(
     bad = main(["analyze", "floquet", str(hot.source_path), "--out",
                 str(tmp_path / "bad"), "--initial-state", "l1"])
     assert bad == 2
+
+
+# --- Lyapunov certificate: an eigenvalue-free witness of the verdict ---------
+
+from pear_sim.analysis.closed_loop import lyapunov_certificate  # noqa: E402
+
+
+def _cholesky_ok(matrix: np.ndarray) -> bool:
+    try:
+        np.linalg.cholesky(0.5 * (matrix + matrix.T))
+    except np.linalg.LinAlgError:
+        return False
+    return True
+
+
+@pytest.mark.parametrize(
+    ("matrix", "found", "rho_sq"),
+    [
+        # diagonal: the certificate is exact, contraction = max mu^2
+        (np.diag([0.5, 0.9]), True, 0.81),
+        (np.diag([0.5, 1.01]), False, None),
+        # a pure rotation scaled by r: |mu| = r for both
+        (0.95 * np.array([[np.cos(0.3), -np.sin(0.3)], [np.sin(0.3), np.cos(0.3)]]), True, 0.9025),
+        # on the unit circle: lossless, never asymptotically stable
+        (np.array([[np.cos(0.3), -np.sin(0.3)], [np.sin(0.3), np.cos(0.3)]]), False, None),
+        # inside the circle by less than the margin: round-off cannot tell it
+        # from the lossless case, so no certificate either
+        (
+            (1.0 - 1e-12)
+            * np.array([[np.cos(0.3), -np.sin(0.3)], [np.sin(0.3), np.cos(0.3)]]),
+            False,
+            None,
+        ),
+        # strongly non-normal but stable: transient growth, still certifiable
+        (np.array([[0.9, 100.0], [0.0, 0.8]]), True, 0.81),
+    ],
+)
+def test_certificate_on_closed_form_cases(matrix, found, rho_sq) -> None:
+    """The unit-circle case regressed on ARM (2026-11-15): P - M^T P M is zero
+    up to round-off there, and Cholesky accepted +1.3e-17 as positive."""
+
+    certificate = lyapunov_certificate(matrix)
+    assert certificate.found is found
+    if found:
+        assert certificate.contraction_bound == pytest.approx(rho_sq, rel=1e-9)
+        p = np.asarray(certificate.p_matrix)
+        assert _cholesky_ok(p) and _cholesky_ok(p - matrix.T @ p @ matrix)
+
+
+def test_certificate_discriminates_the_two_designs_and_is_tight(solved) -> None:
+    healthy = solved["healthy"][1]
+    certificate = healthy.certificate
+    assert certificate.found
+    assert certificate.certifies_other_monodromy is True
+    # measured 2026-11-15: 0.97940130 = |mu_max|^2 to 1e-15
+    assert certificate.contraction_bound == pytest.approx(
+        healthy.max_multiplier_magnitude**2, rel=1e-9
+    )
+    assert not solved["hot"][1].certificate.found
+
+
+def test_certificate_rechecks_from_the_bundle_alone(tmp_path: Path) -> None:
+    """The point of a certificate: two Cholesky factorisations on numbers in
+    floquet.json, no PEARSim needed. And it must not certify a map it was not
+    made for — the hot design's monodromy fails the healthy P."""
+
+    import json
+
+    from pear_sim.api.cli import main
+
+    out = tmp_path / "bundle"
+    assert main(["analyze", "floquet", str(ROOT / "examples" / "buck_closed_loop_floquet.yaml"),
+                 "--out", str(out)]) == 0
+    payload = json.loads((out / "floquet.json").read_text())
+    m = np.asarray(payload["monodromy"])
+    p = np.asarray(payload["lyapunov_certificate"]["p_matrix"])
+    assert _cholesky_ok(p)
+    assert _cholesky_ok(p - m.T @ p @ m)
+
+    hot_dir = tmp_path / "hot"
+    hot_dir.mkdir()
+    hot = solve_closed_loop_steady_state(_model(hot_dir, HOT))
+    hot_m = np.asarray(hot.monodromy)
+    assert not _cholesky_ok(p - hot_m.T @ p @ hot_m)
+
+
+def test_certificate_refuses_a_decrease_that_round_off_could_fake(monkeypatch) -> None:
+    """Simulate the ARM outcome on any machine: force Cholesky to accept the
+    zero-decrease matrix. The margin, not the factorisation, must refuse."""
+
+    rotation = np.array([[np.cos(0.3), -np.sin(0.3)], [np.sin(0.3), np.cos(0.3)]])
+    monkeypatch.setattr(closed_loop, "_positive_definite", lambda matrix: True)
+    assert not lyapunov_certificate(rotation).found
