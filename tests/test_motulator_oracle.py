@@ -19,13 +19,15 @@ The gates were set from measurement (2026-11-15, motulator 0.24.1):
 * salient rotor, speed ramp and a flux map in its unsaturated region:
   PEARSim HOLDS the speed and the inductance matrix per output step, a
   first-order splitting error. Measured worst error at 10 us: salient 0.99 %,
-  ramp 0.041 %, salient + ramp 0.66 %, flux map 0.38 %; each halves at 5 us
+  ramp 0.041 %, salient + ramp 0.66 %, flux map 0.67 %; each halves at 5 us
   (ratio 0.50). The gate asks for <= 2 % at 10 us AND a ratio in
   [0.45, 0.55]: a modelling error (wrong phase sequence, swapped axes) does
   not shrink with the step and fails it;
 * a flux map driven INTO saturation: the exact solution peaks at 15.7 A,
-  well inside the +-40 A map, but PEARSim diverges (i_d -> -67 A and a
-  refusal). Recorded as a strict xfail — see the test's docstring.
+  well inside the +-40 A map. Measured 1.53 % at 10 us, 0.77 % at 5 us,
+  0.39 % at 2.5 us (2026-11-15, after the boundary fix): the same first-order
+  gate as the unsaturated cases. Before the fix PEARSim diverged (i_d ->
+  -67 A and a refusal) at every step size.
 """
 
 from __future__ import annotations
@@ -40,7 +42,6 @@ import pytest
 import yaml
 
 from pear_sim.core.solver import HybridSimulator
-from pear_sim.errors import ModelError
 from pear_sim.oracle.motulator import (
     MotulatorOracleError,
     MotulatorSimulation,
@@ -249,19 +250,18 @@ def test_held_segment_error_is_first_order(tmp_path, mutations):
 
 
 @needs_motulator
-@pytest.mark.xfail(strict=True, raises=(AssertionError, ModelError), reason=(
-    "KNOWN DEFECT: a saturating flux map diverges in saturation. The kernel "
-    "puts the DIFFERENTIAL inductances in the winding matrix and carries "
-    "L_old*i -> L_new*i across segment boundaries as if it were the flux "
-    "(core/solver.py, _MachineDriver.begin_segment); in saturation L*i is not "
-    "psi(i), the transformed current grows as L falls, and the run runs away."
-))
 def test_flux_map_in_saturation(tmp_path):
-    """Exact solution (motulator): peak 15.7 A, inside the +-40 A map.
-    PEARSim: i_d -> -67 A and a non-positive-inductance refusal, at 10, 5 and
-    2.5 us alike — it does not shrink with the step, so it is a modelling
-    defect, not splitting error. When the kernel is fixed this test XPASSes
-    and the strict marker fails the suite until the xfail is removed."""
+    """Regression: a saturating map driven into saturation must converge.
+
+    Exact solution (motulator): peak 15.7 A, inside the +-40 A map. Before
+    the fix PEARSim carried L_diff_old*i -> L_diff_new*i across segment
+    boundaries; in saturation that is not the flux, and i_d ran to -67 A and
+    a non-positive-inductance refusal at 10, 5 and 2.5 us alike. The kernel
+    now carries the map's true flux, and the error is ordinary first-order
+    splitting error: same gate as the unsaturated cases."""
 
     document = _flux_map(10.0)(_document())
-    assert _worst(tmp_path, document, "10 us") <= 0.02
+    coarse = _worst(tmp_path, document, "10 us")
+    fine = _worst(tmp_path, document, "5 us")
+    assert coarse <= 0.02
+    assert 0.45 <= fine / coarse <= 0.55, (coarse, fine)

@@ -21,8 +21,9 @@ branches. A salient rotor (``d_axis_inductance_h`` != ``q_axis_inductance_h``)
 and a saturating ``flux_map`` expand into a magnetically COUPLED winding group
 whose inductance matrix the solver re-evaluates and HOLDS per integration
 segment, a first-order splitting error measured against an independent
-engine (tests/test_motulator_oracle.py). A flux map driven into saturation
-currently diverges (known defect, recorded there as a strict xfail).
+engine (tests/test_motulator_oracle.py). A flux map carries its TRUE flux
+across segment boundaries and inverts the map for the new currents, so the
+same first-order behaviour holds in saturation.
 Sinusoidal back-EMF only — no trapezoidal drive, no cogging, no slot
 harmonics. No iron loss, and no temperature dependence of the flux linkage
 or the resistance.
@@ -34,7 +35,7 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
-from pear_sim.errors import ModelError
+from pear_sim.errors import ModelError, SimulationError
 
 MACHINE_KINDS = ("pmsm",)
 MAX_MACHINES = 4
@@ -134,6 +135,102 @@ class FluxMap:
         return (
             self._interpolate(self.psi_d, d_current, q_current),
             self._interpolate(self.psi_q, d_current, q_current),
+        )
+
+    def flux_jacobian(
+        self, d_current: float, q_current: float
+    ) -> tuple[tuple[float, float], tuple[float, float]]:
+        """Exact slopes of the interpolant at one point, cross terms included.
+
+        ((dpsi_d/di_d, dpsi_d/di_q), (dpsi_q/di_d, dpsi_q/di_q)) of the
+        bilinear cell the point falls in. Outside the axes the interpolant is
+        clamped flat, so the slope along a clamped axis is zero. This is the
+        Jacobian the flux INVERSION uses; it is exact for the interpolant and
+        therefore lets Newton land on the table's own solution.
+        """
+
+        row, fx = self._bracket(self.id_axis, d_current)
+        col, fy = self._bracket(self.iq_axis, q_current)
+        clamped_d = d_current <= self.id_axis[0] or d_current >= self.id_axis[-1]
+        clamped_q = q_current <= self.iq_axis[0] or q_current >= self.iq_axis[-1]
+        span_d = self.id_axis[row + 1] - self.id_axis[row]
+        span_q = self.iq_axis[col + 1] - self.iq_axis[col]
+
+        def slopes(grid: tuple[tuple[float, ...], ...]) -> tuple[float, float]:
+            p00, p01 = grid[row][col], grid[row][col + 1]
+            p10, p11 = grid[row + 1][col], grid[row + 1][col + 1]
+            along_d = ((p10 + fy * (p11 - p10)) - (p00 + fy * (p01 - p00))) / span_d
+            along_q = ((p01 + fx * (p11 - p01)) - (p00 + fx * (p10 - p00))) / span_q
+            return (
+                0.0 if clamped_d else float(along_d),
+                0.0 if clamped_q else float(along_q),
+            )
+
+        return slopes(self.psi_d), slopes(self.psi_q)
+
+    def currents_for_flux(
+        self,
+        psi_d: float,
+        psi_q: float,
+        guess: tuple[float, float],
+        *,
+        machine_id: str = "machine",
+    ) -> tuple[float, float]:
+        """(i_d, i_q) at which the map yields this flux linkage.
+
+        The inverse the segment boundary needs: the kernel carries FLUX
+        across a matrix swap, and the current is whatever the map says that
+        flux takes. Newton on the exact Jacobian of the interpolant, with
+        the step halved until the residual falls — the interpolant is only
+        piecewise smooth, so a full step can overshoot a cell edge.
+
+        Fails closed. A flux the map cannot produce (beyond its clamped
+        edges, or a non-monotone table) is a refusal naming the target,
+        never the nearest point silently returned.
+        """
+
+        target = (float(psi_d), float(psi_q))
+        scale = max(
+            1e-12,
+            max(abs(v) for row in self.psi_d for v in row),
+            max(abs(v) for row in self.psi_q for v in row),
+        )
+        tolerance = 1e-12 * scale
+        i_d, i_q = float(guess[0]), float(guess[1])
+
+        def residual(d_value: float, q_value: float) -> tuple[float, float]:
+            flux_d, flux_q = self.flux(d_value, q_value)
+            return flux_d - target[0], flux_q - target[1]
+
+        r_d, r_q = residual(i_d, i_q)
+        norm = math.hypot(r_d, r_q)
+        for _ in range(100):
+            if norm <= tolerance:
+                return i_d, i_q
+            (a, b), (c, d) = self.flux_jacobian(i_d, i_q)
+            determinant = a * d - b * c
+            if not math.isfinite(determinant) or abs(determinant) <= 0.0:
+                break
+            step_d = (d * r_d - b * r_q) / determinant
+            step_q = (-c * r_d + a * r_q) / determinant
+            factor = 1.0
+            while factor > 1e-6:
+                cand_d, cand_q = i_d - factor * step_d, i_q - factor * step_q
+                c_d, c_q = residual(cand_d, cand_q)
+                cand_norm = math.hypot(c_d, c_q)
+                if cand_norm < norm:
+                    i_d, i_q, r_d, r_q, norm = cand_d, cand_q, c_d, c_q, cand_norm
+                    break
+                factor *= 0.5
+            else:
+                break
+        if norm <= tolerance:
+            return i_d, i_q
+        raise SimulationError(
+            f"{machine_id}: flux map cannot produce psi_d={target[0]:.9g} Wb, "
+            f"psi_q={target[1]:.9g} Wb (closest i_d={i_d:.6g} A, i_q={i_q:.6g} A "
+            f"leaves {norm:.3g} Wb); the operating point has left the map — "
+            "extend the map's current axes"
         )
 
     def differential_inductances(
@@ -701,8 +798,17 @@ def back_emf_waveform(
     electrical_angle: float,
     segment_start: float,
     phase_offset: float,
+    rotor_flux: "tuple[float, float] | None" = None,
 ) -> tuple[float, float, float]:
     """(amplitude, frequency_hz, phase_rad) of one phase's motional EMF.
+
+    ``rotor_flux`` is the (d, q) flux that turns WITH the rotor for this
+    segment; ``None`` means the magnet alone, ``(psi_f, 0)``, which leaves
+    every unmapped machine's numbers exactly as they were. A mapped machine
+    passes the part of its map flux the held matrix does not explain (see
+    `rotor_fixed_flux`): a dq vector of magnitude |psi_r| at angle delta
+    gives the phase flux ``|psi_r|*cos(theta_e - offset + delta)``, so the
+    same sinusoid with the phase shifted by delta.
 
     The phase flux linkage of a surface-magnet machine is
     ``psi_f * cos(theta_e - offset)``, so its motional voltage is
@@ -716,10 +822,59 @@ def back_emf_waveform(
         phi = theta_0 - offset - omega_e * t0
     """
 
-    amplitude = -electrical_speed * spec.flux_linkage_wb
+    if rotor_flux is None:
+        magnitude, delta = spec.flux_linkage_wb, 0.0
+    else:
+        magnitude = math.hypot(rotor_flux[0], rotor_flux[1])
+        delta = math.atan2(rotor_flux[1], rotor_flux[0])
+    amplitude = -electrical_speed * magnitude
     frequency = electrical_speed / math.tau
-    phase = electrical_angle - phase_offset - electrical_speed * segment_start
+    phase = electrical_angle + delta - phase_offset - electrical_speed * segment_start
     return amplitude, frequency, phase
+
+
+def inverse_park(
+    d_value: float, q_value: float, electrical_angle: float
+) -> tuple[float, float, float]:
+    """Phase values of a (d, q) pair; the exact inverse of `park_currents`
+    on zero-sum triples."""
+
+    return tuple(
+        d_value * math.cos(electrical_angle - offset)
+        - q_value * math.sin(electrical_angle - offset)
+        for _label, offset in PHASE_OFFSETS
+    )
+
+
+def rotor_fixed_flux(
+    spec: "MachineSpec",
+    d_current: float,
+    q_current: float,
+    axis_inductances: tuple[float, float],
+) -> tuple[float, float]:
+    """(d, q) flux of a mapped machine that the held matrix does NOT carry.
+
+    Inside a segment the kernel represents the flux as
+    ``L_held * i + psi_r(theta(t))``: the held differential matrix times the
+    current, plus a part that turns with the rotor like a magnet. At the
+    segment's operating point that sum must be the map's TRUE flux, so
+
+        psi_r = psi_map(i_d, i_q) - (L_d * i_d, L_q * i_q).
+
+    For a linear map this is exactly ``(psi_f, 0)`` — the magnet and nothing
+    else — which is why the unsaturated cases do not move. In saturation the
+    differential slope is below the chord, so psi_r grows above the magnet
+    flux: that difference is the flux the slope alone cannot account for,
+    and leaving it out is what made the kernel lose flux every segment.
+    """
+
+    if spec.flux_map is None:
+        return spec.flux_linkage_wb, 0.0
+    psi_d, psi_q = spec.flux_map.flux(d_current, q_current)
+    return (
+        psi_d - axis_inductances[0] * d_current,
+        psi_q - axis_inductances[1] * q_current,
+    )
 
 
 def park_currents(
