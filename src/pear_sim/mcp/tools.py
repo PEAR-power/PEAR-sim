@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import os
 import re
 import signal as _signal
@@ -207,6 +208,12 @@ def _load(path: Path, overrides: dict[str, str] | None):
 
 
 _HINTS = (
+    (
+        re.compile(r"does not support closed-loop models", re.I),
+        "the model has a controller in the loop. Shooting treats the controller's "
+        "memory as fixed, so it refuses; the `floquet` tool solves the closed-loop "
+        "orbit (circuit plus controller registers) and judges its stability.",
+    ),
     (
         re.compile(r"no algebraic support", re.I),
         "a node has no conduction path in some switch state. Ideal switches are "
@@ -944,6 +951,111 @@ def loop_gain(
             "min_gain_margin_db} to make them a gate."
         )
     return result
+
+
+FLOQUET_MULTIPLIERS_SHOWN = 6
+
+
+def floquet(
+    workspace: Workspace,
+    *,
+    model_yaml: str | None = None,
+    model_path: str | None = None,
+    example: str | None = None,
+    overrides: dict[str, Any] | None = None,
+    initial_state: dict[str, float] | None = None,
+    timeout_s: float | None = None,
+) -> dict[str, Any]:
+    path = resolve_model(workspace, model_yaml, model_path, example)
+    resolved_overrides = _overrides(overrides)
+    model = _load(path, resolved_overrides)
+    start: dict[str, float] | None = None
+    if initial_state:
+        try:
+            start = {str(name): float(value) for name, value in initial_state.items()}
+        except (TypeError, ValueError) as exc:
+            raise ToolInputError(
+                "initial_state maps state names to plain SI numbers, e.g. "
+                '{"l1": 0.92, "c1": 12.0, "signal:int_prev": 0.0167}'
+            ) from exc
+    run_id, out = workspace.new_run_dir(model.name, kind="floquet")
+    _run_worker(
+        {
+            "op": "floquet",
+            "model": str(path),
+            "out": str(out),
+            "overrides": resolved_overrides,
+            "initial_state": start,
+        },
+        _timeout(timeout_s),
+    )
+    data = json.loads((out / "floquet.json").read_text(encoding="utf-8"))
+    evidence = json.loads((out / "floquet-evidence.json").read_text(encoding="utf-8"))
+    multipliers = data.get("multipliers") or []
+    result: dict[str, Any] = {
+        "run_id": run_id,
+        "overall_status": evidence.get("overall_status"),
+        "stability": data.get("stability"),
+        "gates": evidence.get("gates"),
+        "claim_boundary": evidence.get("claim_boundary"),
+        "converged": data.get("converged"),
+        "newton_iterations": data.get("iterations"),
+        "residual_inf": data.get("residual_inf"),
+        "period_s": data.get("period_s"),
+        "monodromy_method": data.get("monodromy_method"),
+        "max_multiplier_magnitude": data.get("max_multiplier_magnitude"),
+        "multipliers": multipliers[:FLOQUET_MULTIPLIERS_SHOWN],
+        "orbit_state": data.get("state"),
+        "assumptions_violated": [
+            item for item in data.get("assumptions") or [] if not item.get("held", True)
+        ],
+        "notes": data.get("notes") or [],
+        "artifacts": sorted(p.name for p in out.iterdir() if p.is_file()),
+    }
+    if len(multipliers) > FLOQUET_MULTIPLIERS_SHOWN:
+        result["multipliers_omitted"] = (
+            f"{len(multipliers) - FLOQUET_MULTIPLIERS_SHOWN} smaller multiplier(s) are in "
+            "floquet.json: get_artifact(run_id, 'floquet.json', path='multipliers')"
+        )
+    certificate = data.get("lyapunov_certificate")
+    if certificate:
+        result["lyapunov_certificate"] = {
+            key: certificate.get(key)
+            for key in ("found", "construction", "contraction_bound",
+                        "certifies_other_monodromy", "detail")
+        }
+    if multipliers and data.get("stability") in {"stable", "unstable"}:
+        dominant = multipliers[0]
+        frequency = dominant.get("frequency_hz")
+        if data["stability"] == "unstable":
+            result["interpretation"] = (
+                f"the orbit is locally UNSTABLE: a perturbation grows by |mu| = "
+                f"{dominant.get('magnitude'):.6g} per switching period"
+                + (
+                    f", oscillating at ~{frequency:.4g} Hz (the frequency of the limit "
+                    "cycle or ringing to expect in a transient)"
+                    if frequency
+                    else " without oscillating (real multiplier)"
+                )
+                + "."
+            )
+        else:
+            periods = None
+            magnitude = dominant.get("magnitude")
+            if magnitude and 0.0 < magnitude < 1.0:
+                periods = -1.0 / math.log(magnitude)
+            result["interpretation"] = (
+                f"the orbit is locally stable; the slowest mode decays by |mu| = "
+                f"{magnitude:.6g} per period"
+                + (f" (time constant ~{periods:.4g} periods)" if periods else "")
+                + (f", ringing at ~{frequency:.4g} Hz" if frequency else "")
+                + "."
+            )
+    result["note"] = (
+        "Full monodromy matrix, every multiplier with its uncertainty and the "
+        "assumption margins are in floquet.json: get_artifact(run_id, 'floquet.json')."
+    )
+    return _sig(result)
 
 
 def _request_file(workspace: Workspace, request: dict[str, Any], out: Path, schema: str) -> Path:

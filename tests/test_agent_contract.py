@@ -58,7 +58,7 @@ EXPECTED_TOOLS = {
     "list_examples", "get_example", "get_model_format", "capabilities", "validate_model",
     "render_schematic", "simulate", "steady_state", "loop_gain", "sweep_parameter",
     "sweep_tolerance_corners", "get_metrics", "get_waveform", "get_artifact",
-    "compare_runs", "list_runs", "doctor", "evaluate_designs", "sensitivity",
+    "compare_runs", "list_runs", "doctor", "evaluate_designs", "sensitivity", "floquet",
 }
 
 
@@ -406,3 +406,113 @@ def test_evaluate_designs_ranks_a_listed_batch(workspace: Workspace) -> None:
     assert result["best_design"] == "d0002"  # lower frequency, lower switching loss
     assert result["finalists"][0]["status"] == "pass"
     assert "not an optimum" in result["claim"]
+
+
+# --- closed-loop stability (Floquet) ------------------------------------------------
+
+FLOQUET_EXAMPLE = ROOT / "examples" / "buck_closed_loop_floquet.yaml"
+
+
+def _hot_gains(source: str) -> str:
+    """kp=0.08 / ki=150: the design the shipped example names as unstable."""
+    hot = source.replace("gain: 0.002, unit", "gain: 0.08, unit").replace(
+        "gain: 30.0, unit", "gain: 150.0, unit"
+    )
+    assert hot != source
+    return hot
+
+
+def test_floquet_is_the_same_verdict_through_cli_and_mcp(workspace: Workspace, tmp_path) -> None:
+    out = tmp_path / "cli"
+    completed = _cli("analyze", "floquet", str(FLOQUET_EXAMPLE), "--out", str(out), "--json")
+    assert completed.returncode == 0, completed.stderr
+    cli = json.loads((out / "floquet.json").read_text(encoding="utf-8"))
+
+    is_error, result = _call(workspace, "floquet", {"example": "buck_closed_loop_floquet"})
+    assert not is_error, result
+    assert result["overall_status"] == "pass"
+    assert result["stability"] == cli["stability"] == "stable"
+    assert result["max_multiplier_magnitude"] == pytest.approx(
+        cli["max_multiplier_magnitude"], rel=1e-6
+    )
+    assert result["lyapunov_certificate"]["found"] is True
+    assert {gate["id"] for gate in result["gates"]} == {
+        "closed_loop_orbit_converged", "multipliers_assessed", "locally_stable",
+        "lyapunov_certificate",
+    }
+    assert "LOCAL" in result["claim_boundary"].upper()
+    assert "stable" in result["interpretation"] and "UNSTABLE" not in result["interpretation"]
+    # The full record stays readable by run_id.
+    is_error, monodromy = _call(
+        workspace, "get_artifact",
+        {"run_id": result["run_id"], "name": "floquet.json", "path": "monodromy"},
+    )
+    assert not is_error, monodromy
+
+
+def test_floquet_rings_on_the_unstable_gains_and_names_the_frequency(
+    workspace: Workspace,
+) -> None:
+    """The discriminating case: the hot PI leaves the unit circle at ~3.9 kHz,
+    the limit cycle the example's comment reports from a plain transient."""
+
+    model = _hot_gains(FLOQUET_EXAMPLE.read_text(encoding="utf-8"))
+    is_error, result = _call(
+        workspace, "floquet",
+        {"model_yaml": model, "initial_state": {"signal:int_prev": 0.5 / 150.0}},
+    )
+    assert not is_error, result
+    assert result["stability"] == "unstable"
+    assert result["overall_status"] == "fail"
+    assert result["max_multiplier_magnitude"] > 1.0
+    assert result["multipliers"][0]["frequency_hz"] == pytest.approx(3.92e3, rel=0.02)
+    assert "UNSTABLE" in result["interpretation"]
+    # The second witness stays silent where it must: no P exists outside the circle.
+    assert result["lyapunov_certificate"]["found"] is False
+
+
+def test_floquet_says_how_to_start_when_newton_hits_the_limiter(workspace: Workspace) -> None:
+    """Hot gains started from the example's integrator value clamp the duty on
+    the first Newton step: the verdict is withheld and the reason is surfaced,
+    with the remedy, instead of a number."""
+
+    model = _hot_gains(FLOQUET_EXAMPLE.read_text(encoding="utf-8"))
+    is_error, result = _call(workspace, "floquet", {"model_yaml": model})
+    assert not is_error, result
+    assert result["converged"] is False
+    assert result["stability"] == "not_assessed"
+    assert result["overall_status"] == "fail"
+    assert any("initial_state" in note and "limiter" in note for note in result["notes"])
+
+
+def test_floquet_overrides_move_the_orbit_like_the_duty_says(workspace: Workspace) -> None:
+    """Vin 24 V -> 20 V: the integrator settles where ki * int = duty ~ 12/20.
+    (The sampled gain differs from Vin by ~0.4 %, hence the 1 % band.)"""
+
+    is_error, result = _call(
+        workspace, "floquet",
+        {"example": "buck_closed_loop_floquet", "overrides": {"vin": "20 V"}},
+    )
+    assert not is_error, result
+    assert result["stability"] == "stable"
+    assert 30.0 * result["orbit_state"]["signal:int_prev"] == pytest.approx(12 / 20, rel=0.01)
+    assert result["orbit_state"]["c1"] == pytest.approx(12.0, rel=1e-9)
+
+
+def test_floquet_refusals_are_actionable(workspace: Workspace) -> None:
+    # A built-in sampled controller is outside the scope and is named.
+    is_error, message = _call(workspace, "floquet", {"example": "buck_closed_loop"})
+    assert is_error
+    assert "sampled" in str(message).lower()
+    # Initial states must be numbers (refused by the tool schema itself).
+    is_error, message = _call(
+        workspace, "floquet",
+        {"example": "buck_closed_loop_floquet", "initial_state": {"l1": "one amp"}},
+    )
+    assert is_error and "initial_state" in str(message)
+
+
+def test_steady_state_on_a_closed_loop_model_points_to_floquet(workspace: Workspace) -> None:
+    is_error, message = _call(workspace, "steady_state", {"example": "buck_closed_loop_floquet"})
+    assert is_error
+    assert "closed-loop" in str(message) and "`floquet` tool" in str(message)

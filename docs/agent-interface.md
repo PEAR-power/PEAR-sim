@@ -103,6 +103,7 @@ can be raised per call with `timeout_s`, up to 900 s.
 | `simulate` | transient run, compact summary and a `run_id` |
 | `steady_state` | periodic steady state by Newton shooting |
 | `loop_gain` | loop gain and margins for a declared compensator |
+| `floquet` | closed-loop stability on the switching model with its controller: Floquet multipliers, Lyapunov certificate, oscillation frequency |
 | `sweep_parameter`, `sweep_tolerance_corners` | bounded sweeps, every point retained |
 | `sensitivity` | Morris or Sobol indices with bootstrap 95 % intervals: which parameters move which outputs |
 | `evaluate_designs` | screen up to 2 000 designs, rank against an objective and constraints, re-run finalists in full |

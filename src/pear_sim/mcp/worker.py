@@ -84,6 +84,18 @@ def _stability(request: dict[str, Any]) -> dict[str, Any]:
     return {"bundle": str(Path(artifacts.output_dir))}
 
 
+def _floquet(request: dict[str, Any]) -> dict[str, Any]:
+    from pear_sim.evidence.floquet import run_floquet_analysis
+
+    artifacts = run_floquet_analysis(
+        request["model"],
+        request["out"],
+        initial_state=request.get("initial_state") or None,
+        overrides=request.get("overrides") or None,
+    )
+    return {"bundle": str(Path(artifacts.output_dir))}
+
+
 def _sweep_parameter(request: dict[str, Any]) -> dict[str, Any]:
     from pear_sim.evidence.parameter_sweep import run_parameter_sweep
 
@@ -124,6 +136,7 @@ OPERATIONS = {
     "simulate": _simulate,
     "steady_state": _steady_state,
     "stability": _stability,
+    "floquet": _floquet,
     "sweep_parameter": _sweep_parameter,
     "tolerance_corners": _tolerance_corners,
     "evaluate_designs": _evaluate_designs,
