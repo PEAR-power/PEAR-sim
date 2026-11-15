@@ -199,6 +199,10 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "sequence changes across the derivative runs."
         ),
         "evidence": [
+            "closed-form oracle for the ideal CCM buck under a sampled PI (shared state "
+            "matrix: two matrix exponentials plus a switching-instant term), itself "
+            "checked against the textbook RLC natural frequencies: multipliers agree "
+            "to 1.2e-11",
             "multipliers match a monodromy identified from one long kernel run "
             "(max difference 1.2e-8 / 3.5e-6; a register-mapping mutation gives 6.9e-3)",
             "healthy vs ~4 kHz limit-cycle PI gains on a buck: stable vs unstable at "

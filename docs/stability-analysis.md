@@ -160,6 +160,18 @@ Claim boundary:
 
 Verification (`tests/test_closed_loop_floquet.py`):
 
+- **Closed-form oracle** (`tests/reference/buck_closed_loop_floquet_oracle.py`,
+  imports nothing from PEARSim): for the ideal CCM buck under a sampled PI both
+  topologies share the state matrix, so the monodromy is two 2×2 matrix
+  exponentials plus one rank-one switching-instant term, and the orbit is one
+  bracketed root. Engine vs oracle: multipliers 1.2e-11, monodromy entries
+  5.6e-8, valley current 1.9e-9 (gate 1e-7 / 1e-6 / 1e-7). The oracle is itself
+  checked against physics outside its algebra: the textbook RLC natural
+  frequencies (1e-12), and the slow-integrator decay rate `ki·g`, whose error
+  shrinks in proportion to `ki`. `g` is the DC gain **as sampled** at the
+  cycle start (24.085 V on this plant, not Vin = 24 V: the tick reads the
+  ripple) — with Vin the gap stays at 0.36 %, which is what an averaged model
+  that ignores the sampling point misses.
 - The multipliers match a monodromy identified by least squares from ONE long
   run started off the orbit (no finite differences, controller memory carried
   by the kernel): max difference 1.2e-8 healthy, 3.5e-6 unstable design;

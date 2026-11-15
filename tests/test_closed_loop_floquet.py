@@ -237,3 +237,87 @@ def test_result_payload_states_its_claim(solved) -> None:
 def test_out_of_scope_models_are_refused_by_name(example: str, fragment: str) -> None:
     with pytest.raises(ClosedLoopSteadyStateError, match=fragment):
         solve_closed_loop_steady_state(load_model(ROOT / "examples" / example))
+
+
+# --- Closed-form oracle (tests/reference/buck_closed_loop_floquet_oracle.py) ---
+# Derived on paper, solved by a different method (van Loan blocks + one
+# bracketed root), importing nothing from PEARSim. The oracle itself is first
+# checked against physics that does not go through its matrix algebra.
+
+from tests.reference.buck_closed_loop_floquet_oracle import (  # noqa: E402
+    BuckLoop,
+    rlc_multipliers,
+    solve as oracle_solve,
+)
+
+_PLANT = dict(
+    vin_v=24.0,
+    inductance_h=47e-6,
+    capacitance_f=100e-6,
+    load_ohm=5.45,
+    switching_frequency_hz=50e3,
+    vref_v=12.0,
+)
+
+
+def test_oracle_plant_is_the_textbook_rlc_network() -> None:
+    """Both topologies of the CCM buck share A; its period map must carry the
+    series-L / parallel-RC natural frequencies, exp(lambda T)."""
+
+    from scipy.linalg import expm
+
+    loop = BuckLoop(**_PLANT, kp=0.0, ki=1.0)
+    plant = np.sort_complex(np.linalg.eigvals(expm(loop.a * loop.period_s)))
+    assert np.max(np.abs(plant - np.sort_complex(rlc_multipliers(loop)))) < 1e-12
+
+
+def test_oracle_integrator_mode_converges_to_the_sampled_gain_formula() -> None:
+    """Slow-integrator physics: with kp=0 and ki small against the LC
+    resonance, the integrator decays at ki * g per second, g = dv_C(0)/dd the
+    DC gain AS SAMPLED (the tick reads v_C at the cycle start, on the ripple —
+    measured 2026-11-15: g = 24.085 V, not Vin = 24 V; using Vin leaves a
+    0.36 % gap that does not shrink). The relative error must shrink in
+    proportion to ki — an approximation converging, not a defect."""
+
+    from scipy.linalg import expm
+
+    from tests.reference.buck_closed_loop_floquet_oracle import _forced_response
+
+    probe = BuckLoop(**_PLANT, kp=0.0, ki=1.0)
+    period = probe.period_s
+    inverse = np.linalg.inv(np.eye(2) - expm(probe.a * period))
+
+    def sampled_output(duty: float) -> float:
+        return float((inverse @ _forced_response(probe, duty * period))[1])
+
+    gain = (sampled_output(0.5 + 1e-6) - sampled_output(0.5 - 1e-6)) / 2e-6
+    errors = {}
+    for ki in (5.0, 1.0):
+        orbit = oracle_solve(BuckLoop(**_PLANT, kp=0.0, ki=ki))
+        real = [value.real for value in orbit.multipliers if abs(value.imag) < 1e-12]
+        rate = -np.log(max(real)) / period
+        errors[ki] = abs(rate - ki * gain) / (ki * gain)
+    assert errors[1.0] < 3e-4  # measured 2.0e-4
+    assert 4.0 < errors[5.0] / errors[1.0] < 6.0  # first order in ki: 4.7
+
+
+@pytest.mark.parametrize(("name", "gains"), [("healthy", HEALTHY), ("hot", HOT)])
+def test_engine_matches_the_closed_form_oracle(solved, name, gains) -> None:
+    """The truth gate: a different derivation, a different solution method.
+
+    Measured 2026-11-15: multipliers 1.2e-11, monodromy entries 5.6e-8,
+    valley current 1.9e-9. Carrying a register's OLD value instead of its
+    input gives multipliers off by 1.4e-2 (healthy) / 2.4e-2 (hot)."""
+
+    kp, ki = gains
+    oracle = oracle_solve(BuckLoop(**_PLANT, kp=kp, ki=ki))
+    result = solved[name][1]
+    state = dict(zip(result.state_names, result.state, strict=True))
+    assert state["l1"] == pytest.approx(oracle.inductor_current_a, abs=1e-7)
+    assert state["c1"] == pytest.approx(oracle.capacitor_voltage_v, abs=1e-7)
+    assert state["signal:int_prev"] == pytest.approx(oracle.register, abs=1e-9)
+    engine = np.sort_complex(
+        np.asarray([complex(item.real, item.imag) for item in result.multipliers])
+    )
+    assert np.max(np.abs(engine - np.sort_complex(oracle.multipliers))) < 1e-7
+    assert np.max(np.abs(np.asarray(result.monodromy) - oracle.monodromy)) < 1e-6
