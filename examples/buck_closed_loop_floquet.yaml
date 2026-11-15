@@ -1,0 +1,69 @@
+# Closed-loop buck whose stability is checked on the SWITCHING model, not an
+# averaged one:
+#
+#   uv run pear-sim analyze floquet examples/buck_closed_loop_floquet.yaml --out runs/floquet
+#
+# The same PI as buck_closed_loop_signals.yaml, written in signal blocks, at a
+# DC operating point (5.45 ohm, 2.2 A, CCM) — the analysis needs DC sources, so
+# there is no load step. The initial values sit near the orbit so Newton starts
+# with the duty inside its limits: v(out) at the reference, the inductor at its
+# valley current, the integrator at duty / ki.
+#
+# Expected: stable. The largest multipliers are the output LC pair at ~2.4 kHz
+# (|mu| ~ 0.990) and the integrator (~0.986). With kp=0.08 / ki=150 the pair
+# leaves the unit circle (|mu| ~ 1.034 at ~3.9 kHz): the ~4 kHz limit cycle
+# this kernel shows for those gains. Both agree with a closed-form oracle
+# (tests/reference/buck_closed_loop_floquet_oracle.py) to ~1e-14.
+schema: pear-sim/v0.1
+name: buck_closed_loop_floquet
+
+parameters:
+  vin: 24 V
+  fsw: 50 kHz
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+    - {id: q1, type: ideal_switch, p: in, n: sw, control: ctrl, initial: on}
+    - {id: d1, type: diode, p: gnd, n: sw, initial: off}
+    - {id: l1, type: inductor, p: sw, n: out, value: 47 uH, initial_current: 0.923 A}
+    - {id: c1, type: capacitor, p: out, n: gnd, value: 100 uF, initial_voltage: 12 V}
+    - {id: load, type: resistor, p: out, n: gnd, value: 5.45 ohm}
+
+signals:
+  task:
+    period: 20 us            # one tick per carrier cycle
+  blocks:
+    vout: {type: probe, source: v(out), unit: V}
+    vref: {type: constant, value: 12.0, unit: V}
+    err: {type: sum, inputs: [vref, vout], signs: [1, -1], unit: V}
+    err_dt: {type: gain, input: err, gain: 2.0e-5, unit: V}          # * T
+    int_prev: {type: unit_delay, input: integral, initial: 0.016667, unit: V}
+    integral: {type: sum, inputs: [int_prev, err_dt], unit: V}
+    kp_term: {type: gain, input: err, gain: 0.002, unit: V}
+    ki_term: {type: gain, input: integral, gain: 30.0, unit: V}
+    u: {type: sum, inputs: [kp_term, ki_term], unit: V}
+    duty: {type: saturate, input: u, min: 0.05, max: 0.95, unit: V}
+
+controls:
+  ctrl:
+    type: signal_pwm
+    frequency: "${fsw}"
+    duty_signal: s(duty)
+    duty_min: 5 %
+    duty_max: 95 %
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 2 ms
+    output_step: 2 us
+    solver: dopri5
+    rtol: 1.0e-9
+    atol: 1.0e-11
+
+outputs:
+  - v(out)
+  - i(l1)
+  - s(duty)

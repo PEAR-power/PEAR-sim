@@ -17,6 +17,22 @@ break the model format; every break carries a migration note).
   `electrothermal.core_loss_igse` (experimental). Validated against measured MagNet N87
   core loss (`tests/test_core_losses_magnet.py`, data subset in `tests/data/`). New
   optional section only: existing models are unchanged.
+- Closed-loop periodic steady state and Floquet multipliers
+  (`pear_sim.analysis.closed_loop.solve_closed_loop_steady_state`, experimental, Python
+  API only): Newton shooting on the production cycle map with the state augmented by every
+  `unit_delay` register of the signal layer, and the multipliers of the closed loop on the
+  switching model — `stable`, `unstable`, `not_resolved` (inside the step-size spread) or
+  `not_assessed` (limiter, duty clamp or mode sequence changes). Local stability of the
+  orbit only; see `docs/stability-analysis.md`. Capability
+  `analysis.steady_state.closed_loop_floquet`.
+- `pear-sim analyze floquet MODEL --out DIR [--initial-state NAME=VALUE]`: a retained,
+  hash-manifested bundle (`floquet.json`, `floquet-evidence.json` with three blocking
+  gates) for the closed-loop analysis; exit 0 locally stable, 1 evidence retained but not
+  stable or not attestable, 2 refused. The monodromy is analytic (the orbit's mode matrix
+  exponentials plus the controlled switching-instant term) and cross-checked against
+  finite differences on every run; a disagreement withholds the verdict. New example
+  `examples/buck_closed_loop_floquet.yaml`.
+
 - `esr` on `capacitor` and `dcr` on `inductor` / `sat_inductor`: a constant series
   resistance, expanded into an ordinary resistor (`<id>.esr`, `<id>.dcr`, internal node
   `<id>.core`) and bit-identical to writing that resistor by hand. Capacitor banks and a
@@ -32,6 +48,13 @@ break the model format; every break carries a migration note).
   (`declared_parasitic_loss_w`) and refuse to count one twice.
 
 ### Fixed
+
+- Periodic steady state (shooting) now refuses closed-loop models by name. Shooting solves
+  for circuit state only, so a sampled controller's memory (integrator, unit delays) was
+  outside it: a closed-loop model was refused with the misleading "requires at least one
+  PWM control", and a model mixing a fixed PWM leg with a sampled loop was shot with the
+  controller restarted from its declared memory every cycle — a fixed point of the wrong
+  map. Both are now `SteadyStateError` naming the sampled controls.
 
 - Switched AC sweep (`analysis/ac_sweep.correlate`): the correlation window now starts
   exactly at `window_start_s` (endpoints interpolated) and the phase is referenced to

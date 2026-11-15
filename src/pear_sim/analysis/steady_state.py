@@ -102,6 +102,21 @@ class PeriodicSteadyState:
 
 
 def _shooting_period(model: Model) -> float:
+    # A sampled controller (sampled_pi_pwm, signal_pwm, dq/svpwm loops) carries
+    # memory — integrators, unit delays — that is NOT part of the circuit state
+    # this shooting solves for. Shooting such a model would restart the
+    # controller from its declared initial memory every cycle and return a
+    # fixed point of the wrong map. Refuse it by name, before the generic
+    # "no PWM" check below, which would otherwise blame a missing PWM the
+    # model actually has.
+    if model.sampled_controls:
+        raise SteadyStateError(
+            "periodic steady state (shooting) does not support closed-loop "
+            "models yet: sampled control(s) "
+            f"{sorted(model.sampled_controls)!r} keep controller memory that "
+            "is not part of the circuit state solved for; run a transient "
+            "instead"
+        )
     if not model.controls:
         raise SteadyStateError(
             "periodic steady state requires at least one PWM control"
