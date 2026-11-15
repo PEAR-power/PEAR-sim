@@ -25,6 +25,13 @@ break the model format; every break carries a migration note).
 
 ### Fixed
 
+- Periodic steady state (shooting) now refuses closed-loop models by name. Shooting solves
+  for circuit state only, so a sampled controller's memory (integrator, unit delays) was
+  outside it: a closed-loop model was refused with the misleading "requires at least one
+  PWM control", and a model mixing a fixed PWM leg with a sampled loop was shot with the
+  controller restarted from its declared memory every cycle — a fixed point of the wrong
+  map. Both are now `SteadyStateError` naming the sampled controls.
+
 - Switched AC sweep (`analysis/ac_sweep.correlate`): the correlation window now starts
   exactly at `window_start_s` (endpoints interpolated) and the phase is referenced to
   absolute time. Before, when the window start fell between output samples, the phase
