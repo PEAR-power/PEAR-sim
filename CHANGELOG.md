@@ -9,6 +9,10 @@ break the model format; every break carries a migration note).
 
 ### Added
 
+- The topology error of a model whose `dcr` hides an inductor-only node (a floating
+  star, inductors in series) now names those inductors and the node and says how to
+  model the winding resistance instead. Measured on the shipped examples with `dcr` on
+  every inductor: the hint appears on all 8 that fail and on none of the 19 that run.
 - MCP tool `floquet`: the closed-loop Floquet analysis for agents — verdict, gates,
   largest multipliers with the oscillation frequency, Lyapunov certificate, orbit state,
   violated assumptions and the engine's notes (e.g. "pass `initial_state`" when Newton
