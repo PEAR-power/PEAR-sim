@@ -80,6 +80,10 @@ DEFAULT_RELATIVE_STEP = 1e-4
 #: 2026-11-15 on the buck/PI gate cases: ~1e-11 to 1e-8 apart; a missing
 #: saltation term moves them by >1e-2.
 METHOD_AGREEMENT_TOLERANCE = 1e-6
+#: A Lyapunov certificate must guarantee V(M z) <= (1 - margin) V(z): a
+#: unit-free decrease far above round-off (~1e-16 on these matrices) and far
+#: below any multiplier a stability verdict could rest on.
+CERTIFICATE_MARGIN = 1e-8
 # Floor of a probe step, in the state's own SI unit. A register that sits at
 # zero (an integrator at a zero-error orbit) still needs a non-zero probe.
 _STEP_FLOOR = 1e-7
@@ -227,7 +231,15 @@ def _check_candidate(m: np.ndarray, p: np.ndarray) -> float | None:
     image = 0.5 * (image + image.T)
     if not _positive_definite(p - image):
         return None
-    return float(np.max(eigh(image, p, eigvals_only=True)))
+    contraction = float(np.max(eigh(image, p, eigvals_only=True)))
+    # Positive definiteness of P - M^T P M alone is decided by round-off when
+    # the true decrease is zero: on a lossless rotation it came out
+    # [-1.3e-17, +1.3e-17] on x86 (refused) and both positive on ARM
+    # (certified a map on the unit circle, CI 2026-11-15). Demand a decrease
+    # that round-off cannot fake.
+    if contraction > 1.0 - CERTIFICATE_MARGIN:
+        return None
+    return contraction
 
 
 def lyapunov_certificate(

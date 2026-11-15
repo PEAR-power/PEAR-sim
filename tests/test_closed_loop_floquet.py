@@ -468,11 +468,22 @@ def _cholesky_ok(matrix: np.ndarray) -> bool:
         (0.95 * np.array([[np.cos(0.3), -np.sin(0.3)], [np.sin(0.3), np.cos(0.3)]]), True, 0.9025),
         # on the unit circle: lossless, never asymptotically stable
         (np.array([[np.cos(0.3), -np.sin(0.3)], [np.sin(0.3), np.cos(0.3)]]), False, None),
+        # inside the circle by less than the margin: round-off cannot tell it
+        # from the lossless case, so no certificate either
+        (
+            (1.0 - 1e-12)
+            * np.array([[np.cos(0.3), -np.sin(0.3)], [np.sin(0.3), np.cos(0.3)]]),
+            False,
+            None,
+        ),
         # strongly non-normal but stable: transient growth, still certifiable
         (np.array([[0.9, 100.0], [0.0, 0.8]]), True, 0.81),
     ],
 )
 def test_certificate_on_closed_form_cases(matrix, found, rho_sq) -> None:
+    """The unit-circle case regressed on ARM (2026-11-15): P - M^T P M is zero
+    up to round-off there, and Cholesky accepted +1.3e-17 as positive."""
+
     certificate = lyapunov_certificate(matrix)
     assert certificate.found is found
     if found:
@@ -516,3 +527,12 @@ def test_certificate_rechecks_from_the_bundle_alone(tmp_path: Path) -> None:
     hot = solve_closed_loop_steady_state(_model(hot_dir, HOT))
     hot_m = np.asarray(hot.monodromy)
     assert not _cholesky_ok(p - hot_m.T @ p @ hot_m)
+
+
+def test_certificate_refuses_a_decrease_that_round_off_could_fake(monkeypatch) -> None:
+    """Simulate the ARM outcome on any machine: force Cholesky to accept the
+    zero-decrease matrix. The margin, not the factorisation, must refuse."""
+
+    rotation = np.array([[np.cos(0.3), -np.sin(0.3)], [np.sin(0.3), np.cos(0.3)]])
+    monkeypatch.setattr(closed_loop, "_positive_definite", lambda matrix: True)
+    assert not lyapunov_certificate(rotation).found
