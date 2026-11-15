@@ -38,6 +38,7 @@ from pear_sim.review.packets import (
 )
 from pear_sim.evidence.run_compare import compare_runs
 from pear_sim.evidence.floquet import run_floquet_analysis
+from pear_sim.evidence.loop_gain import run_loop_gain_analysis
 from pear_sim.evidence.stability import run_stability_analysis
 from pear_sim.core.solver import HybridSimulator
 from pear_sim.evidence.sweep import (
@@ -272,6 +273,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     floquet.add_argument("--set", action="append", default=[], metavar="NAME=VALUE")
     floquet.add_argument("--json", action="store_true")
+    loop = analyze_actions.add_parser(
+        "loop-gain",
+        help=(
+            "Loop gain of a closed-loop model measured by injection on the "
+            "switching circuit, with phase and gain margins (experimental)"
+        ),
+    )
+    loop.add_argument("model", type=Path)
+    loop.add_argument("--out", type=Path, required=True)
+    loop.add_argument("--start", type=float, required=True, help="lowest frequency, Hz")
+    loop.add_argument("--stop", type=float, required=True, help="highest frequency, Hz")
+    loop.add_argument("--points", type=int, default=9, help="log-spaced grid points")
+    loop.add_argument(
+        "--inject",
+        default=None,
+        help="signal block to inject at (default: the block the PWM duty reads)",
+    )
+    loop.add_argument("--amplitude", type=float, default=None)
+    loop.add_argument("--initial-state", action="append", default=[], metavar="NAME=VALUE")
+    loop.add_argument("--set", action="append", default=[], metavar="NAME=VALUE")
+    loop.add_argument("--json", action="store_true")
 
     compare = subparsers.add_parser(
         "compare",
@@ -682,6 +704,46 @@ def main(argv: list[str] | None = None) -> int:
                 for record in payload["capabilities"]:
                     print(f"{record['status']:<12} {record['id']}")
             return 0
+        if args.command == "analyze" and args.analysis_kind == "loop-gain":
+            start_state: dict[str, float] = {}
+            for item in args.initial_state:
+                name, separator, value = item.partition("=")
+                if not separator or not name:
+                    raise ValueError(f"--initial-state expects NAME=VALUE, got {item!r}")
+                start_state[name] = float(value)
+            if args.points < 2 or not 0.0 < args.start < args.stop:
+                raise ValueError("--start/--stop/--points must give 0 < start < stop, points >= 2")
+            loop_artifacts = run_loop_gain_analysis(
+                args.model,
+                args.out,
+                [
+                    args.start * (args.stop / args.start) ** (index / (args.points - 1))
+                    for index in range(args.points)
+                ],
+                inject_at=args.inject,
+                amplitude=args.amplitude,
+                initial_state=start_state or None,
+                overrides=_overrides(args.set) or None,
+            )
+            payload = {
+                "ok": True,
+                "overall_status": loop_artifacts.overall_status,
+                "phase_margin_deg": loop_artifacts.phase_margin_deg,
+                "gain_margin": loop_artifacts.gain_margin,
+                "loop_gain_json": str(loop_artifacts.loop_gain_json),
+                "evidence_json": str(loop_artifacts.evidence_json),
+                "artifact_manifest": str(loop_artifacts.artifact_manifest),
+            }
+            print(
+                json.dumps(payload, indent=2)
+                if args.json
+                else (
+                    f"Loop-gain evidence: {loop_artifacts.evidence_json} "
+                    f"(PM={loop_artifacts.phase_margin_deg}, GM={loop_artifacts.gain_margin}, "
+                    f"overall_status={loop_artifacts.overall_status})"
+                )
+            )
+            return 0 if loop_artifacts.overall_status == "pass" else 1
         if args.command == "analyze" and args.analysis_kind == "floquet":
             start: dict[str, float] = {}
             for item in args.initial_state:

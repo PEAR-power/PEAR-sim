@@ -9,6 +9,13 @@ break the model format; every break carries a migration note).
 
 ### Added
 
+- `pear-sim analyze loop-gain` and MCP `measure_loop_gain`: the loop gain of a
+  closed-loop model measured by injection on the switching circuit (Middlebrook,
+  started on the closed-loop orbit, phasors fitted on the controller's samples),
+  with refined phase and gain margins. Verified against Floquet: scaling the
+  controller by the measured gain margin puts a multiplier on the unit circle at the
+  measured frequency (1.2e-7). Unstable orbits, engaged limiters and injections that
+  change the switching mode sequence are refused.
 - Closed-loop Floquet in DCM is analytic: the guard saltation
   `S = I + (f+ - f-) gᵀ/(g·f-)` at each natural commutation, so a DCM orbit no longer
   falls back to finite differences alone. New closed-form DCM oracle

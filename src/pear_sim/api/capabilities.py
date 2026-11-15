@@ -179,6 +179,39 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
         ],
     },
     {
+        "id": "analysis.small_signal.loop_gain_injected",
+        "status": "experimental",
+        "scope": (
+            "`pear-sim analyze loop-gain`, the MCP `measure_loop_gain` tool and the "
+            "Python API: the same models as analysis.steady_state.closed_loop_floquet, "
+            "with a locally stable orbit; injection at any numeric signal block "
+            "(default: the block the PWM duty reads), below half the controller rate"
+        ),
+        "statement": (
+            "Middlebrook injection on the switching model: every consumer of the "
+            "block reads block + A sin(2 pi f t); the run starts on the closed-loop "
+            "orbit and settles for log(1e-6)/log(max |mu|) cycles; L = -X/Y is fitted "
+            "by least squares on the controller's tick samples (the discrete loop "
+            "gain the sampled controller lives in). Gain and phase crossovers inside "
+            "the band are refined by Brent's method. Unstable or unresolved orbits, "
+            "an engaged limiter or duty clamp, and any change of the per-cycle "
+            "switching mode sequence are refused, not reported."
+        ),
+        "evidence": [
+            "scaling kp and ki by the measured gain margin (2.4508206 at 2452.7533 Hz "
+            "on the buck example) puts a Floquet multiplier on the unit circle at "
+            "that frequency (bisection: 2.4508203, 2452.7532 Hz); 3 % below stays "
+            "stable, 3 % above goes unstable",
+            "mutation: 150 settle cycles instead of the derived ~1300 move the margin "
+            "by ~1e-3 and the Floquet check rings",
+            "injecting at the error signal and at the duty reads the same L (1e-6)",
+            "an amplitude that tips some cycles into DCM (a margin of 3.42 instead of "
+            "2.45, no limiter engaged) is refused by the mode-sequence check",
+            "no gate in DCM: there the -180 deg crossing sits at the controller's "
+            "Nyquist rate, where an injection cannot be placed",
+        ],
+    },
+    {
         "id": "analysis.steady_state.closed_loop_floquet",
         "status": "experimental",
         "scope": (

@@ -59,6 +59,7 @@ EXPECTED_TOOLS = {
     "render_schematic", "simulate", "steady_state", "loop_gain", "sweep_parameter",
     "sweep_tolerance_corners", "get_metrics", "get_waveform", "get_artifact",
     "compare_runs", "list_runs", "doctor", "evaluate_designs", "sensitivity", "floquet",
+    "measure_loop_gain",
 }
 
 
@@ -495,6 +496,38 @@ def test_floquet_overrides_move_the_orbit_like_the_duty_says(workspace: Workspac
     assert result["stability"] == "stable"
     assert 30.0 * result["orbit_state"]["signal:int_prev"] == pytest.approx(12 / 20, rel=0.01)
     assert result["orbit_state"]["c1"] == pytest.approx(12.0, rel=1e-9)
+
+
+def test_measure_loop_gain_reads_the_example_margin_through_mcp(workspace: Workspace) -> None:
+    """Same number as the Python call (tests/test_loop_gain.py): PM 92.41 deg,
+    crossover refined inside an 80-160 Hz band."""
+
+    is_error, result = _call(
+        workspace, "measure_loop_gain",
+        {"example": "buck_closed_loop_floquet", "start_hz": 80, "stop_hz": 160, "points": 2},
+    )
+    assert not is_error, result
+    assert result["overall_status"] == "pass"
+    assert result["injection_block"] == "duty"
+    assert result["phase_margin_deg"] == pytest.approx(92.41, abs=0.05)
+    assert result["gain_margin"] is None
+    assert "phase margin" in result["interpretation"]
+    assert "loop_gain.json" in result["artifacts"]
+
+
+def test_measure_loop_gain_refuses_an_unstable_orbit_and_names_floquet(
+    workspace: Workspace,
+) -> None:
+    model = _hot_gains(FLOQUET_EXAMPLE.read_text(encoding="utf-8"))
+    is_error, result = _call(
+        workspace, "measure_loop_gain",
+        {
+            "model_yaml": model, "start_hz": 1000, "stop_hz": 5000,
+            "initial_state": {"signal:int_prev": 0.5 / 150.0},
+        },
+    )
+    assert is_error
+    assert "floquet" in json.dumps(result)
 
 
 def test_floquet_refusals_are_actionable(workspace: Workspace) -> None:

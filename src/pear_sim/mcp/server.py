@@ -136,6 +136,21 @@ DESCRIPTIONS = {
         e.g. {"kp": "0.08", "ki": "150"} on the example buck_closed_loop_floquet.""",
         model_input=True,
     ),
+    "measure_loop_gain": _doc(
+        """Loop gain of a CLOSED-LOOP converter MEASURED on the exact switching model, the
+        way a bench does it: a small sinusoid is injected at a signal block (default: the
+        block the PWM duty reads), the run starts on the closed-loop periodic orbit, and
+        L = -X/Y is fitted on the controller's own samples. Returns phase margin, gain
+        margin and the Bode points; no averaging and no compensator declared twice
+        (unlike loop_gain). Needs a locally stable orbit (an unstable one is refused:
+        use `floquet`). Refuses an amplitude that clamps a limiter or changes the
+        switching mode sequence (e.g. CCM tipping into DCM) - that would not be a
+        small-signal gain. `start_hz` < `stop_hz` < half the switching frequency,
+        `points` log-spaced (default 9); crossovers inside the band are refined.
+        Typical run 1-3 min; default timeout 600 s. Same scope and `overrides` /
+        `initial_state` as `floquet`.""",
+        model_input=True,
+    ),
     "sweep_parameter": _doc(
         """Bounded 1-D sweep of one model parameter; every point is a retained run.
         `request`: {"parameter": "load", "values": ["5 ohm", "10 ohm"], "projections":
@@ -335,6 +350,27 @@ def build_server(workspace: Workspace):
             t.floquet, workspace, model_yaml=model_yaml, model_path=model_path,
             example=example, overrides=overrides, initial_state=initial_state,
             timeout_s=timeout_s,
+        )
+
+    @tool("measure_loop_gain", computes)
+    def measure_loop_gain(
+        start_hz: float,
+        stop_hz: float,
+        points: int = 9,
+        inject_at: str | None = None,
+        amplitude: float | None = None,
+        model_yaml: str | None = None,
+        model_path: str | None = None,
+        example: str | None = None,
+        overrides: dict[str, str] | None = None,
+        initial_state: dict[str, float] | None = None,
+        timeout_s: float | None = None,
+    ) -> dict[str, Any]:
+        return guarded(
+            t.measure_loop_gain, workspace, start_hz=start_hz, stop_hz=stop_hz,
+            points=points, inject_at=inject_at, amplitude=amplitude,
+            model_yaml=model_yaml, model_path=model_path, example=example,
+            overrides=overrides, initial_state=initial_state, timeout_s=timeout_s,
         )
 
     @tool("sweep_parameter", computes)
