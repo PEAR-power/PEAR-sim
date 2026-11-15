@@ -16,13 +16,16 @@ folds into the self term and each phase behaves as a single inductance
 ``L_eq = L_s - M``. That is what ``stator_inductance_h`` declares, and it is
 why no coupled-inductor machinery is needed here.
 
-DECLARED SCOPE (v0.1). Non-salient only: ``d_axis_inductance_h`` and
-``q_axis_inductance_h`` may be declared, but the loader fails closed unless
-they are equal, because a salient machine has a rotor-position-dependent
-inductance matrix that would have to be recompiled every integration
-segment. Sinusoidal back-EMF only — no trapezoidal drive, no cogging, no
-slot harmonics. No magnetic saturation, no iron loss, and no temperature
-dependence of the flux linkage or the resistance.
+DECLARED SCOPE (v0.1). Non-salient machines expand into three plain
+branches. A salient rotor (``d_axis_inductance_h`` != ``q_axis_inductance_h``)
+and a saturating ``flux_map`` expand into a magnetically COUPLED winding group
+whose inductance matrix the solver re-evaluates and HOLDS per integration
+segment, a first-order splitting error measured against an independent
+engine (tests/test_motulator_oracle.py). A flux map driven into saturation
+currently diverges (known defect, recorded there as a strict xfail).
+Sinusoidal back-EMF only — no trapezoidal drive, no cogging, no slot
+harmonics. No iron loss, and no temperature dependence of the flux linkage
+or the resistance.
 """
 
 from __future__ import annotations
@@ -474,9 +477,9 @@ def parse_machines(raw_machines: Any) -> tuple[MachineSpec, ...]:
                 positive=True,
             )
         )
-        # Saliency is accepted as a DECLARATION and refused as a capability:
-        # a position-dependent inductance matrix would have to be recompiled
-        # every integration segment, which the mode cache cannot express.
+        # Saliency is supported: the position-dependent inductance matrix is
+        # re-evaluated and held per integration segment by the solver's
+        # machine driver (core/solver.py, _MachineDriver.begin_segment).
         d_axis = raw.get("d_axis_inductance_h")
         q_axis = raw.get("q_axis_inductance_h")
         if (d_axis is None) != (q_axis is None):
