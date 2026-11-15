@@ -28,7 +28,15 @@ from pear_sim.spec.model import load_model
 def _worst(reference: dict, compiled: dict) -> tuple[float, str]:
     worst, where = 0.0, ""
     for signal, fields in reference.items():
-        span = max(abs(fields.get("max", 0.0) or 0.0), abs(fields.get("min", 0.0) or 0.0))
+        # The signal's own range. Electrical outputs publish it as max/min;
+        # declared signals (s(...)) and machine signals only as sample_max /
+        # sample_min. Without the second pair a near-constant signal block was
+        # scaled by its own tiny peak-to-peak, so 1 ulp of a 0.5 duty read as
+        # a 7e-10 "disagreement" (buck_closed_loop_floquet, 2026-11-15).
+        span = max(
+            abs(fields.get(key, 0.0) or 0.0)
+            for key in ("max", "min", "sample_max", "sample_min")
+        )
         for key, value in fields.items():
             other = compiled[signal].get(key)
             if not isinstance(value, float) or not isinstance(other, float):

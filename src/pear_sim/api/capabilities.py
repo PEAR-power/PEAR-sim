@@ -179,6 +179,42 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
         ],
     },
     {
+        "id": "analysis.steady_state.closed_loop_floquet",
+        "status": "experimental",
+        "scope": (
+            "`pear-sim analyze floquet` and the Python API: control laws in the "
+            "signal layer driving signal_pwm, "
+            "smooth time-invariant blocks (constant, probe, gain, sum, product, "
+            "divide, saturate away from its limits, unit_delay, model-level "
+            "switch), DC sources, one switching frequency; built-in sampled "
+            "controllers, threshold/lookup/time-varying blocks, waveform sources, "
+            "machines, saturable inductors and inductor stars are refused by name"
+        ),
+        "statement": (
+            "Newton shooting on the production one-period map of the state "
+            "augmented with every unit_delay register, then Floquet multipliers "
+            "from an analytic monodromy (orbit modes' matrix exponentials plus the "
+            "controlled switching-instant term) cross-checked every run against "
+            "central finite differences; finite differences alone when the orbit "
+            "has a natural commutation. Claims LOCAL "
+            "stability of the computed orbit only; the verdict is withheld when a "
+            "multiplier is within its step-size spread of the unit circle, and no "
+            "multipliers are reported when a limiter, the duty clamp or the mode "
+            "sequence changes across the derivative runs, or when the two "
+            "monodromies disagree."
+        ),
+        "evidence": [
+            "closed-form oracle for the ideal CCM buck under a sampled PI (shared state "
+            "matrix: two matrix exponentials plus a switching-instant term), itself "
+            "checked against the textbook RLC natural frequencies: multipliers agree "
+            "to 1.2e-11",
+            "multipliers match a monodromy identified from one long kernel run "
+            "(max difference 1.2e-8 / 3.5e-6; a register-mapping mutation gives 6.9e-3)",
+            "healthy vs ~4 kHz limit-cycle PI gains on a buck: stable vs unstable at "
+            "~3.9 kHz, agreeing with the discrete-aware averaged margins",
+        ],
+    },
+    {
         "id": "analysis.steady_state.shooting",
         "status": "experimental",
         "scope": (
