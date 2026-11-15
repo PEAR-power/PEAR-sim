@@ -331,9 +331,10 @@ that meet at a floating node, e.g. a star-connected load): only a parallel resis
 would. Because the resistor is added between the inductor and its `n` node, a star wired
 at the `n` side is no longer recognised as one, and such a model ends with a
 `TopologyError`. Measured 2026-11-15 on the shipped examples: adding `dcr` to every inductor breaks
-7 of 27 that contain inductors (three-phase loads with a floating star, transformers,
-the LLC tank). Model the winding resistance there with an explicit resistor on the side
-away from the star.
+8 of the 27 that contain inductors (three-phase loads with a floating star, a wye
+transformer winding, an LCL filter's two series inductors, the LLC tank). The error then
+names those inductors and the node, e.g. "la, lb, lc at node 'star'". Model the winding
+resistance there with an explicit resistor on the side away from that node.
 
 **Audit and ratings.** For every declared parasitic the energy audit
 (`physics-audit.json`, both windows) reports:

@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 
 from pear_sim.core import rust_backend
-from pear_sim.core.circuit import capacitor_loop_hint
+from pear_sim.core.circuit import capacitor_loop_hint, dcr_star_hint
 from pear_sim.core.solver import HybridSimulator
 from pear_sim.errors import ModelError, TopologyError
 from pear_sim.spec.model import load_model
@@ -198,6 +198,65 @@ def test_the_loop_hint_names_a_capacitor_across_a_voltage_source(tmp_path: Path)
     )
     model = load_model(path)
     assert "Capacitor cin closes" in capacitor_loop_hint(model.components, model.ground)
+
+
+# Measured 2026-11-15: `dcr` on EVERY inductor of the shipped examples breaks
+# exactly these (an inductor-only node: floating star, or inductors in series).
+DCR_STAR_BREAKS = {
+    "grid_following_converter", "inverter_signal_svpwm",
+    "inverter_three_phase_floating_neutral", "inverter_three_phase_svpwm", "llc_resonant",
+    "npc_three_phase_midpoint", "rectifier_6pulse_transformer",
+    "traction_inverter_liquid_cooled",
+}
+
+
+def _with_dcr_everywhere(example: Path, tmp_path: Path) -> Path | None:
+    import yaml
+
+    from pear_sim.spec.model import _ModelSafeLoader
+
+    document = yaml.load(example.read_text(encoding="utf-8"), Loader=_ModelSafeLoader)
+    inductors = [
+        c for c in document.get("circuit", {}).get("components", [])
+        if isinstance(c, dict) and c.get("type") == "inductor"
+    ]
+    if not inductors:
+        return None
+    for inductor in inductors:
+        inductor["dcr"] = "10 mohm"
+    path = tmp_path / example.name
+    path.write_text(yaml.safe_dump(document), encoding="utf-8")
+    return path
+
+
+def test_the_dcr_star_hint_names_exactly_the_models_dcr_breaks(tmp_path: Path) -> None:
+    """Discriminates both ways: rings on every example that dcr breaks, silent
+    on every example with inductors that still runs with dcr (and on the
+    internal ``l.core`` node every dcr creates)."""
+
+    named, silent = set(), set()
+    for example in sorted((ROOT / "examples").glob("*.yaml")):
+        path = _with_dcr_everywhere(example, tmp_path)
+        if path is None:
+            continue
+        model = load_model(path)
+        hint = dcr_star_hint(model.components, model.ground, model.passive_parasitics)
+        (named if hint else silent).add(example.stem)
+    assert named == DCR_STAR_BREAKS
+    assert len(silent) >= 15
+    # Without any dcr the hint has nothing to say, even on a floating star.
+    model = load_model(ROOT / "examples" / "inverter_three_phase_floating_neutral.yaml")
+    assert dcr_star_hint(model.components, model.ground, model.passive_parasitics) == ""
+
+
+def test_the_topology_error_of_a_dcr_star_says_how_to_fix_it(tmp_path: Path) -> None:
+    path = _with_dcr_everywhere(
+        ROOT / "examples" / "inverter_three_phase_floating_neutral.yaml", tmp_path
+    )
+    with pytest.raises(
+        TopologyError, match=r"la, lb, lc at node 'star'.*explicit\s+`resistor`"
+    ):
+        HybridSimulator(load_model(path)).simulate()
 
 
 # ---------------------------------------------------------------------------
