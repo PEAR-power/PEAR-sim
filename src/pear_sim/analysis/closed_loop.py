@@ -74,6 +74,10 @@ __all__ = [
 DEFAULT_MAX_ITERATIONS = 30
 DEFAULT_TOLERANCE = 1e-9
 DEFAULT_RELATIVE_STEP = 1e-4
+#: Budget for the analytic vs finite-difference multipliers. Measured
+#: 2026-11-15 on the buck/PI gate cases: ~1e-11 to 1e-8 apart; a missing
+#: saltation term moves them by >1e-2.
+METHOD_AGREEMENT_TOLERANCE = 1e-6
 # Floor of a probe step, in the state's own SI unit. A register that sits at
 # zero (an integrator at a zero-error orbit) still needs a non-zero probe.
 _STEP_FLOOR = 1e-7
@@ -172,6 +176,8 @@ class ClosedLoopSteadyState:
     monodromy: tuple[tuple[float, ...], ...] = ()
     assumptions: tuple[ClosedLoopAssumption, ...] = ()
     notes: tuple[str, ...] = field(default_factory=tuple)
+    #: "analytic_saltation" | "central_finite_difference" | "" (none computed)
+    monodromy_method: str = ""
 
     @property
     def max_multiplier_magnitude(self) -> float | None:
@@ -183,7 +189,7 @@ class ClosedLoopSteadyState:
         return {
             "analysis": "closed_loop_periodic_steady_state",
             "method": "newton_shooting_on_augmented_state",
-            "jacobian": "central_finite_difference_of_production_cycle_map",
+            "monodromy_method": self.monodromy_method,
             "claim": "local stability of the computed periodic orbit only",
             "converged": self.converged,
             "iterations": self.iterations,
@@ -364,6 +370,9 @@ class _CycleRun:
     #: Smallest distance of any saturate input / raw duty from its limits.
     limiter_margin: float
     limiter_detail: str
+    #: The production run itself; the analytic monodromy reads its mode
+    #: intervals, events and tick-0 signal values.
+    result: SimulationResult | None = None
 
 
 def _run_cycle(plan: _Plan, z: np.ndarray) -> _CycleRun:
@@ -403,7 +412,174 @@ def _run_cycle(plan: _Plan, z: np.ndarray) -> _CycleRun:
                 f"signal_pwm {control_id!r} duty {value!r} in [{low!r}, {high!r}]",
             )
     sequence = tuple(str(interval["mode_signature"]) for interval in result.mode_intervals)
-    return _CycleRun(end=end, mode_sequence=sequence, limiter_margin=margin, limiter_detail=detail)
+    return _CycleRun(
+        end=end,
+        mode_sequence=sequence,
+        limiter_margin=margin,
+        limiter_detail=detail,
+        result=result,
+    )
+
+
+#: Events whose instant is either fixed in time (a scheduled gate of a fixed
+#: PWM), set by the controller (a signal_pwm turn-off), or a commutation the
+#: switch manager applies AT that same instant. A natural commutation has its
+#: own state-dependent instant and needs a guard saltation — v1 leaves it to
+#: the finite-difference path.
+_ANALYTIC_EVENT_KINDS = frozenset({"scheduled_gate", "switch_manager"})
+
+
+def _graph_jacobian(plan: _Plan, run: _CycleRun, circuit: Circuit) -> dict[str, np.ndarray]:
+    """d(block value at tick 0) / dz for every block, by forward differentiation
+    of the declared block equations — no simulation involved.
+
+    Probes read the pre-edge state through the cycle-start mode's affine output
+    map; a unit_delay answers with its register, which is a coordinate of z.
+    """
+
+    assert run.result is not None
+    graph = plan.model.signals
+    assert graph is not None
+    blocks = graph.by_id
+    values = next(
+        entry["values"] for entry in run.result.signal_trace if entry["tick_index"] == 0
+    )
+    first = run.result.mode_intervals[0]
+    mode = circuit.compile(
+        first["gates"], first["diodes"], first["constrained_inductors"], ()
+    )
+    n = len(plan.circuit_ids)
+    size = n + len(plan.register_ids)
+    zero = np.zeros(n)
+    rows: dict[str, np.ndarray] = {}
+    for block_id in graph.order:
+        block = blocks[block_id]
+        kind = block.kind
+        row = np.zeros(size)
+        if kind == "probe":
+            base = mode.output(block.params["source"], zero, 0.0)
+            for index in range(n):
+                unit = np.zeros(n)
+                unit[index] = 1.0
+                row[index] = mode.output(block.params["source"], unit, 0.0) - base
+        elif kind == "unit_delay":
+            row[n + plan.register_ids.index(block_id)] = 1.0
+        elif kind == "gain":
+            row = float(block.params["gain"]) * rows[block.inputs[0]]
+        elif kind == "sum":
+            for sign, source in zip(block.params["signs"], block.inputs, strict=True):
+                row = row + float(sign) * rows[source]
+        elif kind == "product":
+            for index, source in enumerate(block.inputs):
+                others = 1.0
+                for other_index, other in enumerate(block.inputs):
+                    if other_index != index:
+                        others *= values[other]
+                row = row + others * rows[source]
+        elif kind == "divide":
+            numerator, denominator = block.inputs
+            top, bottom = values[numerator], values[denominator]
+            row = (rows[numerator] * bottom - top * rows[denominator]) / (bottom * bottom)
+        elif kind == "saturate":
+            # Inside its limits (checked as an assumption) the block is identity.
+            row = rows[block.inputs[0]]
+        elif kind == "switch":
+            row = rows[block.inputs[0] if block.params["flag"] else block.inputs[1]]
+        elif kind != "constant":  # pragma: no cover - _plan refuses the rest
+            raise ClosedLoopSteadyStateError(f"no derivative rule for block kind {kind!r}")
+        rows[block_id] = row
+    return rows
+
+
+def _saltation_term(
+    after_edge: np.ndarray, jump: np.ndarray, period: float, duty_row: np.ndarray
+) -> np.ndarray:
+    """dx(T)/dz through the controlled edge: the field jump at the edge,
+    carried to the period end, times dt_s/dz = T dd/dz. Without it the
+    controller does not act on the plant at all in the linearisation."""
+
+    return np.outer(after_edge @ jump, period * duty_row)
+
+
+def _analytic_monodromy(plan: _Plan, run: _CycleRun) -> tuple[np.ndarray | None, str]:
+    """Monodromy from the orbit's own compiled modes, without probing.
+
+    x(T) = Phi_N ... Phi_1 x0 + (forced terms), Phi_k = expm(a_k tau_k) of the
+    production mode matrices along the orbit. A controlled turn-off at
+    t_s = d T moves with z: dx(T)/dt_s = Phi_after (f_before - f_after) at
+    x(t_s), and dt_s/dz = T dd/dz from the block equations. Registers map to
+    the derivative of their input block. Returns (None, reason) when the orbit
+    has an event this rule does not cover.
+    """
+
+    from scipy.linalg import expm
+
+    result = run.result
+    assert result is not None
+    kinds = sorted({event.kind for event in result.events} - _ANALYTIC_EVENT_KINDS)
+    if kinds:
+        return None, f"orbit has {kinds!r} events (state-dependent guard instants)"
+    circuit = Circuit(result.model)
+    rows = _graph_jacobian(plan, run, circuit)
+    n = len(plan.circuit_ids)
+    size = n + len(plan.register_ids)
+    intervals = result.mode_intervals
+    modes = [
+        circuit.compile(
+            interval["gates"], interval["diodes"], interval["constrained_inductors"], ()
+        )
+        for interval in intervals
+    ]
+    for mode in modes:
+        if mode.constrained_state_indices:
+            return None, "an interval reduces a state (zero-current or inductor-star path)"
+    transitions = [
+        expm(mode.a * (interval["end_s"] - interval["start_s"]))
+        for mode, interval in zip(modes, intervals, strict=True)
+    ]
+
+    def after(index: int) -> np.ndarray:
+        """Transition from the end of interval `index` to the period end."""
+
+        chain = np.eye(n)
+        for transition in transitions[index + 1 :]:
+            chain = transition @ chain
+        return chain
+
+    total = after(-1)  # product of every interval
+    monodromy = np.zeros((size, size))
+    monodromy[:n, :n] = total
+    tolerance = 1e-9 * plan.period
+    for control_id, (block_id, _low, _high) in plan.duty_sources.items():
+        duty_row = rows[block_id]
+        off_time = float(
+            next(
+                entry["values"][block_id]
+                for entry in result.signal_trace
+                if entry["tick_index"] == 0
+            )
+        ) * plan.period
+        boundary = next(
+            (
+                index
+                for index in range(len(intervals) - 1)
+                if abs(intervals[index]["end_s"] - off_time) <= tolerance
+                and intervals[index]["gates"].get(control_id)
+                and not intervals[index + 1]["gates"].get(control_id)
+            ),
+            None,
+        )
+        if boundary is None:
+            return None, f"no turn-off of {control_id!r} at the commanded instant"
+        state_at_edge = np.asarray(
+            [intervals[boundary]["state_end"][name] for name in plan.circuit_ids]
+        )
+        before, later = modes[boundary], modes[boundary + 1]
+        jump = (before.a @ state_at_edge + before.c) - (later.a @ state_at_edge + later.c)
+        monodromy[:n, :] += _saltation_term(after(boundary), jump, plan.period, duty_row)
+    for offset, register_id in enumerate(plan.register_ids):
+        monodromy[n + offset, :] = rows[plan.register_sources[register_id]]
+    return monodromy, "analytic"
 
 
 def _steps(z: np.ndarray, relative: float) -> np.ndarray:
@@ -577,9 +753,52 @@ def solve_closed_loop_steady_state(
             ),
         )
 
-    values = np.linalg.eigvals(coarse)
-    finer = _match(values, np.linalg.eigvals(fine))
-    uncertainty = np.abs(values - finer)
+    fd_values = np.linalg.eigvals(coarse)
+    spread = np.abs(fd_values - _match(fd_values, np.linalg.eigvals(fine)))
+    analytic, reason = _analytic_monodromy(plan, orbit)
+    notes: list[str] = []
+    if analytic is None:
+        method, primary, values, uncertainty = (
+            "central_finite_difference",
+            coarse,
+            fd_values,
+            spread,
+        )
+        notes.append(f"analytic monodromy not applicable ({reason}); finite differences only")
+    else:
+        method, primary = "analytic_saltation", analytic
+        values = np.linalg.eigvals(analytic)
+        fd_matched = _match(values, fd_values)
+        disagreement = np.abs(values - fd_matched)
+        agree = ClosedLoopAssumption(
+            name="analytic_and_finite_difference_agree",
+            held=bool(np.max(disagreement) <= METHOD_AGREEMENT_TOLERANCE),
+            margin=float(METHOD_AGREEMENT_TOLERANCE - np.max(disagreement)),
+            detail=(
+                f"max multiplier difference {float(np.max(disagreement)):.3e} between "
+                "the analytic monodromy and central finite differences of the "
+                f"production cycle map (budget {METHOD_AGREEMENT_TOLERANCE:.0e})"
+            ),
+        )
+        assumptions = (*assumptions, agree)
+        if not agree.held:
+            # Two methods disagreeing is a defect to diagnose, not noise to
+            # average: no verdict rather than a choice between them.
+            return ClosedLoopSteadyState(
+                converged=True,
+                iterations=iterations,
+                residual_inf=residual_inf,
+                period_s=plan.period,
+                state_names=names,
+                state=tuple(float(value) for value in z),
+                stability="not_assessed",
+                monodromy_method=method,
+                assumptions=assumptions,
+                notes=("the analytic and finite-difference monodromies disagree",),
+            )
+        uncertainty = np.maximum(
+            disagreement, np.abs(_match(values, np.linalg.eigvals(fine)) - fd_matched)
+        )
     order = np.argsort(-np.abs(values))
     frequency = 1.0 / plan.period
     multipliers = tuple(
@@ -607,6 +826,8 @@ def solve_closed_loop_steady_state(
         state=tuple(float(value) for value in z),
         stability=stability,
         multipliers=multipliers,
-        monodromy=tuple(tuple(float(value) for value in row) for row in coarse),
+        monodromy=tuple(tuple(float(value) for value in row) for row in primary),
+        monodromy_method=method,
         assumptions=assumptions,
+        notes=tuple(notes),
     )

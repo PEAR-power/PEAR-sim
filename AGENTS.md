@@ -61,6 +61,7 @@ files keep it.
 - `src/pear_sim/analysis/closed_loop.py`: closed-loop periodic orbit (circuit state + `unit_delay` registers) and Floquet multipliers; experimental.
 - `src/pear_sim/analysis/small_signal.py`: two-topology state-space averaging, control-to-output Bode, declared-compensator loop-gain margins.
 - `src/pear_sim/evidence/stability.py`: retained stability bundles with blocking convergence/CCM/margin gates.
+- `src/pear_sim/evidence/floquet.py`: retained closed-loop Floquet bundles (`analyze floquet`), blocking orbit/assessed/stable gates.
 - `src/pear_sim/api/cli.py`: stable agent-facing process contract.
 - `schema/model.schema.json`: normative structural schema for `pear-sim/v0.1`.
 - `schema/expectations.schema.json`: structural schema for `pear-sim/expectations/v0.1`.

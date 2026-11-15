@@ -109,12 +109,25 @@ artifacts = api.stability("examples/buck.yaml", "out/stab",
   to ~1e-9 relative; margins match an independent `brentq` computation on the
   closed form.
 
-## Closed-loop orbit and Floquet multipliers (experimental, Python API only)
+## Closed-loop orbit and Floquet multipliers (experimental)
 
 The margins above attest a **declared** compensator on an **averaged** model.
 `solve_closed_loop_steady_state` asks the question directly on the switching
 model with the controller inside it: does a small perturbation of the
 closed-loop periodic orbit decay or grow from one cycle to the next?
+
+```console
+uv run pear-sim analyze floquet examples/buck_closed_loop_floquet.yaml --out runs/floquet
+uv run pear-sim analyze floquet my_loop.yaml --out runs/f2 \
+    --initial-state l1=0.92 --initial-state signal:int_prev=0.0167
+```
+
+The bundle holds `floquet.json` (orbit, multipliers, monodromy, assumptions),
+`floquet-evidence.json` (three blocking gates — `closed_loop_orbit_converged`,
+`multipliers_assessed`, `locally_stable` — and the claim boundary) and
+`artifact-manifest.json`. Exit code 0: locally stable; 1: evidence retained but
+unstable, not resolved or not assessed; 2: model outside scope or invalid input,
+nothing written.
 
 ```python
 from pear_sim.spec.model import load_model
@@ -136,6 +149,17 @@ each `unit_delay`'s `initial`). Newton finds `z* = F(z*)`; the monodromy
 `dF/dz` at `z*` comes from central differences at two step sizes, and its
 eigenvalues are the Floquet multipliers. All `|mu| < 1` means local stability;
 the angle of a multiplier gives the frequency a perturbation oscillates at.
+
+Two independent monodromies. Where the orbit has no natural commutation, the
+primary one is **analytic**: the product of `expm(a_k tau_k)` over the orbit's
+own compiled modes, plus the switching-instant term
+`Phi_after (f_before - f_after) · T dd/dz` for each controlled turn-off, with
+`dd/dz` from forward differentiation of the declared block equations — no
+probing of the simulator. Central finite differences of the production cycle
+map are computed every time as a cross-check; if the two disagree by more than
+1e-6 the verdict is withheld (`not_assessed`) rather than one of them chosen.
+With a natural commutation (DCM) the analytic rule does not apply and the
+result says so and uses finite differences alone (`monodromy_method`).
 
 Claim boundary:
 
@@ -160,6 +184,11 @@ Claim boundary:
 
 Verification (`tests/test_closed_loop_floquet.py`):
 
+- Analytic monodromy vs the closed-form oracle below: multipliers 1.6e-15 /
+  4.8e-14, monodromy entries 3.4e-11 / 1.7e-10; dropping the switching-instant
+  term moves the multipliers by 1.4e-2 / 2.1e-1 and is caught at runtime by the
+  finite-difference cross-check. In DCM one multiplier is exactly 0 (the
+  inductor current returns to zero every cycle, erasing its perturbation).
 - **Closed-form oracle** (`tests/reference/buck_closed_loop_floquet_oracle.py`,
   imports nothing from PEARSim): for the ideal CCM buck under a sampled PI both
   topologies share the state matrix, so the monodromy is two 2×2 matrix

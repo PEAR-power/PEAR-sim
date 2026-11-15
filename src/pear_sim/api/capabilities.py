@@ -182,7 +182,8 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
         "id": "analysis.steady_state.closed_loop_floquet",
         "status": "experimental",
         "scope": (
-            "Python API only: control laws in the signal layer driving signal_pwm, "
+            "`pear-sim analyze floquet` and the Python API: control laws in the "
+            "signal layer driving signal_pwm, "
             "smooth time-invariant blocks (constant, probe, gain, sum, product, "
             "divide, saturate away from its limits, unit_delay, model-level "
             "switch), DC sources, one switching frequency; built-in sampled "
@@ -192,11 +193,15 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
         "statement": (
             "Newton shooting on the production one-period map of the state "
             "augmented with every unit_delay register, then Floquet multipliers "
-            "from a central-difference monodromy at two step sizes. Claims LOCAL "
+            "from an analytic monodromy (orbit modes' matrix exponentials plus the "
+            "controlled switching-instant term) cross-checked every run against "
+            "central finite differences; finite differences alone when the orbit "
+            "has a natural commutation. Claims LOCAL "
             "stability of the computed orbit only; the verdict is withheld when a "
             "multiplier is within its step-size spread of the unit circle, and no "
             "multipliers are reported when a limiter, the duty clamp or the mode "
-            "sequence changes across the derivative runs."
+            "sequence changes across the derivative runs, or when the two "
+            "monodromies disagree."
         ),
         "evidence": [
             "closed-form oracle for the ideal CCM buck under a sampled PI (shared state "

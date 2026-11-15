@@ -321,3 +321,123 @@ def test_engine_matches_the_closed_form_oracle(solved, name, gains) -> None:
     )
     assert np.max(np.abs(engine - np.sort_complex(oracle.multipliers))) < 1e-7
     assert np.max(np.abs(np.asarray(result.monodromy) - oracle.monodromy)) < 1e-6
+
+
+# --- K3: analytic monodromy from the orbit's compiled modes ---------------
+
+
+@pytest.mark.parametrize(("name", "gains"), [("healthy", HEALTHY), ("hot", HOT)])
+def test_analytic_monodromy_matches_the_oracle_to_machine_precision(
+    solved, name, gains
+) -> None:
+    """Measured 2026-11-15: multipliers 1.6e-15 / 4.8e-14, monodromy entries
+    3.4e-11 / 1.7e-10 against the closed form; the finite-difference
+    cross-check agrees to 1.2e-11."""
+
+    kp, ki = gains
+    result = solved[name][1]
+    assert result.monodromy_method == "analytic_saltation"
+    (agreement,) = [
+        item for item in result.assumptions if item.name == "analytic_and_finite_difference_agree"
+    ]
+    assert agreement.held
+    oracle = oracle_solve(BuckLoop(**_PLANT, kp=kp, ki=ki))
+    engine = np.sort_complex(
+        np.asarray([complex(item.real, item.imag) for item in result.multipliers])
+    )
+    assert np.max(np.abs(engine - np.sort_complex(oracle.multipliers))) < 1e-10
+    assert np.max(np.abs(np.asarray(result.monodromy) - oracle.monodromy)) < 1e-8
+
+
+def test_a_missing_saltation_term_is_caught_at_runtime(tmp_path: Path, monkeypatch) -> None:
+    """Mutation: drop the controlled-edge term (the controller then does not
+    act on the plant in the linearisation). The built-in cross-check against
+    finite differences must withhold the verdict rather than publish it.
+    Measured: the multipliers move by 1.4e-2 (healthy) / 2.1e-1 (hot)."""
+
+    monkeypatch.setattr(
+        closed_loop,
+        "_saltation_term",
+        lambda after_edge, jump, period, duty_row: np.zeros((len(jump), len(duty_row))),
+    )
+    for gains in (HEALTHY, HOT):
+        result = solve_closed_loop_steady_state(_model(tmp_path, gains))
+        assert result.stability == "not_assessed"
+        assert not result.multipliers
+        (agreement,) = [
+            item
+            for item in result.assumptions
+            if item.name == "analytic_and_finite_difference_agree"
+        ]
+        assert not agreement.held
+        assert agreement.margin < -1e-3
+
+
+def test_dcm_falls_back_to_finite_differences_and_forgets_the_inductor(tmp_path: Path) -> None:
+    """In DCM the diode turns off at a state-dependent instant (a natural
+    commutation): the analytic rule does not cover it and says so. Physics
+    check on the result: the inductor current returns to zero every cycle,
+    so a perturbation of it is erased — one multiplier is exactly 0."""
+
+    path = tmp_path / "dcm.yaml"
+    body = BODY.format(kp=0.002, ki=30.0, integral0=0.01).replace(
+        "value: 5.45 ohm", "value: 60 ohm"
+    )
+    path.write_text(body.replace("initial_current: 0.92 A", "initial_current: 0 A"), encoding="utf-8")
+    result = solve_closed_loop_steady_state(load_model(path))
+    assert result.converged
+    assert result.monodromy_method == "central_finite_difference"
+    assert "natural_commutation" in result.notes[0]
+    assert result.stability == "stable"
+    assert min(item.magnitude for item in result.multipliers) < 1e-6
+
+
+# --- K5: retained CLI bundle -------------------------------------------------
+
+
+def test_cli_retains_a_manifested_bundle_and_exit_codes_carry_the_verdict(
+    tmp_path: Path,
+) -> None:
+    import json
+
+    from pear_sim.api.cli import main
+
+    stable_out = tmp_path / "stable"
+    code = main(
+        ["analyze", "floquet", str(ROOT / "examples" / "buck_closed_loop_floquet.yaml"),
+         "--out", str(stable_out), "--json"]
+    )
+    assert code == 0
+    evidence = json.loads((stable_out / "floquet-evidence.json").read_text())
+    assert evidence["schema"] == "pear-sim/floquet-evidence/v0.1"
+    assert evidence["stability"] == "stable"
+    assert [gate["id"] for gate in evidence["gates"]] == [
+        "closed_loop_orbit_converged",
+        "multipliers_assessed",
+        "locally_stable",
+    ]
+    assert "not validation against hardware" in evidence["claim_boundary"]
+    manifest = json.loads((stable_out / "artifact-manifest.json").read_text())
+    listed = {entry["path"] for entry in manifest["artifacts"]}
+    assert {"floquet.json", "floquet-evidence.json"} <= listed
+    floquet = json.loads((stable_out / "floquet.json").read_text())
+    assert floquet["monodromy_method"] == "analytic_saltation"
+
+    hot = _model(tmp_path, HOT)
+    hot_out = tmp_path / "hot"
+    assert main(["analyze", "floquet", str(hot.source_path), "--out", str(hot_out)]) == 1
+    hot_evidence = json.loads((hot_out / "floquet-evidence.json").read_text())
+    assert hot_evidence["overall_status"] == "fail"
+    assert hot_evidence["gates"][-1]["status"] == "fail"
+
+    refused_out = tmp_path / "refused"
+    assert (
+        main(["analyze", "floquet", str(ROOT / "examples" / "buck_closed_loop.yaml"),
+              "--out", str(refused_out)])
+        == 2
+    )
+    assert not refused_out.exists()
+
+    bad = main(["analyze", "floquet", str(hot.source_path), "--out",
+                str(tmp_path / "bad"), "--initial-state", "l1"])
+    assert bad == 2
