@@ -37,6 +37,7 @@ from pear_sim.review.packets import (
     prepare_topology_review,
 )
 from pear_sim.evidence.run_compare import compare_runs
+from pear_sim.evidence.floquet import run_floquet_analysis
 from pear_sim.evidence.stability import run_stability_analysis
 from pear_sim.core.solver import HybridSimulator
 from pear_sim.evidence.sweep import (
@@ -249,6 +250,27 @@ def build_parser() -> argparse.ArgumentParser:
     stability.add_argument("--request", type=Path, help="Stability request JSON")
     stability.add_argument("--out", type=Path, required=True)
     stability.add_argument("--json", action="store_true")
+    floquet = analyze_actions.add_parser(
+        "floquet",
+        help=(
+            "Closed-loop periodic orbit and Floquet multipliers (experimental; "
+            "control law in the signal layer driving signal_pwm)"
+        ),
+    )
+    floquet.add_argument("model", type=Path)
+    floquet.add_argument("--out", type=Path, required=True)
+    floquet.add_argument(
+        "--initial-state",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help=(
+            "Newton start for one state (SI): a circuit state id or "
+            "signal:<unit_delay id>; repeatable. Defaults to the model's "
+            "declared initial values."
+        ),
+    )
+    floquet.add_argument("--json", action="store_true")
 
     compare = subparsers.add_parser(
         "compare",
@@ -659,6 +681,36 @@ def main(argv: list[str] | None = None) -> int:
                 for record in payload["capabilities"]:
                     print(f"{record['status']:<12} {record['id']}")
             return 0
+        if args.command == "analyze" and args.analysis_kind == "floquet":
+            start: dict[str, float] = {}
+            for item in args.initial_state:
+                name, separator, value = item.partition("=")
+                if not separator or not name:
+                    raise ValueError(
+                        f"--initial-state expects NAME=VALUE, got {item!r}"
+                    )
+                start[name] = float(value)
+            floquet_artifacts = run_floquet_analysis(
+                args.model, args.out, initial_state=start or None
+            )
+            payload = {
+                "ok": True,
+                "overall_status": floquet_artifacts.overall_status,
+                "stability": floquet_artifacts.stability,
+                "floquet_json": str(floquet_artifacts.floquet_json),
+                "evidence_json": str(floquet_artifacts.evidence_json),
+                "artifact_manifest": str(floquet_artifacts.artifact_manifest),
+            }
+            print(
+                json.dumps(payload, indent=2)
+                if args.json
+                else (
+                    f"Floquet evidence: {floquet_artifacts.evidence_json} "
+                    f"(stability={floquet_artifacts.stability}, "
+                    f"overall_status={floquet_artifacts.overall_status})"
+                )
+            )
+            return 0 if floquet_artifacts.overall_status == "pass" else 1
         if args.command == "analyze":
             artifacts = run_stability_analysis(
                 args.model, args.out, request=args.request

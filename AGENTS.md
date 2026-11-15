@@ -58,8 +58,10 @@ files keep it.
 - `src/pear_sim/reporting/numerical_report.py`: offline presentation-only projection of recorded numerical evidence.
 - `src/pear_sim/reporting/report.py`: bounded, offline human report projection; it must not recompute producer metrics.
 - `src/pear_sim/analysis/steady_state.py`: periodic steady state via Newton shooting on the production cycle map.
+- `src/pear_sim/analysis/closed_loop.py`: closed-loop periodic orbit (circuit state + `unit_delay` registers) and Floquet multipliers; experimental.
 - `src/pear_sim/analysis/small_signal.py`: two-topology state-space averaging, control-to-output Bode, declared-compensator loop-gain margins.
 - `src/pear_sim/evidence/stability.py`: retained stability bundles with blocking convergence/CCM/margin gates.
+- `src/pear_sim/evidence/floquet.py`: retained closed-loop Floquet bundles (`analyze floquet`), blocking orbit/assessed/stable gates.
 - `src/pear_sim/api/cli.py`: stable agent-facing process contract.
 - `schema/model.schema.json`: normative structural schema for `pear-sim/v0.1`.
 - `schema/expectations.schema.json`: structural schema for `pear-sim/expectations/v0.1`.
