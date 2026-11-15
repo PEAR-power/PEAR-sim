@@ -16,6 +16,21 @@ break the model format; every break carries a migration note).
   Non-salient at constant speed agrees to ~1e-12; salient rotor, speed ramps and an
   unsaturated flux map agree within 2 % at a 10 us step with first-order convergence.
   Example `examples/pmsm_sine_fed_driven.yaml`.
+- `core_losses` section: a post-processing core-loss estimate for linear inductors by
+  the improved Generalized Steinmetz Equation (iGSE) over the last declared period of
+  the recorded current (`B = L·i/(N·A_e)`), with material cards carrying Steinmetz
+  ranges, the `ct(T)` temperature factor, mandatory provenance and a validity envelope.
+  New artifact `core-losses.json`, summary entry `core_losses`, capability
+  `electrothermal.core_loss_igse` (experimental). Validated against measured MagNet N87
+  core loss (`tests/test_core_losses_magnet.py`, data subset in `tests/data/`). New
+  optional section only: existing models are unchanged.
+- Lyapunov certificate for a `stable` closed-loop Floquet verdict: `floquet.json` stores `P`
+  with `P` and `P - Mᵀ P M` positive definite (checked by Cholesky, eigenvalue-free, valid
+  for both computed monodromies), and `analyze floquet` has a blocking
+  `lyapunov_certificate` gate. The certificate must guarantee a per-cycle decrease of `V` of at least 1e-8
+  (unit-free), so round-off cannot certify a map on the unit circle. Anyone can re-check it from the bundle with two
+  factorisations.
+
 - Closed-loop periodic steady state and Floquet multipliers
   (`pear_sim.analysis.closed_loop.solve_closed_loop_steady_state`, experimental, Python
   API only): Newton shooting on the production cycle map with the state augmented by every

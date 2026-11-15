@@ -729,6 +729,159 @@
     "loss_analysis": {
       "type": "object"
     },
+    "core_losses": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evaluation_temperature_c",
+        "period",
+        "materials",
+        "inductors"
+      ],
+      "properties": {
+        "evaluation_temperature_c": {
+          "type": "number"
+        },
+        "period": {
+          "type": [
+            "string",
+            "number"
+          ]
+        },
+        "materials": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 32,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "provenance",
+              "validity",
+              "steinmetz_ranges"
+            ],
+            "properties": {
+              "provenance": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "source"
+                ],
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "page": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "figure": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "validity": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "temperature_min_c",
+                  "temperature_max_c",
+                  "flux_density_peak_max_t"
+                ],
+                "properties": {
+                  "temperature_min_c": {
+                    "type": "number"
+                  },
+                  "temperature_max_c": {
+                    "type": "number"
+                  },
+                  "flux_density_peak_max_t": {
+                    "type": "number"
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                }
+              },
+              "steinmetz_ranges": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "frequency_min_hz",
+                    "frequency_max_hz",
+                    "k",
+                    "alpha",
+                    "beta"
+                  ],
+                  "properties": {
+                    "frequency_min_hz": {
+                      "type": "number"
+                    },
+                    "frequency_max_hz": {
+                      "type": "number"
+                    },
+                    "k": {
+                      "type": "number"
+                    },
+                    "alpha": {
+                      "type": "number"
+                    },
+                    "beta": {
+                      "type": "number"
+                    },
+                    "ct0": {
+                      "type": "number"
+                    },
+                    "ct1": {
+                      "type": "number"
+                    },
+                    "ct2": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "inductors": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 64,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "material",
+              "turns",
+              "effective_area_m2",
+              "effective_volume_m3"
+            ],
+            "properties": {
+              "material": {
+                "type": "string",
+                "minLength": 1
+              },
+              "turns": {
+                "type": "number"
+              },
+              "effective_area_m2": {
+                "type": "number"
+              },
+              "effective_volume_m3": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      }
+    },
     "machines": {
       "type": "object",
       "minProperties": 1,

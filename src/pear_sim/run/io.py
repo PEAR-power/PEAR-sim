@@ -21,6 +21,7 @@ from pear_sim.run.contracts import model_hashes, resolved_model_dict, sha256_fil
 from pear_sim.spec.signals import signal_unit
 from pear_sim.analysis.gate_drive import build_gate_drive_observation
 from pear_sim.analysis.confidence import build_confidence_card
+from pear_sim.analysis.core_losses import build_core_losses_observation
 from pear_sim.analysis.losses_thermal import build_losses_thermal_observation
 from pear_sim.analysis.mode_coverage import build_mode_coverage
 from pear_sim.spec.model import Model
@@ -274,6 +275,9 @@ def write_result(
     losses_thermal = None
     if getattr(result.model, "loss_analysis", None) is not None:
         losses_thermal = build_losses_thermal_observation(result)
+    core_losses = None
+    if getattr(result.model, "core_losses", None) is not None:
+        core_losses = build_core_losses_observation(result)
     resonance = build_resonance_observation(result)
     harmonic_analysis = _bound_harmonic_analysis(
         getattr(result, "harmonic_analysis", None),
@@ -572,6 +576,8 @@ def write_result(
         _write_json(destination / "harmonics.json", harmonic_analysis)
     if losses_thermal is not None:
         _write_json(destination / "losses-thermal.json", losses_thermal)
+    if core_losses is not None:
+        _write_json(destination / "core-losses.json", core_losses)
     confidence_card = build_confidence_card(result.model)
     _write_json(destination / "confidence-card.json", confidence_card)
     _write_json(destination / "model.resolved.json", resolved_model_dict(result.model))
@@ -637,6 +643,14 @@ def write_result(
             "total_mean_power_w": losses_thermal.get("total_mean_power_w"),
             "warnings": losses_thermal.get("warnings"),
         }
+    if core_losses is not None:
+        summary_payload["core_losses"] = {
+            "artifact": "core-losses.json",
+            "schema": core_losses["schema"],
+            "claim": core_losses["claim"],
+            "total_power_w": core_losses["total_power_w"],
+            "warnings": core_losses["warnings"],
+        }
     _write_json(destination / "summary.json", summary_payload)
 
     run_files: dict[str, str] = {
@@ -668,6 +682,8 @@ def write_result(
         run_files["harmonics"] = "harmonics.json"
     if losses_thermal is not None:
         run_files["losses_thermal"] = "losses-thermal.json"
+    if core_losses is not None:
+        run_files["core_losses"] = "core-losses.json"
     run_files["resonance"] = "resonance.json"
     run_files["confidence_card"] = "confidence-card.json"
 
