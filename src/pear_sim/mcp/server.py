@@ -125,8 +125,8 @@ DESCRIPTIONS = {
         compensator — unlike loop_gain. A stable verdict also needs a Lyapunov
         certificate (second, eigenvalue-free check). Claims LOCAL stability of this
         orbit only. Scope: DC sources, one switching frequency, smooth signal blocks
-        (saturate only away from its limits); natural commutation (DCM) is judged by
-        finite differences alone. Built-in sampled controllers, threshold/lookup
+        (saturate only away from its limits); DCM is covered (one multiplier
+        is then exactly 0: the inductor current is reset every cycle). Built-in sampled controllers, threshold/lookup
         blocks, waveform sources, machines and saturable inductors are refused with
         the reason. If Newton does
         not converge (often: duty clamped at a limiter), pass `initial_state`

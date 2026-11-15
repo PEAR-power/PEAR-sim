@@ -247,6 +247,9 @@ def test_out_of_scope_models_are_refused_by_name(example: str, fragment: str) ->
 from tests.reference.buck_closed_loop_floquet_oracle import (  # noqa: E402
     BuckLoop,
     rlc_multipliers,
+    solve_dcm,
+)
+from tests.reference.buck_closed_loop_floquet_oracle import (  # noqa: E402
     solve as oracle_solve,
 )
 
@@ -373,23 +376,91 @@ def test_a_missing_saltation_term_is_caught_at_runtime(tmp_path: Path, monkeypat
         assert agreement.margin < -1e-3
 
 
-def test_dcm_falls_back_to_finite_differences_and_forgets_the_inductor(tmp_path: Path) -> None:
-    """In DCM the diode turns off at a state-dependent instant (a natural
-    commutation): the analytic rule does not cover it and says so. Physics
-    check on the result: the inductor current returns to zero every cycle,
-    so a perturbation of it is erased — one multiplier is exactly 0."""
-
+def _dcm_model(tmp_path: Path):
     path = tmp_path / "dcm.yaml"
-    body = BODY.format(kp=0.002, ki=30.0, integral0=0.01).replace(
+    body = BODY.format(kp=0.002, ki=30.0, integral0=0.0066).replace(
         "value: 5.45 ohm", "value: 60 ohm"
     )
     path.write_text(body.replace("initial_current: 0.92 A", "initial_current: 0 A"), encoding="utf-8")
-    result = solve_closed_loop_steady_state(load_model(path))
+    return load_model(path)
+
+
+DCM_LOAD_OHM = 60.0
+
+
+def test_dcm_analytic_monodromy_matches_the_dcm_oracle(tmp_path: Path) -> None:
+    """In DCM the diode turns off at a state-dependent instant; the analytic
+    path carries it by the guard saltation and must agree with a closed form
+    derived differently (three exact intervals, brentq on the fall time,
+    implicit-function derivatives — no saltation matrix).
+
+    Measured 2026-11-15 at Newton tolerance 1e-12: multipliers 2.7e-13,
+    monodromy 1.9e-11 relative, duty 6e-11. At the default 1e-9 Newton stops
+    one iteration earlier and the orbit (not the saltation) is off by ~1e-7:
+    hence the tighter tolerance here."""
+
+    result = solve_closed_loop_steady_state(_dcm_model(tmp_path), tolerance=1e-12)
     assert result.converged
-    assert result.monodromy_method == "central_finite_difference"
-    assert "natural_commutation" in result.notes[0]
+    assert result.monodromy_method == "analytic_saltation"
+    (agreement,) = [
+        item for item in result.assumptions if item.name == "analytic_and_finite_difference_agree"
+    ]
+    assert agreement.held
+    oracle = solve_dcm(BuckLoop(**{**_PLANT, "load_ohm": DCM_LOAD_OHM}, kp=0.002, ki=30.0))
+    engine = np.sort_complex(
+        np.asarray([complex(item.real, item.imag) for item in result.multipliers])
+    )
+    assert np.max(np.abs(engine - np.sort_complex(oracle.multipliers))) < 1e-11
+    scale = np.max(np.abs(oracle.monodromy))
+    assert np.max(np.abs(np.asarray(result.monodromy) - oracle.monodromy)) < 1e-9 * scale
+    state = dict(zip(result.state_names, result.state, strict=True))
+    assert 30.0 * state["signal:int_prev"] == pytest.approx(oracle.duty, rel=1e-9)
+    # Physics: the current returns to zero every cycle, so a perturbation of it
+    # is erased — one multiplier is exactly 0, and the inductor column is zero.
+    assert min(item.magnitude for item in result.multipliers) < 1e-12
     assert result.stability == "stable"
-    assert min(item.magnitude for item in result.multipliers) < 1e-6
+
+
+def test_the_dcm_oracle_reaches_the_textbook_duty_as_ripple_vanishes() -> None:
+    """The oracle checked by physics, not by the engine: the textbook DCM buck
+    duty D = sqrt(2 L fsw / R * M^2 / (1 - M)) assumes a ripple-free output.
+    The oracle's gap to it must shrink as 1/C (measured 1.04e-3, 1.04e-4,
+    1.04e-5 for C = 0.1, 1, 10 mF)."""
+
+    plant = {**_PLANT, "load_ohm": DCM_LOAD_OHM}
+    m = plant["vref_v"] / plant["vin_v"]
+    textbook = np.sqrt(
+        2.0 * plant["inductance_h"] * plant["switching_frequency_hz"] / plant["load_ohm"]
+        * m * m / (1.0 - m)
+    )
+    gaps = []
+    for capacitance in (100e-6, 1e-3, 1e-2):
+        orbit = solve_dcm(
+            BuckLoop(**{**plant, "capacitance_f": capacitance}, kp=0.002, ki=30.0)
+        )
+        gaps.append(orbit.duty / textbook - 1.0)
+    assert 0.0 < gaps[2] < gaps[1] < gaps[0] < 2e-3
+    assert gaps[0] / gaps[1] == pytest.approx(10.0, rel=0.02)
+    assert gaps[1] / gaps[2] == pytest.approx(10.0, rel=0.02)
+
+
+def test_a_missing_guard_saltation_is_caught_at_runtime(tmp_path: Path, monkeypatch) -> None:
+    """Mutation: drop the natural-commutation saltation (S = I). The inductor
+    perturbation then survives the zero-current interval; the built-in
+    finite-difference cross-check must withhold the verdict."""
+
+    monkeypatch.setattr(
+        closed_loop,
+        "_guard_saltation",
+        lambda f_minus, f_plus, guard, slope: np.eye(len(f_minus)),
+    )
+    result = solve_closed_loop_steady_state(_dcm_model(tmp_path))
+    assert result.stability == "not_assessed"
+    (agreement,) = [
+        item for item in result.assumptions if item.name == "analytic_and_finite_difference_agree"
+    ]
+    assert not agreement.held
+    assert agreement.margin < -1e-3
 
 
 # --- K5: retained CLI bundle -------------------------------------------------

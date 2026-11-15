@@ -9,6 +9,13 @@ break the model format; every break carries a migration note).
 
 ### Added
 
+- Closed-loop Floquet in DCM is analytic: the guard saltation
+  `S = I + (f+ - f-) gᵀ/(g·f-)` at each natural commutation, so a DCM orbit no longer
+  falls back to finite differences alone. New closed-form DCM oracle
+  (`tests/reference/buck_closed_loop_floquet_oracle.py`, derived without saltation
+  matrices) agrees to 2.7e-13 on the multipliers; dropping the saltation is caught by
+  the built-in cross-check. A natural commutation coincident with a gate edge, or a
+  grazing one, still uses finite differences and says why.
 - Signal block values may reference unit-less parameters (`gain: "${kp}"` with
   `kp: 0.002`), so `--set`, MCP `overrides` and parameter sweeps reach controller gains,
   limits and initial values. Bit-identical to the literal; a parameter with a unit in a

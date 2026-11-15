@@ -159,16 +159,21 @@ each `unit_delay`'s `initial`). Newton finds `z* = F(z*)`; the monodromy
 eigenvalues are the Floquet multipliers. All `|mu| < 1` means local stability;
 the angle of a multiplier gives the frequency a perturbation oscillates at.
 
-Two independent monodromies. Where the orbit has no natural commutation, the
-primary one is **analytic**: the product of `expm(a_k tau_k)` over the orbit's
-own compiled modes, plus the switching-instant term
+Two independent monodromies. The primary one is **analytic**: the product of
+`expm(a_k tau_k)` over the orbit's own compiled modes, with the guard saltation
+`S = I + (f+ - f-) gᵀ / (g · f-)` at every natural commutation (a diode current
+or voltage guard `g` crossing zero at its own instant — DCM), plus the
+switching-instant term
 `Phi_after (f_before - f_after) · T dd/dz` for each controlled turn-off, with
 `dd/dz` from forward differentiation of the declared block equations — no
 probing of the simulator. Central finite differences of the production cycle
 map are computed every time as a cross-check; if the two disagree by more than
 1e-6 the verdict is withheld (`not_assessed`) rather than one of them chosen.
-With a natural commutation (DCM) the analytic rule does not apply and the
-result says so and uses finite differences alone (`monodromy_method`).
+Entering the zero-current interval of DCM, `f+` is zero on the frozen current,
+so `S` erases that component of a perturbation: a DCM orbit has a multiplier of
+exactly 0. When a natural commutation coincides with a gate edge, or grazes its
+guard (`g · f- ≈ 0`), the saltation is undefined; the result says so and uses
+finite differences alone (`monodromy_method`).
 
 Lyapunov certificate. A `stable` verdict also carries an eigenvalue-free
 witness in `floquet.json` (`lyapunov_certificate`): a matrix `P` such that `P`
