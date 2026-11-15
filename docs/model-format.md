@@ -104,6 +104,7 @@ The version of this example used by the repository is in [`../examples/buck.yaml
 | `device_cards` | object | no | Device loss/thermal cards; see §7a. |
 | `cooling` | object | no | TIM, heatsink, fan and cold-plate data; see §7a. |
 | `loss_analysis` | object | no | Post-processing loss and junction-temperature estimate; see §7a. |
+| `core_losses` | object | no | Post-processing core-loss estimate (iGSE) on recorded inductor currents; see §7b. |
 | `perturbations` | object | no | Run-level overrides (`forced_gate_windows`). Normally generated from a perturbation request file rather than hand-written; a hand-written one (e.g. a stuck gate) is legal and validated. |
 | `analysis` | object | yes | Transient configuration and an optional explicit harmonic window. |
 | `outputs` | array[string] | yes | List of requested voltages, currents and other signals. |
@@ -1354,6 +1355,73 @@ paths are **mutually exclusive** per device.
 
 Example: `examples/traction_inverter_liquid_cooled.yaml`.
 
+## 7b. Core losses (section `core_losses`)
+
+A post-processing **estimate** of the loss in the magnetic core of linear
+inductors, on the recorded run — the kernel stays ideal and the core loss never
+feeds back into the circuit solution (the same paradigm as §7a).
+
+```yaml
+core_losses:
+  evaluation_temperature_c: 100     # declared core temperature, degC
+  period: "${period}"               # one period of the flux waveform (time quantity or parameter)
+  materials:
+    n87:
+      provenance: {source: "...", page: 1, figure: "..."}   # source mandatory
+      validity:
+        temperature_min_c: 25
+        temperature_max_c: 120
+        flux_density_peak_max_t: 0.39   # max |B| (including DC) the card is good for
+        notes: "..."                     # optional
+      steinmetz_ranges:                  # 1..16, ordered, non-overlapping
+        - {frequency_min_hz: 25000, frequency_max_hz: 150000,
+           k: 3.03, alpha: 1.52, beta: 2.89, ct0: 1.49, ct1: 0.0225, ct2: 0.00011}
+  inductors:
+    l1: {material: n87, turns: 12, effective_area_m2: 7.6e-5, effective_volume_m3: 5.47e-6}
+```
+
+Equations and conventions:
+
+- Flux density from the recorded current, `B(t) = L·i(t) / (N·A_e)` — exact for a
+  linear `inductor` and for nothing else, so a binding to any other component type, or
+  to an inductor in a `couplings` entry, is refused. `i(<inductor>)` must be in `outputs`.
+- Steinmetz: `Pv = k · f^α · B̂^β · ct(T)` in W/m³, f in Hz, `B̂` the AMPLITUDE (half
+  the peak-to-peak swing) in T, `ct(T) = ct0 − ct1·T + ct2·T²` with T in °C (the sign
+  convention of the MAS material database). Missing `ct0/ct1/ct2` default to 1/0/0
+  (no temperature dependence). `ct(T)` must be positive over the validity temperatures.
+- iGSE (Li, Abdallah, Sullivan, 2001) over the LAST declared period of the run:
+  `Pv = (1/T)∫ k_i |dB/dt|^α ΔB^(β−α) dt · ct(T)`, with
+  `k_i = k / ((2π)^(α−1) · 2^(β−α) · ∫₀^{2π}|cos x|^α dx)` and the integral in closed
+  form, so a sinusoid reproduces the Steinmetz equation exactly. The integral runs over
+  the recorded samples as a piecewise-linear B(t); at least 64 samples per period are
+  required (`analysis.transient.output_step`).
+- The Steinmetz range is the one containing `1/period`; outside every range the
+  nearest one is used and flagged `FREQUENCY_OUTSIDE_RANGES` with the signed distance.
+
+The `core-losses.json` artifact holds, per inductor: `status` (`estimated` or
+`not_estimated` with a `reason`), the material card and geometry used, the flux
+density facts (`delta_b_t`, `b_ac_peak_t`, `b_dc_t`, `b_abs_max_t`,
+`periodic_closure_relative`), the selected range, `ki`, `temperature_factor`,
+`volumetric_loss_w_per_m3`, `power_w` and `flags`
+(`FREQUENCY_OUTSIDE_RANGES`, `FLUX_DENSITY_ABOVE_VALIDITY`, `WINDOW_NOT_PERIODIC` when
+B at the end of the window differs from its start by more than 1e-3 of the swing).
+`total_power_w` is `null` unless every inductor was estimated.
+
+Declared omissions: DC-bias dependence (B_dc is recorded, not used), relaxation loss
+in zero-voltage intervals (the i²GSE term), minor hysteresis loops (an inductor whose
+flux reverses direction more than twice per period is `not_estimated`, never
+approximated), feedback into the circuit, and core self-heating.
+
+Evidence: closed-form identities in `tests/test_core_losses.py`, and a VALIDATION
+against measured loss (Princeton MagNet, TDK N87, zero DC bias, 25 and 90 °C) in
+`tests/test_core_losses_magnet.py`: coefficients fitted on the measured sinusoids
+predict the measured triangles and trapezoids within a median error of 20 % and a
+95th-percentile error of 60 %, a bound the shape-blind Steinmetz answer fails. The
+material coefficients in `examples/buck_core_losses_n87.yaml` come from the MAS
+database and are NOT covered by that validation (MAS fits its ferrites preferring
+MagNet data, so the comparison would be circular).
+Example: `examples/buck_core_losses_n87.yaml`.
+
 ## 10. Format-related CLI
 
 Commands directly related to the model format:
@@ -1411,6 +1479,7 @@ DIR/
   signal-trace.jsonl
   machine-trace.jsonl
   losses-thermal.json
+  core-losses.json
   warnings.json
   summary.json
   artifact-manifest.json
@@ -1418,7 +1487,7 @@ DIR/
 
 `gate-drive.json`, the three-phase / NPC modulation artifacts, `harmonics.json`, the
 trace files (`control-trace.jsonl`, `signal-trace.jsonl`, `machine-trace.jsonl`) and
-`losses-thermal.json` are present only when the corresponding control, section or
+`losses-thermal.json` / `core-losses.json` are present only when the corresponding control, section or
 request applies; the `run.json.files` manifest is the authoritative map of the files
 of a specific run. `resonance.json` holds the modal (resonance) audit of the recorded
 run, and `confidence-card.json` maps the features a model uses onto the versioned

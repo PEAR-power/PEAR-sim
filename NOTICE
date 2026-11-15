@@ -2,3 +2,13 @@ PEARSim
 Copyright 2026 PEAR Power and the PEARSim contributors.
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes a subset of the Princeton MagNet measured core-loss data
+(tests/data/magnet_n87_dc0_25c_90c.csv), from
+https://github.com/PrincetonUniversity/magnet, licensed under the MIT License,
+Copyright (c) 2021 Minjie Chen.
+
+examples/buck_core_losses_n87.yaml contains Steinmetz coefficients of the TDK N87
+ferrite copied from the MAS (Magnetic Agnostic Structure) material database,
+https://github.com/Power-Supply-Manufacturers-Association/MAS, licensed under the
+Apache License, Version 2.0.

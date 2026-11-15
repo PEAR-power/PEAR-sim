@@ -9,6 +9,14 @@ break the model format; every break carries a migration note).
 
 ### Added
 
+- `core_losses` section: a post-processing core-loss estimate for linear inductors by
+  the improved Generalized Steinmetz Equation (iGSE) over the last declared period of
+  the recorded current (`B = L·i/(N·A_e)`), with material cards carrying Steinmetz
+  ranges, the `ct(T)` temperature factor, mandatory provenance and a validity envelope.
+  New artifact `core-losses.json`, summary entry `core_losses`, capability
+  `electrothermal.core_loss_igse` (experimental). Validated against measured MagNet N87
+  core loss (`tests/test_core_losses_magnet.py`, data subset in `tests/data/`). New
+  optional section only: existing models are unchanged.
 - `esr` on `capacitor` and `dcr` on `inductor` / `sat_inductor`: a constant series
   resistance, expanded into an ordinary resistor (`<id>.esr`, `<id>.dcr`, internal node
   `<id>.core`) and bit-identical to writing that resistor by hand. Capacitor banks and a
