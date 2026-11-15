@@ -20,6 +20,8 @@ name: buck_closed_loop_floquet
 parameters:
   vin: 24 V
   fsw: 50 kHz
+  kp: 0.002                # controller gains are plain numbers, so overrides and
+  ki: 30.0                 # sweeps reach them: --set kp=0.08 --set ki=150
 
 circuit:
   ground: gnd
@@ -41,8 +43,8 @@ signals:
     err_dt: {type: gain, input: err, gain: 2.0e-5, unit: V}          # * T
     int_prev: {type: unit_delay, input: integral, initial: 0.016667, unit: V}
     integral: {type: sum, inputs: [int_prev, err_dt], unit: V}
-    kp_term: {type: gain, input: err, gain: 0.002, unit: V}
-    ki_term: {type: gain, input: integral, gain: 30.0, unit: V}
+    kp_term: {type: gain, input: err, gain: "${kp}", unit: V}
+    ki_term: {type: gain, input: integral, gain: "${ki}", unit: V}
     u: {type: sum, inputs: [kp_term, ki_term], unit: V}
     duty: {type: saturate, input: u, min: 0.05, max: 0.95, unit: V}
 

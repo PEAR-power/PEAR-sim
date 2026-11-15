@@ -54,7 +54,7 @@ import random
 from typing import Any, Final, Iterable
 
 from pear_sim.errors import ModelError
-from pear_sim.spec.controls import _resolve
+from pear_sim.spec.controls import _REF_RE, _resolve
 from pear_sim.spec.signals import is_signal_expression, signal_unit
 
 MAX_SIGNAL_BLOCKS = 256
@@ -198,6 +198,14 @@ def _require_mapping(value: Any, *, name: str) -> dict[str, Any]:
 
 
 def _require_number(value: Any, *, name: str) -> float:
+    if isinstance(value, str) and _REF_RE.match(value.strip()):
+        # Dimensionless references were substituted before parsing; one that
+        # is still here names a parameter with a unit (or none at all).
+        raise ModelError(
+            f"{name}: {value.strip()} is not a plain number. Block values carry no "
+            "unit (the block declares it), so a parameter used here must be "
+            "declared without one, e.g. `kp: 0.002`"
+        )
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ModelError(f"{name} must be a number")
     result = float(value)
@@ -690,6 +698,38 @@ def _describe_cycle(stuck: Iterable[str], dependencies: dict[str, set[str]]) -> 
 _PI_FIELDS = {"type", "unit", "input", "kp", "ki", "min", "max", "kaw", "initial"}
 
 
+def _substitute_parameters(value: Any, parameters: dict[str, Any], *, name: str) -> Any:
+    """Replace ``${name}`` by the parameter's number where it is dimensionless.
+
+    Controller gains, limits and initial values are plain numbers, so a
+    dimensionless parameter can stand for one — which is what lets
+    ``overrides`` and parameter sweeps reach a controller. A reference to a
+    parameter WITH a unit is left alone: time and frequency fields resolve it
+    themselves, and anywhere else ``_require_number`` refuses it by name.
+    """
+
+    if isinstance(value, dict):
+        return {
+            key: _substitute_parameters(item, parameters, name=f"{name}.{key}")
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _substitute_parameters(item, parameters, name=f"{name}[{index}]")
+            for index, item in enumerate(value)
+        ]
+    if isinstance(value, str):
+        match = _REF_RE.match(value.strip())
+        if match:
+            parameter = match.group(1)
+            if parameter not in parameters:
+                raise ModelError(f"{name}: unknown parameter {parameter!r}")
+            quantity = parameters[parameter]
+            if getattr(quantity, "dimension", None) == "dimensionless":
+                return float(quantity.value)
+    return value
+
+
 def _expand_pi_blocks(raw_blocks: dict[str, Any], period: float) -> dict[str, Any]:
     """Rewrite each ``type: pi`` block into the primitive blocks it means.
 
@@ -788,7 +828,12 @@ def parse_signal_graph(
     task = SignalTask(period=period, offset=offset)
 
     raw_blocks = _expand_pi_blocks(
-        _require_mapping(body.get("blocks"), name="signals.blocks"), period
+        _substitute_parameters(
+            _require_mapping(body.get("blocks"), name="signals.blocks"),
+            parameters or {},
+            name="signals.blocks",
+        ),
+        period,
     )
     if not raw_blocks:
         raise ModelError("signals.blocks must declare at least one block")

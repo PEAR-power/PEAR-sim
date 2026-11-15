@@ -129,8 +129,9 @@ The bundle holds `floquet.json` (orbit, multipliers, monodromy, assumptions),
 `artifact-manifest.json`. Exit code 0: locally stable; 1: evidence retained but
 unstable, not resolved or not assessed; 2: model outside scope or invalid input,
 nothing written. `--set NAME=VALUE` overrides model parameters, as for
-`simulate`; controller gains are literals in the signal blocks, so another gain
-is another model file.
+`simulate`, and reaches the controller wherever a block value is written as
+`"${kp}"` with a unit-less parameter (`kp: 0.002`), as in the shipped example:
+`--set kp=0.08 --set ki=150` is the unstable design.
 
 Agents get the same analysis through the MCP tool `floquet` (same worker and
 code path, so the same numbers): it returns the verdict, the gates, the largest
