@@ -161,6 +161,19 @@ map are computed every time as a cross-check; if the two disagree by more than
 With a natural commutation (DCM) the analytic rule does not apply and the
 result says so and uses finite differences alone (`monodromy_method`).
 
+Lyapunov certificate. A `stable` verdict also carries an eigenvalue-free
+witness in `floquet.json` (`lyapunov_certificate`): a matrix `P` such that `P`
+and `P - Mᵀ P M` are both positive definite, so `V(z) = zᵀ P z` decreases every
+cycle. Re-checking it needs two Cholesky factorisations on the stored numbers
+and nothing else. The same `P` is required to certify the second monodromy too
+(finite differences), and `contraction_bound` — the guaranteed per-cycle decay
+of `V` — must be at least `max |mu|²`. On the shipped example it equals it
+(0.97940130). `P` is taken from the eigenvector metric when that passes: the
+textbook choice `Mᵀ P M - P = -I` is valid here but nearly empty
+(contraction 0.99999998), because the state mixes amperes, volts and
+volt-seconds. A stable verdict without a certificate fails the
+`lyapunov_certificate` gate.
+
 Claim boundary:
 
 - **Local** stability of the computed orbit only — not global stability, not
