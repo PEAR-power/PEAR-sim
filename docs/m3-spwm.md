@@ -30,8 +30,12 @@ must be the model's only logical control in this contract.
 The carrier ratio `N = carrier_frequency / fundamental_frequency` must be an integer
 from 2 through 8333. The modulation index is limited to `0 <= m < 1`; overmodulation and
 clamping are rejected. `sequence` is explicitly `abc` or `acb`. The dead time must
-be non-negative and strictly shorter than the smallest possible command pulse,
-`0.5 * (1 - m) / carrier_frequency`.
+be non-negative and strictly shorter than `0.25 * (1 - m) / carrier_frequency`: the
+low switch turns on one dead time after the high command ends, inside the same cell,
+and the cell tail after the longest pulse is half the smallest command pulse. (Until
+2026-11-16 the documented and loader bound was the full smallest pulse,
+`0.5 * (1 - m) / carrier_frequency`; models between the two passed `lint` and failed
+at run start.)
 
 For carrier cell `k`, references are mathematically sampled once at the cell center.
 This is an offline midpoint-sampled schedule: because the centered pulse begins before

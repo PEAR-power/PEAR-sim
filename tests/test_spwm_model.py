@@ -176,7 +176,7 @@ def test_harmonic_request_is_explicit_and_part_of_request_semantics(tmp_path: Pa
         ("modulation_index", -0.01, r"must be in \[0, 1\)"),
         ("modulation_index", 1.0, r"must be in \[0, 1\)"),
         ("dead_time", "-1 ns", "must be non-negative"),
-        ("dead_time", "5 us", "minimum commanded pulse"),
+        ("dead_time", "5 us", "end-of-cell margin"),
         ("sequence", "cab", r"is not one of \['abc', 'acb'\]"),
     ],
 )
@@ -377,3 +377,29 @@ def test_harmonic_order_signal_work_budget_fails_during_model_loading(
     assert 4 * periods * max_harmonic <= MAX_HARMONIC_QUADRATURE_PANELS
     with pytest.raises(ModelError, match="minimum quadrature work estimate"):
         _load(tmp_path, payload)
+
+
+def test_dead_time_limit_is_the_one_the_scheduler_can_place(tmp_path: Path) -> None:
+    """Regression (found 2026-11-16 by the dead-time acceptance matrix).
+
+    The low switch turns on Td after the high command ends and must do so
+    inside the same carrier cell, i.e. within the cell's tail of
+    0.5*(1-d)*T. With d up to 0.5*(1+m*peak) that tail is only
+    0.25*(1-m*peak)*T. The loader used to accept up to twice that, so a model
+    passed `lint` and failed only when the run started. Here T = 50 us,
+    m = 0.8: limit 2.5 us. 3 us must be rejected at load time; 2.4 us must
+    load AND simulate.
+    """
+
+    from pear_sim.core.solver import HybridSimulator
+
+    too_long = _payload()
+    too_long["controls"]["bridge"]["dead_time"] = "3 us"  # type: ignore[index]
+    with pytest.raises(ModelError, match=r"0\.25\*\(1-modulation_index\*reference_peak\)"):
+        _load(tmp_path, too_long, name="too_long")
+
+    fits = _payload()
+    fits["controls"]["bridge"]["dead_time"] = "2.4 us"  # type: ignore[index]
+    fits["analysis"]["transient"]["stop"] = "1 ms"  # type: ignore[index]
+    fits["analysis"].pop("harmonics", None)  # type: ignore[union-attr]
+    HybridSimulator(_load(tmp_path, fits, name="fits")).simulate()

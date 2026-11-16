@@ -85,6 +85,12 @@ break the model format; every break carries a migration note).
 
 ### Fixed
 
+- Three-phase SPWM: the dead-time bound the loader (and `lint`) accepts is now the one
+  the scheduler can place, `0.25*(1-m*peak)/carrier_frequency`, not the full minimum
+  pulse `0.5*(...)`. A model between the two passed `lint` and failed at run start
+  ("not representable at the requested absolute time origin"). **Migration:** such
+  models never ran; they are now rejected at load time with the bound in the message.
+
 - A saturating `flux_map` no longer diverges in saturation. The machine driver carried
   `L_old*i -> L_new*i` across segment boundaries with the map's DIFFERENTIAL inductances,
   which equals the flux only while the map is linear; in saturation the current ran off

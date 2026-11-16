@@ -314,8 +314,11 @@ def _validate_spwm_metadata(block_id: str, control: PwmControl) -> None:
         raise SimulationError(
             f"Three-phase SPWM dead time must be non-negative for block {block_id!r}"
         )
+    # The low turn-on (command end + Td) must stay inside the carrier cell:
+    # the tail after the longest pulse is 0.25*(1-m*peak)*T. Same bound as the
+    # loader in spec/controls.py.
     guaranteed_command_margin = (
-        0.5 * (1.0 - modulation_index * reference_peak) * control.period
+        0.25 * (1.0 - modulation_index * reference_peak) * control.period
     )
     if control.dead_time >= guaranteed_command_margin:
         raise SimulationError(
