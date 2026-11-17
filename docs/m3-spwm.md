@@ -127,3 +127,44 @@ tests. This is partial VAL-005 evidence only. SVPWM, overmodulation, arbitrary m
 controls, a floating-neutral load, R-only and broader RL matrices, retained modulation
 and dead-time sweeps, an independently sourced THD golden, closed-loop control,
 semiconductor losses, and physical validation remain outside this contract.
+
+## Dead-time acceptance matrix (midpoint-tied neutral)
+
+`tests/test_spwm_dead_time_golden.py` runs the shipped fixture over 24 points —
+plain SPWM and min-max injection, dead time 0 / 0.5 / 1 us, a damped
+`10 ohm / 5 mH` load and a ripple-dominated `40 ohm / 1 mH` load, m = 0.5 and 0.9 — and
+compares each run with `pear_sim.benchmarks.spwm_dead_time`, an independent oracle
+that never imports the solver. With the star on the DC midpoint the three legs decouple,
+so each one is a first-order RL circuit with a piecewise-constant pole voltage, solved
+interval by interval in closed form.
+
+The oracle does not use the textbook dead-time formula. In each gap the pole is pinned
+by the diode that the current sign selects. When the current reaches zero inside the gap
+(at `s = tau*ln(1 + |i0|*R/Vh)`), that diode is starved and the current stays at
+zero with the pole at the load voltage for the rest of the gap. The zero-crossing
+region, where a sign-only model of the error breaks down, is therefore covered instead
+of cut out. A tripwire requires the matrix to clamp leg a inside the harmonic window
+(9 of the 16 nonzero-dead-time points do).
+
+The comparison covers the three phase currents on the whole output grid, the complex
+Fourier coefficients 0..42 of `v_ab` and `v_an` (`v_an` also carries the triplen
+content that cancels in the line voltage), and the `v_ab` THD under the producer's
+bandwidth and DC policy. The THD reference is integrated analytically from the oracle
+waveform, so it is an independent reference value, not a second estimate from the same
+samples. Budgets: 1e-9 for the spectra and THD, and 100 x the declared `rtol` for the
+currents, because they are integrated (measured 2026-11-16: 4.3e-12 and 2.0e-9). Three
+wrong oracles each miss the budget by at least four orders of magnitude: no dead time,
+the pole on the wrong rail, and no zero-current clamp.
+
+On the same oracle, the textbook loss `|dV1| = (4/pi)*Td*fc*Vdc` holds within 2 % on
+the damped load. On the ripple-dominated load the real loss is 0.47-0.90 of the formula,
+because parts of the gaps sit at 0 V instead of on a rail.
+
+The dead time admitted by the scheduler is the tighter of the two documented bounds.
+The low switch must turn on inside the same carrier cell, so `dead_time` must stay below
+`0.25*(1 - m*reference_peak)/carrier_frequency`. A larger value passes the loader and
+is refused when the run starts (tracked separately).
+
+This is verification against an independent solution of the same ideal circuit. The
+floating-neutral star, the sector bridge driven with dead time, unbalanced loads,
+overmodulation and hardware remain outside it.
