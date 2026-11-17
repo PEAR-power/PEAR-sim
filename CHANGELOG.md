@@ -9,6 +9,16 @@ break the model format; every break carries a migration note).
 
 ### Added
 
+- `loss_analysis.tj_mode: self_consistent` — conduction losses iterated to a
+  self-consistent junction temperature trajectory on the recorded run, with the
+  electrothermal loop gain measured and reported; loop gain ≥ 1 returns
+  `thermal_runaway` and no loss number (so does a fixed point that only exists
+  because v_on is clamped at the card's temperature-axis edge). Checked against the closed form
+  Tj* = (Ta + Rth·I²·R0·(1 − α·T0)) / (1 − Rth·I²·R0·α) at loop gains 0.3, 0.9
+  and −0.9 (worst 9e-13 K), runaway at 1.1. On `buck_with_loss_cards.yaml` the
+  devices settle at 53–66 °C instead of the declared 125 °C and the total loss
+  estimate moves 27.45 → 26.79 W. Default `declared` is unchanged bit for bit.
+
 - Dead-time acceptance matrix for the three-phase SPWM inverter (VAL-005): 24 runs
   (SPWM and min-max x dead time 0/0.5/1 us x damped and ripple-dominated RL x m 0.5/0.9)
   against a new independent oracle, `pear_sim.benchmarks.spwm_dead_time`, which solves

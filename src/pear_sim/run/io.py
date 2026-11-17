@@ -643,6 +643,10 @@ def write_result(
             "total_mean_power_w": losses_thermal.get("total_mean_power_w"),
             "warnings": losses_thermal.get("warnings"),
         }
+        if "electrothermal" in losses_thermal:
+            summary_payload["losses_thermal"]["electrothermal_status"] = losses_thermal[
+                "electrothermal"
+            ]["status"]
     if core_losses is not None:
         summary_payload["core_losses"] = {
             "artifact": "core-losses.json",
