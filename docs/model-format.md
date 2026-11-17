@@ -1704,6 +1704,16 @@ Model errors should point to the field path or the component identifier. The cur
 - `ModelError` (`model.invalid`) — structure, references, outputs or parameter range;
 - `UnitError` (`model.units`) — unit parsing or dimension mismatch;
 - `TopologyError` (`model.topology`) — a singular/contradictory mode or no stable diode state;
+- `StateDiscontinuityError` (`model.state_discontinuity`, a subclass of `TopologyError`) — a
+  mode change would make a state jump: a switch or diode closes a loop of capacitors and
+  voltage sources whose voltages disagree, or opens the last path of an inductor current
+  (one inductor, or a node where only inductors with unequal currents remain). The run is
+  refused, never regularized; the CLI's `--json` error carries `details` with the time,
+  the triggering event and one finding per loop or cut (members, jump in V or A). The
+  remedy is the physical element that limits the jump: an `esr` or a switch
+  `on_resistance` in the loop, a freewheeling diode, snubber or clamp across the opened
+  inductor. A loop of capacitors at EQUAL voltages is not a jump and keeps the plain
+  `model.topology` error (it is algebraic, which the ideal kernel does not integrate);
 - `SimulationError` (`simulation.failed`) — integration or event-processing failure.
 
 Errors outside these classes are reported as `io.error` (file system), `request.invalid` (invalid request values) or `internal.error`. The codes are part of the public contract: changing one is a breaking change. JSON Pointer locations are planned before v1 is frozen. The early-alpha message text is not yet a stable API.

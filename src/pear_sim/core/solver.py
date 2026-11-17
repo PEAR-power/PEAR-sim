@@ -13,7 +13,7 @@ import numpy as np
 from scipy.integrate import solve_ivp
 
 from pear_sim.core.circuit import Circuit, CompiledMode, STATE_CONSTRAINT_TOLERANCE
-from pear_sim.errors import SimulationError
+from pear_sim.errors import SimulationError, StateDiscontinuityError
 from pear_sim.core import rust_backend
 from pear_sim.analysis.harmonics import HarmonicAccumulator
 from pear_sim.limits import MAX_RUN_EVENT_ROWS
@@ -73,6 +73,21 @@ from pear_sim.core.scheduling import scheduled_edges as scheduled_edges  # noqa:
 #: Engines that can integrate a segment. "rust" is the optional compiled
 #: kernel (pear-sim-core); "python" is the reference.
 BACKENDS = ("python", "rust")
+
+
+def _describe_events(events: list["SimulationEvent"]) -> str:
+    """Human-readable cause of a mode change, for a state_discontinuity."""
+
+    parts = []
+    for event in events:
+        if event.kind == "scheduled_gate":
+            before, after = ("on" if event.previous else "off"), ("on" if event.current else "off")
+            parts.append(f"gate {event.target!r} {before}->{after}")
+        elif event.kind == "natural_commutation":
+            parts.append(f"natural commutation of {event.target!r}")
+        else:
+            parts.append(f"{event.kind} {event.target!r}")
+    return ", ".join(parts)
 
 
 @dataclass(frozen=True)
@@ -342,13 +357,17 @@ class HybridSimulator:
         if self.model.forced_gate_windows:
             gates = self._force_gate_windows(gates, settings.start)
         self._assert_complementary_interlocks(gates, time=settings.start)
-        diodes, mode = self.circuit.stable_mode(
-            gates,
-            dict(self.circuit.initial_diodes),
-            self.circuit.initial_state,
-            self.guard_tolerance,
-            time=settings.start,
-        )
+        try:
+            diodes, mode = self.circuit.stable_mode(
+                gates,
+                dict(self.circuit.initial_diodes),
+                self.circuit.initial_state,
+                self.guard_tolerance,
+                time=settings.start,
+            )
+        except StateDiscontinuityError as exc:
+            exc.event = exc.event or "the initial state"
+            raise
         self._assert_star_invariants(mode, self.circuit.initial_state)
         return diodes, mode
 
@@ -381,13 +400,17 @@ class HybridSimulator:
             gates = self._force_gate_windows(gates, settings.start)
         self._assert_complementary_interlocks(gates, time=settings.start)
         diodes = dict(self.circuit.initial_diodes)
-        diodes, mode = self.circuit.stable_mode(
-            gates,
-            diodes,
-            state,
-            self.guard_tolerance,
-            time=settings.start,
-        )
+        try:
+            diodes, mode = self.circuit.stable_mode(
+                gates,
+                diodes,
+                state,
+                self.guard_tolerance,
+                time=settings.start,
+            )
+        except StateDiscontinuityError as exc:
+            exc.event = exc.event or "the initial state"
+            raise
         self._assert_star_invariants(mode, state)
         state, constrained_state_projections = self._project_constrained_state(state, mode)
         state_constraint_events = 0
@@ -1171,13 +1194,28 @@ class HybridSimulator:
                         ]
                     )
                 previous_constraints = frozenset(mode.constrained_inductors)
-                stabilized, mode = self.circuit.stable_mode(
-                    gates,
-                    diodes,
-                    state,
-                    self.guard_tolerance,
-                    time=current_time,
+                cause = _describe_events(
+                    [
+                        SimulationEvent(current_time, "natural_commutation", diode.id, False, False)
+                        for diode in (
+                            self.circuit.diodes[index]
+                            for index in roots
+                            if index < len(self.circuit.diodes)
+                        )
+                    ]
                 )
+                try:
+                    stabilized, mode = self.circuit.stable_mode(
+                        gates,
+                        diodes,
+                        state,
+                        self.guard_tolerance,
+                        time=current_time,
+                    )
+                except StateDiscontinuityError as exc:
+                    exc.event = exc.event or cause
+                    raise
+                self._assert_star_continuity(mode, state, current_time, cause)
                 state, projection_count = self._project_constrained_state(state, mode)
                 constrained_state_projections += projection_count
                 if frozenset(mode.constrained_inductors) - previous_constraints:
@@ -1323,6 +1361,55 @@ class HybridSimulator:
                     f"star point {node_name!r}: residual {residual:.12g} A. "
                     "Declare initial_current values that sum to zero at the "
                     "star point."
+                )
+
+    def _assert_star_continuity(
+        self, mode: CompiledMode, state: np.ndarray, time: float, cause: str
+    ) -> None:
+        """Refuse a mode change that cuts inductors carrying unequal currents.
+
+        A floating star of inductors is reduced to the invariant derivative
+        sum(+/- di_k/dt) = 0, which PRESERVES the KCL residual at the star but
+        never restores it. Entering such a mode while the inductor currents do
+        not already sum to zero (a switch opening between two inductors with
+        different currents) would carry that residual through the whole rest
+        of the run as a phantom current into the node. Before 2026-11-17 this
+        ran silently; the only trace was an energy-balance miss blamed on
+        stiffness.
+        """
+
+        for node_name, terms in getattr(mode, "star_constraints", ()):
+            currents = [float(state[index]) for index, _sign in terms]
+            residual = sum(sign * float(state[index]) for index, sign in terms)
+            scale = max((abs(value) for value in currents), default=0.0)
+            # The reduced flow keeps the residual only up to integration error,
+            # so the run's own tolerance bounds the drift; a smaller "jump"
+            # cannot be told from that error. Measured 2026-11-17 on all 41
+            # examples (~61k star entries): plain-inductor stars drift <= 4e-13
+            # relative; coupled windings (rectifier_6pulse_transformer, rtol
+            # 1e-7) 9.5e-8 A = 4.6e-9 relative, 22x under this bound. Real
+            # jumps are amperes.
+            settings = self.model.transient
+            tolerance = max(
+                STATE_CONSTRAINT_TOLERANCE * max(1.0, scale),
+                float(settings.atol) + float(settings.rtol) * scale,
+            )
+            if abs(residual) > tolerance:
+                members = sorted(
+                    self.circuit.state_components[index].id for index, _sign in terms
+                )
+                raise StateDiscontinuityError(
+                    [
+                        {
+                            "kind": "inductor_cut",
+                            "members": members,
+                            "node": node_name,
+                            "jump": abs(residual),
+                            "unit": "A",
+                        }
+                    ],
+                    time=time,
+                    event=cause,
                 )
 
     def _project_constrained_state(
@@ -1668,13 +1755,19 @@ class HybridSimulator:
                     )
                 edge_index += 1
         self._assert_complementary_interlocks(new_gates, time=time)
-        stabilized, mode = self.circuit.stable_mode(
-            new_gates,
-            diodes,
-            state,
-            self.guard_tolerance,
-            time=time,
-        )
+        cause = _describe_events(new_events) or "a source waveform breakpoint"
+        try:
+            stabilized, mode = self.circuit.stable_mode(
+                new_gates,
+                diodes,
+                state,
+                self.guard_tolerance,
+                time=time,
+            )
+        except StateDiscontinuityError as exc:
+            exc.event = exc.event or cause
+            raise
+        self._assert_star_continuity(mode, state, time, cause)
         for diode_id, current in stabilized.items():
             previous = diodes[diode_id]
             if current != previous:

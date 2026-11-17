@@ -9,6 +9,14 @@ break the model format; every break carries a migration note).
 
 ### Added
 
+- `state_discontinuity` diagnostic (`StateDiscontinuityError`, code
+  `model.state_discontinuity`, subclass of `TopologyError`): a switch or diode closing a
+  loop of capacitors/voltage sources at unequal voltages, or opening the last path of an
+  inductor current, is refused with the loop or cut, the jump (V or A), the instant and the
+  triggering event; the CLI `--json` error carries them under `details`. Promised by
+  architecture.md §5.2 and ADR-0001, absent until now. The run is still refused (no
+  impulsive regularization); a capacitor loop at equal voltages keeps `model.topology`.
+
 - `loss_analysis.tj_mode: self_consistent` — conduction losses iterated to a
   self-consistent junction temperature trajectory on the recorded run, with the
   electrothermal loop gain measured and reported; loop gain ≥ 1 returns
@@ -103,6 +111,11 @@ break the model format; every break carries a migration note).
 
 ### Changed
 
+- Failures that are state jumps now report `model.state_discontinuity` instead of
+  `model.topology` (capacitor loop closed by a switch/diode, single inductor cut).
+  Migration: clients branching on `model.topology` should also accept the new code;
+  Python callers catching `TopologyError` are unaffected.
+
 - Faster evidence: the dense-output quadrature and the state-extremum search run as
   array operations (per-mode gather plan; one batched root search per segment) instead
   of Python loops over every output, component and accepted step. Results are
@@ -112,6 +125,13 @@ break the model format; every break carries a migration note).
   lean 74.8 s -> 43.1 s; integration is now 57-64 % of the run.
 
 ### Fixed
+
+- A switch opening between two inductors with different currents ran SILENTLY with a
+  phantom current into the node: the floating-star reduction preserves the KCL residual
+  instead of restoring it, and the only trace was an energy-balance miss attributed to
+  stiffness. It is now a `state_discontinuity`. The check's bound is the run's own
+  atol + rtol*|i| (largest legitimate drift on the 41 examples: 4.6e-9 relative, on
+  coupled windings at rtol 1e-7).
 
 - Three-phase SPWM: the dead-time bound the loader (and `lint`) accepts is now the one
   the scheduler can place, `0.25*(1-m*peak)/carrier_frequency`, not the full minimum
