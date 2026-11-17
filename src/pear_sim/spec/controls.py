@@ -1006,14 +1006,20 @@ def parse_controls(
                 raise ModelError(
                     f"control {control_id}.dead_time must be non-negative"
                 )
+            # NOT the minimum commanded pulse 0.5*(1-m*peak)/fc: the low switch
+            # turns on Td after the high command ends and the scheduler places
+            # that edge inside the SAME carrier cell, whose tail after the
+            # command is only half the minimum low pulse. Accepting up to the
+            # pulse width let a model pass `lint` and fail at run start
+            # (found 2026-11-16). Keep in step with core/scheduling.py.
             maximum_dead_time = (
-                0.5 * (1.0 - modulation_index * reference_peak) / carrier_frequency
+                0.25 * (1.0 - modulation_index * reference_peak) / carrier_frequency
             )
             if dead_time >= maximum_dead_time:
                 raise ModelError(
                     f"control {control_id}.dead_time must be smaller than the "
-                    "minimum commanded pulse, "
-                    "0.5*(1-modulation_index*reference_peak)/carrier_frequency"
+                    "end-of-cell margin after the longest commanded pulse, "
+                    "0.25*(1-modulation_index*reference_peak)/carrier_frequency"
                 )
 
             carrier_period = 1.0 / carrier_frequency

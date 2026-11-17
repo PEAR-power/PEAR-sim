@@ -718,7 +718,7 @@ Source fields:
 | `carrier_phase` | no | time; defaults to `0 s` |
 | `reference_phase` | no | time shift of the sinusoidal reference; defaults to `0 s` |
 | `sequence` | no | explicit `abc` or `acb`; defaults to `abc` |
-| `dead_time` | yes | non-negative and shorter than `0.5*(1-m)/carrier_frequency` |
+| `dead_time` | yes | non-negative and shorter than `0.25*(1-m*peak)/carrier_frequency` (`peak` = 1, or `sqrt(3)/2` with `min_max`): the low turn-on must fit in the cell tail after the longest pulse |
 
 The carrier/fundamental ratio must be an integer, at least two, and must not exceed
 the portable limit of 8333. The source mathematically samples the references at the
