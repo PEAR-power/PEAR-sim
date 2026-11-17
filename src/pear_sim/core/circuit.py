@@ -12,7 +12,7 @@ from typing import Any, Iterable, Iterator
 
 import numpy as np
 
-from pear_sim.errors import ModelError, TopologyError
+from pear_sim.errors import ModelError, StateDiscontinuityError, TopologyError
 from pear_sim.spec.signals import is_declared_signal, is_machine_signal
 from pear_sim.limits import MAX_ACTIVE_SET_CANDIDATES, MAX_IDEAL_DIODES
 from pear_sim.spec.model import Component, Model
@@ -400,10 +400,12 @@ class CompiledMode:
                     and diode_states[component.id]
                 )
             ]
-            raise TopologyError(
+            error = TopologyError(
                 "Singular or inconsistent ideal topology; closed devices: "
                 + (", ".join(closed_switches) or "none")
-            ) from exc
+            )
+            error.singular_topology = True
+            raise error from exc
 
         state_count = len(circuit.state_components)
         self.a = np.zeros((state_count, state_count), dtype=float)
@@ -843,6 +845,177 @@ def capacitor_loop_hint(components: Iterable[Any], ground: str) -> str:
         "capacitor in that loop an `esr`"
     )
 
+def _jump_tolerance(scale: float) -> float:
+    # Same absolute floor as the zero-current constraint, relative above 1.
+    return STATE_CONSTRAINT_TOLERANCE * max(1.0, scale)
+
+
+def capacitor_loop_jumps(
+    circuit: "Circuit", topology: Topology, state: np.ndarray, time: float | None
+) -> list[dict[str, Any]]:
+    """Loops of capacitors and voltage sources that closed devices complete.
+
+    Every capacitor, voltage source and closed lossless switch or diode is a
+    branch with a known voltage (state, u(t), forward drop). A spanning
+    forest is grown over capacitors and sources first, so a closed device is
+    the edge that completes a loop whenever it can be. For each completing
+    edge the KVL residual around its loop is the voltage jump the closure
+    would impose; a loop with no capacitor or a residual within tolerance is
+    not a discontinuity (the second is a consistent but algebraic loop,
+    which the plain message already covers). A diode that would be reverse
+    biased by the residual does not close its loop and is skipped.
+    """
+
+    gates = topology.gate_dict()
+    diodes = topology.diode_dict()
+    sources = circuit.source_values(time) if time is not None and circuit.waveform_index else None
+    edges: list[tuple[int, Any, float]] = []
+    for component in circuit.components:
+        if component.type == "capacitor":
+            edges.append((0, component, float(state[circuit.state_index[component.id]])))
+        elif component.type == "voltage_source":
+            if component.waveform is not None:
+                if sources is None:
+                    return []
+                value = float(sources[circuit.waveform_index[component.id]])
+            else:
+                value = float(component.value)
+            edges.append((0, component, value))
+        elif (component.type == "ideal_switch" and gates.get(component.control or "")) or (
+            component.type in LATCHING_OR_DIODE and diodes.get(component.id)
+        ):
+            if component.on_resistance:
+                continue  # a resistive branch: the loop is not algebraic
+            edges.append((1, component, float(component.forward_voltage or 0.0)))
+    edges.sort(key=lambda item: (item[0], item[1].id))
+    branch_voltage = {component.id: voltage for _priority, component, voltage in edges}
+
+    parent: dict[str, tuple[str, str, float, int] | None] = {}
+    potential: dict[str, float] = {}
+    adjacency: dict[str, list[tuple[str, str, float, int]]] = {}
+    roots: dict[str, str] = {}
+
+    def find(node: str) -> str:
+        while roots.setdefault(node, node) != node:
+            roots[node] = roots[roots[node]]
+            node = roots[node]
+        return node
+
+    closing: list[tuple[int, Any, float]] = []
+    for priority, component, voltage in edges:
+        a, b = find(component.p), find(component.n)
+        if a == b:
+            closing.append((priority, component, voltage))
+            continue
+        roots[a] = b
+        # v_p - v_n = voltage along this tree edge.
+        adjacency.setdefault(component.p, []).append((component.n, component.id, voltage, 1))
+        adjacency.setdefault(component.n, []).append((component.p, component.id, voltage, -1))
+
+    def walk(start: str) -> None:
+        parent[start] = None
+        potential[start] = 0.0
+        frontier = [start]
+        while frontier:
+            node = frontier.pop()
+            for other, edge_id, voltage, sign in adjacency.get(node, ()):
+                if other in potential:
+                    continue
+                # sign=+1: node is p, other is n -> pot[other] = pot[node] - voltage.
+                potential[other] = potential[node] - sign * voltage
+                parent[other] = (node, edge_id, voltage, sign)
+                frontier.append(other)
+
+    for node in sorted(adjacency):
+        if node not in potential:
+            walk(node)
+
+    def path_edges(node: str) -> list[str]:
+        out: list[str] = []
+        while parent.get(node) is not None:
+            above, edge_id, _voltage, _sign = parent[node]  # type: ignore[misc]
+            out.append(edge_id)
+            node = above
+        return out
+
+    findings: list[dict[str, Any]] = []
+    for _priority, component, voltage in closing:
+        p_potential = potential.get(component.p, 0.0)
+        n_potential = potential.get(component.n, 0.0)
+        residual = (p_potential - n_potential) - voltage
+        up, down = path_edges(component.p), path_edges(component.n)
+        shared = set(up) & set(down)
+        loop = [edge for edge in up if edge not in shared] + [
+            edge for edge in down if edge not in shared
+        ] + [component.id]
+        kinds = {circuit.component_by_id[edge].type for edge in loop}
+        if "capacitor" not in kinds or not kinds & SWITCHING_BRANCH_TYPES:
+            continue
+        scale = max(abs(branch_voltage[edge]) for edge in loop)
+        if abs(residual) <= _jump_tolerance(scale):
+            continue
+        if component.type in LATCHING_OR_DIODE and residual < 0.0:
+            continue  # reverse biased: this diode would not close the loop
+        closers = sorted(
+            edge for edge in loop if circuit.component_by_id[edge].type in SWITCHING_BRANCH_TYPES
+        )
+        findings.append(
+            {
+                "kind": "capacitor_loop",
+                "members": sorted(loop),
+                "closed_by": ", ".join(closers),
+                "jump": abs(residual),
+                "unit": "V",
+            }
+        )
+    return findings
+
+
+def inductor_cut_jumps(
+    circuit: "Circuit", topology: Topology, node: str, state: np.ndarray
+) -> list[dict[str, Any]]:
+    """An unsupported node whose only live branches are current-carrying inductors.
+
+    Every open switch and blocking diode at the node is skipped; if anything
+    else still touches it (a resistor, a capacitor, a closed device) the
+    node is not a pure inductor cut and nothing is reported. The net current
+    the inductors push into the node is the jump the opening would force.
+    """
+
+    gates = topology.gate_dict()
+    diodes = topology.diode_dict()
+    net = 0.0
+    scale = 0.0
+    members: list[str] = []
+    open_switches: list[str] = []
+    for component in circuit.components:
+        if node not in (component.p, component.n) or component.type == "voltage_probe":
+            continue
+        if component.type == "ideal_switch" and not gates.get(component.control or ""):
+            open_switches.append(component.id)
+            continue
+        if component.type in LATCHING_OR_DIODE and not diodes.get(component.id):
+            continue
+        if component.type not in {"inductor", "sat_inductor"}:
+            return []
+        current = float(state[circuit.state_index[component.id]])
+        net += current if component.n == node else -current
+        scale = max(scale, abs(current))
+        members.append(component.id)
+    if not members or abs(net) <= _jump_tolerance(scale):
+        return []
+    return [
+        {
+            "kind": "inductor_cut",
+            "members": sorted(members),
+            "node": node,
+            "jump": abs(net),
+            "unit": "A",
+            "open_switches": sorted(open_switches),
+        }
+    ]
+
+
 class Circuit:
     def __init__(self, model: Model):
         self.model = model
@@ -1145,6 +1318,7 @@ class Circuit:
         try:
             compiled = CompiledMode(self, topology)
         except TopologyError as exc:
+            exc.topology = topology
             self._cache[topology] = exc
             node = getattr(exc, "floating_node", None)
             if node is not None:
@@ -1388,6 +1562,7 @@ class Circuit:
             if repaired is not None:
                 self._active_set_stats["anchor_repairs"] += 1
                 return repaired
+            self._raise_state_discontinuity(failures, state, time)
             first_failure = (
                 f"; first failure: {_failure_text(failures[0])}" if failures else ""
             )
@@ -1405,6 +1580,7 @@ class Circuit:
                 f"{capacitor_loop_hint(self.components, self.ground)}"
                 f"{dcr_star_hint(self.components, self.ground, self.model.passive_parasitics)}"
             )
+        self._raise_state_discontinuity(failures, state, time)
         detail = (
             _failure_text(failures[0])
             if failures
@@ -1415,6 +1591,39 @@ class Circuit:
             f"{capacitor_loop_hint(self.components, self.ground)}"
             f"{dcr_star_hint(self.components, self.ground, self.model.passive_parasitics)}"
         )
+
+    def _raise_state_discontinuity(
+        self,
+        failures: list[TopologyError],
+        state: np.ndarray,
+        time: float | None,
+    ) -> None:
+        """Name the state jump behind a failed search, if there is one.
+
+        Called only once every candidate configuration has failed, so it
+        never changes which runs succeed: it replaces "singular topology" or
+        "no algebraic support" with the loop or cut, the jump and the instant
+        when the failure is a capacitor loop closed at different voltages or
+        an inductor current left without a path.
+        """
+
+        findings: dict[tuple[str, tuple[str, ...]], dict[str, Any]] = {}
+        for failure in failures:
+            topology = getattr(failure, "topology", None)
+            if topology is None:
+                continue
+            if getattr(failure, "singular_topology", False):
+                found = capacitor_loop_jumps(self, topology, state, time)
+            elif getattr(failure, "floating_node", None) is not None:
+                found = inductor_cut_jumps(self, topology, failure.floating_node, state)
+            else:
+                continue
+            for finding in found:
+                findings.setdefault((finding["kind"], tuple(finding["members"])), finding)
+        if findings:
+            raise StateDiscontinuityError(
+                [findings[key] for key in sorted(findings)], time=time
+            )
 
     def _mode_plan(
         self,
@@ -1833,6 +2042,7 @@ class _SkippedFloatingTopology(TopologyError):
         self.floating_node = node
         self._circuit = circuit
         self._topology = topology
+        self.topology = topology
 
     def exact_message(self) -> str:
         try:

@@ -1308,6 +1308,8 @@ def main(argv: list[str] | None = None) -> int:
             "code": error_code(exc),
             "message": str(exc),
         }
+        if callable(getattr(exc, "details", None)):
+            payload["details"] = exc.details()
         if getattr(args, "json", False):
             print(json.dumps(payload), file=sys.stderr)
         else:
