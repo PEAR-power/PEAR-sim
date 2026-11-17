@@ -91,6 +91,16 @@ break the model format; every break carries a migration note).
   the expansions (`passive_parasitics`). Efficiency maps count declared ESR/DCR losses
   (`declared_parasitic_loss_w`) and refuse to count one twice.
 
+### Changed
+
+- Faster evidence: the dense-output quadrature and the state-extremum search run as
+  array operations (per-mode gather plan; one batched root search per segment) instead
+  of Python loops over every output, component and accepted step. Results are
+  **bit-identical** — pinned against the former loops, kept verbatim in
+  `tests/reference/dense_metrics_reference.py`, on every integrator and on whole runs.
+  `examples/grid_following_converter.yaml` (60 ms): full evidence 147.6 s -> 48.7 s,
+  lean 74.8 s -> 43.1 s; integration is now 57-64 % of the run.
+
 ### Fixed
 
 - Three-phase SPWM: the dead-time bound the loader (and `lint`) accepts is now the one
