@@ -754,6 +754,37 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
         "evidence": [],
     },
     {
+        "id": "converter.inverter_three_phase.dead_time_acceptance_midpoint_neutral",
+        "status": "experimental",
+        "scope": (
+            "two-level split-bus inverter, balanced RL star tied to the DC midpoint, "
+            "offline-midpoint-sampled SPWM and min-max (SVPWM-equivalent) injection, "
+            "dead time inside the scheduler's representable range"
+        ),
+        "statement": (
+            "A 24-point acceptance matrix (modulation law x dead time 0/0.5/1 us x a "
+            "damped and a ripple-dominated load x m 0.5/0.9) is compared, on every "
+            "pull request, with an independent closed-form oracle "
+            "(`pear_sim.benchmarks.spwm_dead_time`): phase currents, the Fourier "
+            "coefficients 0..42 of v_ab and v_an, and the bandwidth-limited THD of "
+            "v_ab. The oracle resolves current reversals INSIDE dead-time gaps "
+            "exactly (starved diode, current held at zero), so the matrix covers "
+            "the zero-crossing region instead of cutting it out. Verification "
+            "against an independent solution of the same ideal circuit, not "
+            "validation against hardware."
+        ),
+        "evidence": [
+            "worst deviation on 24 runs (measured 2026-11-16): spectra and THD "
+            "4.3e-12, phase currents 2.0e-9 of the peak (budgets 1e-9 and "
+            "100 x the declared rtol); three wrong oracles (no dead time, pole on "
+            "the wrong rail, no zero-current clamp) each miss the budget by at "
+            "least four orders of magnitude (tests/test_spwm_dead_time_golden.py)",
+            "the textbook loss |dV1| = (4/pi)*Td*fc*Vdc holds within 2 % while "
+            "the ripple is small and overstates the loss up to ~2x on a "
+            "ripple-dominated load (measured 0.47..0.90 of the formula)",
+        ],
+    },
+    {
         "id": "converter.inverter_three_phase.six_step_ideal",
         "status": "experimental",
         "scope": "two-level six-step bridge with the executable example load",
@@ -786,11 +817,13 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "sector observation, refusing overmodulation rather than clipping "
             "it. What is STILL not implemented is the capability this id "
             "claims. The modulator IS now wired to the kernel "
-            "(`control.signal_space_vector_bridge`), but there "
-            "is still no retained modulation/dead-time/load matrix and no "
-            "independent THD acceptance. A working modulator without an "
-            "acceptance matrix is not validated inverter support, so this "
-            "stays unsupported."
+            "(`control.signal_space_vector_bridge`). A working modulator "
+            "without an acceptance matrix is not validated inverter support. "
+            "Since 2026-11-16 a modulation/dead-time/load matrix with an "
+            "independent THD reference exists, but only for the midpoint-tied neutral "
+            "(`converter.inverter_three_phase.dead_time_acceptance_midpoint_neutral`); "
+            "still missing for THIS id: the floating-neutral star, the sector "
+            "bridge driven with dead time, unbalanced loads and overmodulation."
         ),
         "evidence": [
             "sector duties agree with min-max injection to 8.9e-16 over "

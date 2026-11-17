@@ -16,6 +16,14 @@ break the model format; every break carries a migration note).
   controller by the measured gain margin puts a multiplier on the unit circle at the
   measured frequency (1.2e-7). Unstable orbits, engaged limiters and injections that
   change the switching mode sequence are refused.
+- Dead-time acceptance matrix for the three-phase SPWM inverter (VAL-005): 24 runs
+  (SPWM and min-max x dead time 0/0.5/1 us x damped and ripple-dominated RL x m 0.5/0.9)
+  against a new independent oracle, `pear_sim.benchmarks.spwm_dead_time`, which solves
+  the midpoint-neutral inverter in closed form and resolves current reversals inside
+  dead-time gaps exactly. Currents, v_ab/v_an Fourier coefficients and v_ab THD agree to
+  4.3e-12 (currents 2.0e-9, integrator-bound); three wrong oracles miss by at least four
+  orders. New capability `converter.inverter_three_phase.dead_time_acceptance_midpoint_neutral`
+  (experimental); the composite `spwm_svpwm_dead_time` stays unsupported.
 - Closed-loop Floquet in DCM is analytic: the guard saltation
   `S = I + (f+ - f-) gᵀ/(g·f-)` at each natural commutation, so a DCM orbit no longer
   falls back to finite differences alone. New closed-form DCM oracle
