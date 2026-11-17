@@ -43,6 +43,7 @@ except Exception as exc:
 
 Codes are public contract (changing one is a breaking change); message text
 is not. Current codes: `model.invalid`, `model.units`, `model.topology`,
+`model.state_discontinuity`,
 `simulation.failed`, `evidence.expectations_invalid`, `sweep.parameter_invalid`,
 `compare.invalid`, `evidence.platform_invalid`, `report.invalid`,
 `report.sweep_invalid`, `report.numerical_invalid`, `report.svg_invalid`,

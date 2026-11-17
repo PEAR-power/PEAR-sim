@@ -200,6 +200,12 @@ After a topology change the kernel:
 4. checks constraint consistency;
 5. reports `state_discontinuity` if the new topology forces a state jump.
 
+Step 5 is `StateDiscontinuityError` (`model.state_discontinuity`, 2026-11-17): a capacitor
+loop closed at unequal voltages, or an inductor current left without a path, named with the
+jump, the instant and the triggering event. Before that change one case ran silently: a
+switch opening between two inductors with different currents entered the floating-star
+reduction, which preserves the KCL residual instead of restoring it.
+
 Interrupting an inductive current or shorting a charged capacitor is not automatically masked by `gmin`. Optional parasitics must be explicit in the model.
 
 In the approved narrow case of the canonical buck DCM, the natural turn-off of the diode locates
