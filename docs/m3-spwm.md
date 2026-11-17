@@ -160,10 +160,10 @@ On the same oracle, the textbook loss `|dV1| = (4/pi)*Td*fc*Vdc` holds within 2 
 the damped load. On the ripple-dominated load the real loss is 0.47-0.90 of the formula,
 because parts of the gaps sit at 0 V instead of on a rail.
 
-The dead time admitted by the scheduler is the tighter of the two documented bounds.
-The low switch must turn on inside the same carrier cell, so `dead_time` must stay below
-`0.25*(1 - m*reference_peak)/carrier_frequency`. A larger value passes the loader and
-is refused when the run starts (tracked separately).
+The matrix stops at 1 us because the low switch must turn on inside the same carrier
+cell: `dead_time` must stay below `0.25*(1 - m*reference_peak)/carrier_frequency`, and
+since 2026-11-16 the loader enforces that bound (it used to accept twice as much and
+the run failed at start).
 
 This is verification against an independent solution of the same ideal circuit. The
 floating-neutral star, the sector bridge driven with dead time, unbalanced loads,
