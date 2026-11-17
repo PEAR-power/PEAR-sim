@@ -83,13 +83,14 @@
         "independent FFT THD golden on the recorded uniform grid cross-checking the quadrature harmonics (fundamental rel 2e-3, THD rel 2e-2) for line voltage and phase currents",
         "retained modulation-index sweep (bounded parameter-sweep harness) over the floating-neutral SPWM inverter with nonzero dead time; line fundamental scales with the command",
         "closed-loop dq current control with in-the-loop SRF-PLL on a Thevenin weak grid (grid-following): PLL lock, dq tracking, P/Q at the PCC, runtime + gate-drive interlock verification",
-        "half-bridge switching-node golden: gate schedule against the modulator law in closed form (1e-12 s), pole pinned by the body diode through both dead-time gaps, and the RL trajectory against an independently integrated piecewise exponential (3.6e-11 A on ~19 A), plus the dead-time bias on the settled mean"
+        "half-bridge switching-node golden: gate schedule against the modulator law in closed form (1e-12 s), pole pinned by the body diode through both dead-time gaps, and the RL trajectory against an independently integrated piecewise exponential (3.6e-11 A on ~19 A), plus the dead-time bias on the settled mean",
+        "independent closed-form dead-time oracle (piecewise exponential per leg, current reversal inside dead-time gaps resolved exactly) and a 24-point acceptance matrix on the midpoint-neutral fixture: SPWM and min-max x dead time 0/0.5/1 us x damped and ripple-dominated RL x m 0.5/0.9; phase currents, v_ab/v_an Fourier coefficients 0..42 and v_ab THD within 1e-9 (currents 100 x rtol), three oracle mutations ring"
       ],
       "missing": [
         "overmodulation beyond the min-max linear range (2/sqrt(3))",
-        "retained load and switching-frequency inverter sweeps",
+        "retained switching-frequency (carrier-ratio) inverter sweeps",
         "formal acceptance gate wiring (thresholds as blocking expectations)",
-        "complete balanced R/RL validation matrix and unbalanced-load coverage",
+        "dead-time acceptance matrix for the floating-neutral star, R-only loads and unbalanced-load coverage",
         "three-phase bridge authoring helper with expansion-equivalence check"
       ],
       "status": "partial"
