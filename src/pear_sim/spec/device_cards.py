@@ -204,6 +204,9 @@ class DeviceLossBinding:
     cooling: CoolingPath
 
 
+TJ_MODES = ("declared", "self_consistent")
+
+
 @dataclass(frozen=True)
 class LossAnalysisSpec:
     ambient_c: float
@@ -214,6 +217,10 @@ class LossAnalysisSpec:
     fans: dict[str, FanCard]
     tims: dict[str, TimCard]
     cold_plates: dict[str, ColdPlateCard] = dataclass_field(default_factory=dict)
+    # "declared": every lookup at tj_evaluation_c (the open loop, unchanged).
+    # "self_consistent": conduction is iterated against the junction trajectory
+    # it produces, starting from tj_evaluation_c (post-processing only).
+    tj_mode: str = "declared"
 
 
 def _parse_conduction(raw: Any, *, name: str) -> ConductionTable:
@@ -587,9 +594,14 @@ def parse_loss_sections(
 
     _reject_unknown(
         raw_analysis,
-        {"ambient_c", "tj_evaluation_c", "devices"},
+        {"ambient_c", "tj_evaluation_c", "tj_mode", "devices"},
         name="loss_analysis",
     )
+    tj_mode = raw_analysis.get("tj_mode", "declared")
+    if tj_mode not in TJ_MODES:
+        raise ModelError(
+            f"loss_analysis.tj_mode must be one of {list(TJ_MODES)}, got {tj_mode!r}"
+        )
     ambient = _finite_number(raw_analysis.get("ambient_c"), name="loss_analysis.ambient_c")
     tj_evaluation = _finite_number(
         raw_analysis.get("tj_evaluation_c"), name="loss_analysis.tj_evaluation_c"
@@ -712,6 +724,7 @@ def parse_loss_sections(
     return LossAnalysisSpec(
         ambient_c=ambient,
         tj_evaluation_c=tj_evaluation,
+        tj_mode=tj_mode,
         devices=tuple(bindings),
         cards=cards,
         heatsinks=heatsinks,

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_left
+from functools import partial
 from typing import Any
 
 import numpy as np
@@ -279,12 +280,6 @@ def build_losses_thermal_observation(result: Any) -> dict[str, Any]:
             )
         current = np.abs(np.asarray(result.signals[current_name], dtype=float))
 
-        # --- conduction ----------------------------------------------------
-        v_on = _conduction_voltage_lookup(card, spec.tj_evaluation_c)
-        power = np.array([v_on(value) * value for value in current])
-        conduction_energy = float(np.trapezoid(power, time))
-        conduction_extrapolated = v_on.above
-
         # --- switching -----------------------------------------------------
         switching_payload: dict[str, Any] | None = None
         switching_power = np.zeros_like(time)
@@ -368,16 +363,20 @@ def build_losses_thermal_observation(result: Any) -> dict[str, Any]:
                 },
                 "provenance": table.provenance.as_dict(),
             }
-            if table.test_temperature_c != spec.tj_evaluation_c:
+            if spec.tj_mode == "self_consistent":
+                warnings.append(
+                    f"{binding.component_id}: switching energies measured at "
+                    f"{table.test_temperature_c:g} C are used unchanged; the "
+                    "self-consistent junction temperature is applied to conduction "
+                    "only (dependency not provided by the card)"
+                )
+            elif table.test_temperature_c != spec.tj_evaluation_c:
                 warnings.append(
                     f"{binding.component_id}: switching energies measured at "
                     f"{table.test_temperature_c:g} C are applied at the declared "
                     f"tj_evaluation_c={spec.tj_evaluation_c:g} C without a "
                     "temperature correction (dependency not provided by the card)"
                 )
-
-        device_power = power + switching_power
-        total_power += device_power
 
         # --- cooling path ---------------------------------------------------
         path_rth = 0.0
@@ -446,33 +445,57 @@ def build_losses_thermal_observation(result: Any) -> dict[str, Any]:
             cooling_payload["reference_temperature_c"] = reference_c
             cooling_payload["reference_temperature_source"] = "ambient"
 
-        # --- thermal chain ---------------------------------------------------
-        mean_power = float(np.trapezoid(device_power, time) / (time[-1] - time[0]))
-        # The case is held at the steady rise for the run-mean power, so the
-        # junction-to-case stages start at that same steady state. Starting them
-        # cold under a hot case would read a slow stage (tau of 100 ms against a
-        # 40 ms run) as headroom that is not there.
-        case_c = reference_c + path_rth * mean_power
-        junction, stored_j = _foster_response(
-            device_power, step, card.foster_stages, case_c, initial_power_w=mean_power
+        # --- conduction + thermal chain --------------------------------------
+        chain = partial(
+            _thermal_chain,
+            time=time,
+            step=step,
+            stages=card.foster_stages,
+            reference_c=reference_c,
+            path_rth=path_rth,
         )
-        input_energy = float(np.trapezoid(device_power, time))
-        # Foster balance: input = dissipated-through-chain + stored; the
-        # dissipated part equals input - stored by construction, so audit the
-        # STORED term against an independent recomputation from temperatures.
-        independent_stored = float(
-            sum(
-                (stage.time_constant_s / stage.resistance_k_per_w) * rise
-                for stage, rise in zip(
-                    card.foster_stages,
-                    _final_stage_rises(
-                        device_power, step, card.foster_stages, initial_power_w=mean_power
-                    ),
-                )
+
+        electrothermal: dict[str, Any] | None = None
+        if spec.tj_mode == "self_consistent":
+            loop = _self_consistent_junction(
+                card, current, switching_power, chain, spec.tj_evaluation_c
             )
-        )
-        balance_error = abs(stored_j - independent_stored)
-        balance_tolerance = max(1e-12, 1e-9 * max(abs(input_energy), 1.0))
+            electrothermal = loop["record"]
+            if electrothermal["status"] != "converged":
+                # No loss or temperature number survives a loop without a fixed
+                # point: reporting the last iterate would read as a result.
+                devices_payload.append(
+                    {
+                        "component_id": binding.component_id,
+                        "card": card.id,
+                        "card_source": card.source,
+                        "kind": card.kind,
+                        "electrothermal": electrothermal,
+                    }
+                )
+                warnings.append(
+                    f"{binding.component_id}: {electrothermal['status']} — "
+                    f"electrothermal loop gain {electrothermal['loop_gain']:.3g}; "
+                    "no loss or junction temperature is reported for this device"
+                )
+                continue
+            power = loop["conduction_power"]
+            conduction_extrapolated = loop["current_extrapolated_lookups"]
+            thermal_state = loop["chain"]
+        else:
+            v_on = _conduction_voltage_lookup(card, spec.tj_evaluation_c)
+            power = np.array([v_on(value) * value for value in current])
+            conduction_extrapolated = v_on.above
+            thermal_state = chain(power + switching_power)
+        conduction_energy = float(np.trapezoid(power, time))
+        device_power = power + switching_power
+        total_power += device_power
+        mean_power = thermal_state["mean_power"]
+        case_c = thermal_state["case_c"]
+        junction = thermal_state["junction"]
+        stored_j = thermal_state["stored_j"]
+        balance_error = thermal_state["balance_error"]
+        balance_tolerance = thermal_state["balance_tolerance"]
 
         tj_max = float(np.max(junction))
         tj_min = float(np.min(junction))
@@ -488,13 +511,16 @@ def build_losses_thermal_observation(result: Any) -> dict[str, Any]:
                 f"{binding.component_id}: peak current {current_peak:.2f} A "
                 f"exceeds the card validity limit {card.validity_current_max_a:g} A"
             )
-        tj_mismatch = abs(spec.tj_evaluation_c - tj_max)
+        tj_mismatch = (
+            abs(spec.tj_evaluation_c - tj_max)
+            if electrothermal is None
+            else electrothermal["final_residual_c"]
+        )
 
         cycles = rainflow_count(junction)
         cycles.sort(key=lambda item: (-item["range"], item["mean"]))
 
-        devices_payload.append(
-            {
+        device_record = {
                 "component_id": binding.component_id,
                 "card": card.id,
                 "card_source": card.source,
@@ -502,7 +528,9 @@ def build_losses_thermal_observation(result: Any) -> dict[str, Any]:
                 "conduction": {
                     "energy_j": conduction_energy,
                     "mean_power_w": conduction_energy / (time[-1] - time[0]),
-                    "tj_evaluation_c": spec.tj_evaluation_c,
+                    "tj_evaluation_c": spec.tj_evaluation_c
+                    if electrothermal is None
+                    else "self_consistent_trajectory",
                     "extrapolated_lookups": conduction_extrapolated,
                     "method": "trapezoid_of_v_on(|i|)*|i|_on_recorded_output_grid",
                     "provenance": card.conduction.provenance.as_dict(),
@@ -540,8 +568,12 @@ def build_losses_thermal_observation(result: Any) -> dict[str, Any]:
                     "truncated": len(cycles) > 64,
                 },
             }
-        )
+        if electrothermal is not None:
+            device_record["electrothermal"] = electrothermal
+        devices_payload.append(device_record)
 
+    if spec.tj_mode == "self_consistent":
+        return _self_consistent_artifact(spec, time, total_power, devices_payload, warnings)
     return {
         "schema": LOSSES_THERMAL_SCHEMA,
         "kind": "losses-thermal-estimate",
@@ -558,6 +590,250 @@ def build_losses_thermal_observation(result: Any) -> dict[str, Any]:
         "devices": devices_payload,
         "warnings": warnings,
     }
+
+
+# Self-consistent junction temperature (loss_analysis.tj_mode: self_consistent)
+# -----------------------------------------------------------------------------
+# The loop closed here is losses <-> Tj on ONE recorded run. It is not
+# Tj <-> waveforms: the kernel stays ideal, so dissipation never reaches the
+# circuit, and iterating the circuit would change nothing.
+SELF_CONSISTENT_TOLERANCE_C = 0.01
+SELF_CONSISTENT_MAX_EVALUATIONS = 50
+
+
+def _thermal_chain(
+    device_power: np.ndarray,
+    *,
+    time: np.ndarray,
+    step: float,
+    stages: tuple,
+    reference_c: float,
+    path_rth: float,
+    audit: bool = True,
+) -> dict[str, Any]:
+    """Junction trajectory for one device power series (static path + Foster)."""
+
+    mean_power = float(np.trapezoid(device_power, time) / (time[-1] - time[0]))
+    # The case is held at the steady rise for the run-mean power, so the
+    # junction-to-case stages start at that same steady state. Starting them
+    # cold under a hot case would read a slow stage (tau of 100 ms against a
+    # 40 ms run) as headroom that is not there.
+    case_c = reference_c + path_rth * mean_power
+    junction, stored_j = _foster_response(
+        device_power, step, stages, case_c, initial_power_w=mean_power
+    )
+    state: dict[str, Any] = {
+        "mean_power": mean_power,
+        "case_c": case_c,
+        "junction": junction,
+        "stored_j": stored_j,
+    }
+    if not audit:
+        return state
+    input_energy = float(np.trapezoid(device_power, time))
+    # Foster balance: input = dissipated-through-chain + stored; the
+    # dissipated part equals input - stored by construction, so audit the
+    # STORED term against an independent recomputation from temperatures.
+    independent_stored = float(
+        sum(
+            (stage.time_constant_s / stage.resistance_k_per_w) * rise
+            for stage, rise in zip(
+                stages,
+                _final_stage_rises(device_power, step, stages, initial_power_w=mean_power),
+            )
+        )
+    )
+    state["balance_error"] = abs(stored_j - independent_stored)
+    state["balance_tolerance"] = max(1e-12, 1e-9 * max(abs(input_energy), 1.0))
+    return state
+
+
+def _conduction_voltage_trajectory(
+    card: DeviceCard, current: np.ndarray, junction_c: np.ndarray
+) -> tuple[np.ndarray, int, int]:
+    """v_on(|i|[n], Tj[n]) per sample, bilinear in the (i, Tj) table.
+
+    The same interpolation as the declared path (temperature first, then
+    current), evaluated per sample instead of at one temperature. Returns the
+    voltages and how many samples were clamped above the current axis and
+    outside the temperature axis.
+    """
+
+    table = card.conduction
+    grid = np.asarray(table.voltage_table_v, dtype=float)
+    temperatures = np.asarray(table.temperature_axis_c, dtype=float)
+    count = len(current)
+    if len(temperatures) == 1:
+        rows = np.broadcast_to(grid[0], (count, grid.shape[1]))
+        temperature_clamped = 0
+    else:
+        clamped_t = np.clip(junction_c, temperatures[0], temperatures[-1])
+        temperature_clamped = int(np.count_nonzero(clamped_t != junction_c))
+        upper = np.clip(
+            np.searchsorted(temperatures, clamped_t, side="right"), 1, len(temperatures) - 1
+        )
+        fraction = (clamped_t - temperatures[upper - 1]) / (
+            temperatures[upper] - temperatures[upper - 1]
+        )
+        rows = (
+            grid[upper - 1] * (1.0 - fraction)[:, np.newaxis]
+            + grid[upper] * fraction[:, np.newaxis]
+        )
+    axis = np.asarray(table.current_axis_a, dtype=float)
+    current_above = int(np.count_nonzero(current > axis[-1]))
+    if len(axis) == 1:
+        return np.asarray(rows[:, 0], dtype=float), current_above, temperature_clamped
+    clamped_i = np.clip(current, axis[0], axis[-1])
+    upper_i = np.clip(np.searchsorted(axis, clamped_i, side="right"), 1, len(axis) - 1)
+    fraction_i = (clamped_i - axis[upper_i - 1]) / (axis[upper_i] - axis[upper_i - 1])
+    samples = np.arange(count)
+    voltage = (
+        rows[samples, upper_i - 1] * (1.0 - fraction_i) + rows[samples, upper_i] * fraction_i
+    )
+    return voltage, current_above, temperature_clamped
+
+
+def _self_consistent_junction(
+    card: DeviceCard,
+    current: np.ndarray,
+    switching_power: np.ndarray,
+    chain: Any,
+    start_c: float,
+) -> dict[str, Any]:
+    """Fixed point Tj = F(Tj) of conduction losses and the thermal chain.
+
+    F maps a junction trajectory to the trajectory its conduction losses
+    produce. Each pass evaluates F twice; the ratio of the two increments is
+    the electrothermal loop gain g (dTj_out/dTj_in). g >= 1 is thermal
+    runaway: the losses grow faster with temperature than the cooling path
+    removes them, so there is no stable operating point and no number is
+    returned. Otherwise the pass ends with an Aitken step, T1 + d2/(1 - g),
+    which is exact when F is affine; convergence is declared when the
+    estimated distance of the evaluated trajectory from the fixed point,
+    max|d2|/(1 - g), is below SELF_CONSISTENT_TOLERANCE_C.
+    """
+
+    def evaluate(junction_c: np.ndarray) -> tuple[np.ndarray, np.ndarray, int, int]:
+        v_on, above, clamped_t = _conduction_voltage_trajectory(card, current, junction_c)
+        conduction = v_on * current
+        result = chain(conduction + switching_power, audit=False)
+        return result["junction"], conduction, above, clamped_t
+
+    trajectory = np.full(len(current), float(start_c))
+    evaluations = 0
+    # The gain is measured on increments well above round-off; a pass that
+    # starts ON the fixed point (as after an exact Aitken step) keeps the
+    # gain of the pass that found it instead of reading 0/0 noise.
+    gain = 0.0
+    history: list[float] = []
+    while evaluations + 2 <= SELF_CONSISTENT_MAX_EVALUATIONS:
+        first, _, _, _ = evaluate(trajectory)
+        second, conduction, above, clamped_t = evaluate(first)
+        evaluations += 2
+        d1 = first - trajectory
+        d2 = second - first
+        noise = 1e-9 * max(1.0, float(np.max(np.abs(trajectory))))
+        if float(np.max(np.abs(d1))) > noise:
+            gain = float(np.dot(d1, d2)) / float(np.dot(d1, d1))
+        if gain >= 1.0:
+            return {
+                "record": {
+                    "mode": "self_consistent",
+                    "status": "thermal_runaway",
+                    "loop_gain": gain,
+                    "evaluations": evaluations,
+                    "last_tj_max_c": float(np.max(second)),
+                    "tolerance_c": SELF_CONSISTENT_TOLERANCE_C,
+                }
+            }
+        distance = float(np.max(np.abs(d2))) / (1.0 - gain)
+        history.append(distance)
+        if distance < SELF_CONSISTENT_TOLERANCE_C and clamped_t:
+            # A fixed point found with v_on held at the table edge is a
+            # property of the clamp, not of the device: a runaway cut off by a
+            # short temperature axis lands here and must not read as a result.
+            return {
+                "record": {
+                    "mode": "self_consistent",
+                    "status": "beyond_card_temperature_axis",
+                    "loop_gain": gain,
+                    "evaluations": evaluations,
+                    "last_tj_max_c": float(np.max(second)),
+                    "temperature_clamped_lookups": clamped_t,
+                    "temperature_axis_c": [
+                        card.conduction.temperature_axis_c[0],
+                        card.conduction.temperature_axis_c[-1],
+                    ],
+                    "tolerance_c": SELF_CONSISTENT_TOLERANCE_C,
+                }
+            }
+        if distance < SELF_CONSISTENT_TOLERANCE_C:
+            return {
+                "record": {
+                    "mode": "self_consistent",
+                    "status": "converged",
+                    "loop_gain": gain,
+                    "evaluations": evaluations,
+                    "final_residual_c": float(np.max(np.abs(d2))),
+                    "estimated_error_c": distance,
+                    "tolerance_c": SELF_CONSISTENT_TOLERANCE_C,
+                    "loop": "conduction_losses_and_junction_temperature_only",
+                },
+                "conduction_power": conduction,
+                "current_extrapolated_lookups": above,
+                # Losses were evaluated on ``first``; ``chain`` of them is the
+                # junction trajectory that goes with them (= ``second``).
+                "chain": chain(conduction + switching_power),
+            }
+        trajectory = first + d2 / (1.0 - gain)
+    return {
+        "record": {
+            "mode": "self_consistent",
+            "status": "not_converged",
+            "loop_gain": gain,
+            "evaluations": evaluations,
+            "last_tj_max_c": float(np.max(trajectory)),
+            "estimated_error_history_c": history,
+            "tolerance_c": SELF_CONSISTENT_TOLERANCE_C,
+        }
+    }
+
+
+def _self_consistent_artifact(
+    spec: LossAnalysisSpec,
+    time: np.ndarray,
+    total_power: np.ndarray,
+    devices: list[dict[str, Any]],
+    warnings: list[str],
+) -> dict[str, Any]:
+    statuses = [device["electrothermal"]["status"] for device in devices]
+    status = next((item for item in statuses if item != "converged"), "converged")
+    artifact: dict[str, Any] = {
+        "schema": LOSSES_THERMAL_SCHEMA,
+        "kind": "losses-thermal-estimate",
+        "claim": (
+            "post-processing estimate over IDEAL recorded waveforms; conduction "
+            "losses iterated to a self-consistent junction temperature on this "
+            "one run (losses do not feed back into the waveforms; switching "
+            "energies stay at their card test temperature); not a measurement"
+        ),
+        "ambient_c": spec.ambient_c,
+        "tj_evaluation_c": spec.tj_evaluation_c,
+        "electrothermal": {
+            "mode": "self_consistent",
+            "status": status,
+            "iteration_start_c": spec.tj_evaluation_c,
+            "tolerance_c": SELF_CONSISTENT_TOLERANCE_C,
+            "max_evaluations": SELF_CONSISTENT_MAX_EVALUATIONS,
+        },
+        "devices": devices,
+        "warnings": warnings,
+    }
+    if status == "converged":
+        artifact["total_mean_power_w"] = float(
+            np.trapezoid(total_power, time) / (time[-1] - time[0])
+        )
+    return artifact
 
 
 TJ_ENVELOPE_BUCKETS = 200

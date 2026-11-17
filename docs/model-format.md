@@ -1351,6 +1351,31 @@ dynamics, no coupling of devices on a shared heatsink, no
 spreading/orientation/altitude, no temperature dependence of switching energies.
 Example: `examples/buck_with_loss_cards.yaml`.
 
+**`loss_analysis.tj_mode`** (optional, default `declared`):
+
+- `declared` — every conduction lookup at the single `tj_evaluation_c`; the
+  electrothermal loop stays open (the behaviour before this field existed, bit for
+  bit).
+- `self_consistent` — conduction losses are iterated against the junction
+  trajectory they produce, on the ONE recorded run: v_on(|i|[n], Tj[n]) per sample
+  (bilinear in the card table) → losses → static path + Foster → new Tj(t) → ….
+  `tj_evaluation_c` is only the starting point. Each pass evaluates the loop twice;
+  the ratio of the two increments is the electrothermal **loop gain** g. g ≥ 1 is
+  thermal runaway: status `thermal_runaway`, and the device carries NO loss or
+  temperature numbers (nor does `total_mean_power_w`). Otherwise the pass ends with
+  an Aitken step (exact when the loop is affine) and stops when the estimated
+  distance from the fixed point, max|ΔTj|/(1 − g), is below 0.01 K, within at most
+  50 loop evaluations (`not_converged` otherwise, again without numbers). A fixed
+  point that needs v_on beyond the card's temperature axis is
+  `beyond_card_temperature_axis`, also without numbers: with the lookup held at the
+  table edge a runaway would otherwise settle there and read as a result.
+  What is closed is losses ↔ Tj only: the waveforms stay ideal (dissipation never
+  reaches the circuit), switching energies stay at their card test temperature (a
+  warning says so), and the gradient engine refuses this mode by name. The artifact
+  records per device `electrothermal {status, loop_gain, evaluations,
+  final_residual_c, estimated_error_c}` and a top-level
+  `electrothermal.status`; `thermal.tj_evaluation_gap_c` becomes the final residual.
+
 
 ### 7a.1. Liquid cooling (`cooling.cold_plates`)
 
