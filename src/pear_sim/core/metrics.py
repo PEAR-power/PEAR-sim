@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 from typing import Any, Callable
+import weakref
 
 import numpy as np
 from numpy.polynomial import Polynomial
@@ -20,8 +21,8 @@ from numpy.polynomial import polynomial as _poly
 from numpy.polynomial import polyutils
 
 from pear_sim.spec.signals import is_declared_signal, is_machine_signal
-from pear_sim.core.circuit import Circuit, CompiledMode
-from pear_sim.errors import SimulationError
+from pear_sim.core.circuit import SWITCHING_BRANCH_TYPES, Circuit, CompiledMode
+from pear_sim.errors import ModelError, SimulationError
 from pear_sim.spec.model import Model
 
 
@@ -157,33 +158,44 @@ def _integrate_dense_interval(
     if states.ndim == 1:
         states = states[:, np.newaxis]
     weights = half_width * _QUADRATURE_WEIGHTS
-    outputs = electrical_outputs(mode.circuit.model)
-    signal_integrals = {name: 0.0 for name in outputs}
-    signal_square_integrals = {name: 0.0 for name in outputs}
-    component_energy = (
-        {component.id: 0.0 for component in mode.circuit.components}
-        if component_energy_requested
-        else None
+    plan = _quadrature_plan(mode)
+    # One solve per node, by the identical call as before; everything after it
+    # is a gather over (node, column) arrays instead of a Python visit of every
+    # output and component at every node (2026-11-17: 30 million calls and a
+    # third of a 60 ms grid-following run). Each element is produced by the
+    # same float operations in the same order, so results are bit-identical.
+    algebraic = np.stack(
+        [mode.algebraic(states[:, index], float(times[index])) for index in range(len(times))]
     )
+    extended = np.concatenate((np.zeros((len(times), 1)), algebraic), axis=1)
+    weighted = weights[:, np.newaxis]
 
-    for index, weight in enumerate(weights):
-        state = states[:, index]
-        sample_time = float(times[index])
-        algebraic = mode.algebraic(state, sample_time)
-        for name in outputs:
-            value = _mode_output(mode, name, state, algebraic, sample_time)
-            signal_integrals[name] += float(weight * value)
-            signal_square_integrals[name] += float(weight * value * value)
-        if component_energy is None:
-            continue
-        for component in mode.circuit.components:
-            voltage = mode.component_voltage(component, state, algebraic, sample_time)
-            current = (
-                0.0
-                if component.type == "voltage_probe"
-                else mode.component_current(component, state, algebraic, sample_time)
-            )
-            component_energy[component.id] += float(weight * voltage * current)
+    values = plan.output_values(extended, algebraic, states, times)
+    signal_sum = np.zeros(values.shape[1])
+    square_sum = np.zeros(values.shape[1])
+    weighted_values = weighted * values
+    weighted_squares = weighted_values * values
+    for index in range(len(times)):
+        signal_sum = signal_sum + weighted_values[index]
+        square_sum = square_sum + weighted_squares[index]
+    signal_integrals = {
+        name: float(signal_sum[column]) for column, name in enumerate(plan.outputs)
+    }
+    signal_square_integrals = {
+        name: float(square_sum[column]) for column, name in enumerate(plan.outputs)
+    }
+
+    component_energy: dict[str, float] | None = None
+    if component_energy_requested:
+        voltage, current = plan.component_voltage_current(extended, algebraic, states, times)
+        power = (weighted * voltage) * current
+        energy_sum = np.zeros(power.shape[1])
+        for index in range(len(times)):
+            energy_sum = energy_sum + power[index]
+        component_energy = {
+            component_id: float(energy_sum[column])
+            for column, component_id in enumerate(plan.component_ids)
+        }
 
     return _IntervalIntegral(
         duration=end - start,
@@ -191,6 +203,175 @@ def _integrate_dense_interval(
         signal_square_integrals=signal_square_integrals,
         component_absorbed_energy=component_energy,
     )
+
+
+class _CurrentGather:
+    """Column gather reproducing ``CompiledMode.component_current`` element-wise."""
+
+    def __init__(self, mode: CompiledMode, components: list[Any], *, probe_is_zero: bool):
+        circuit = mode.circuit
+        self.count = len(components)
+        resistor, resistor_p, resistor_n, resistor_value = [], [], [], []
+        inductor, inductor_state = [], []
+        constant, constant_value = [], []
+        branch, branch_row = [], []
+        self.waveform: list[tuple[int, Any]] = []
+        self.unsupported: list[str] = []
+        for column, component in enumerate(components):
+            if probe_is_zero and component.type == "voltage_probe":
+                continue
+            if component.type == "resistor":
+                resistor.append(column)
+                resistor_p.append(_extended_index(circuit, component.p))
+                resistor_n.append(_extended_index(circuit, component.n))
+                resistor_value.append(float(component.value))
+            elif component.type in {"inductor", "sat_inductor"}:
+                inductor.append(column)
+                inductor_state.append(circuit.state_index[component.id])
+            elif component.type == "current_source":
+                if component.waveform is not None:
+                    self.waveform.append((column, component.waveform))
+                else:
+                    constant.append(column)
+                    constant_value.append(float(component.value))
+            elif component.id in mode.branch_index:
+                branch.append(column)
+                branch_row.append(mode.branch_index[component.id])
+            elif component.type in SWITCHING_BRANCH_TYPES:
+                continue
+            else:
+                self.unsupported.append(component.type)
+        self.resistor = np.asarray(resistor, dtype=int)
+        self.resistor_p = np.asarray(resistor_p, dtype=int)
+        self.resistor_n = np.asarray(resistor_n, dtype=int)
+        self.resistor_value = np.asarray(resistor_value, dtype=float)
+        self.inductor = np.asarray(inductor, dtype=int)
+        self.inductor_state = np.asarray(inductor_state, dtype=int)
+        self.constant = np.asarray(constant, dtype=int)
+        self.constant_value = np.asarray(constant_value, dtype=float)
+        self.branch = np.asarray(branch, dtype=int)
+        self.branch_row = np.asarray(branch_row, dtype=int)
+
+    def __call__(
+        self,
+        extended: np.ndarray,
+        algebraic: np.ndarray,
+        states: np.ndarray,
+        times: np.ndarray,
+    ) -> np.ndarray:
+        if self.unsupported:
+            raise ModelError(
+                f"Current output is not implemented for {self.unsupported[0]}"
+            )
+        current = np.zeros((len(times), self.count))
+        if self.resistor.size:
+            current[:, self.resistor] = (
+                extended[:, self.resistor_p] - extended[:, self.resistor_n]
+            ) / self.resistor_value
+        if self.inductor.size:
+            current[:, self.inductor] = states[self.inductor_state, :].T
+        if self.constant.size:
+            current[:, self.constant] = self.constant_value
+        if self.branch.size:
+            current[:, self.branch] = algebraic[:, self.branch_row]
+        for column, waveform in self.waveform:
+            current[:, column] = [float(waveform.value(float(time))) for time in times]
+        return current
+
+
+def _extended_index(circuit: Circuit, node: str) -> int:
+    """Column of ``node`` in [0 (ground), algebraic...]."""
+
+    if node == circuit.ground:
+        return 0
+    return circuit.node_index[node] + 1
+
+
+class _QuadraturePlan:
+    """Per-mode gather indices for the quadrature; built once per topology."""
+
+    def __init__(self, mode: CompiledMode):
+        circuit = mode.circuit
+        self.outputs = electrical_outputs(circuit.model)
+        output_columns: dict[str, list[int]] = {
+            "node": [], "voltage": [], "current": []
+        }
+        node_index, voltage_p, voltage_n = [], [], []
+        current_components = []
+        for column, name in enumerate(self.outputs):
+            kind, target = circuit.output_targets[name]
+            if kind == "node_voltage":
+                output_columns["node"].append(column)
+                node_index.append(_extended_index(circuit, target))
+                continue
+            component = circuit.component_by_id[target]
+            if kind == "component_voltage":
+                output_columns["voltage"].append(column)
+                voltage_p.append(_extended_index(circuit, component.p))
+                voltage_n.append(_extended_index(circuit, component.n))
+            else:
+                output_columns["current"].append(column)
+                current_components.append(component)
+        self._node_columns = np.asarray(output_columns["node"], dtype=int)
+        self._node_index = np.asarray(node_index, dtype=int)
+        self._voltage_columns = np.asarray(output_columns["voltage"], dtype=int)
+        self._voltage_p = np.asarray(voltage_p, dtype=int)
+        self._voltage_n = np.asarray(voltage_n, dtype=int)
+        self._current_columns = np.asarray(output_columns["current"], dtype=int)
+        self._output_current = _CurrentGather(mode, current_components, probe_is_zero=False)
+
+        components = list(circuit.components)
+        self.component_ids = tuple(component.id for component in components)
+        self._component_p = np.asarray(
+            [_extended_index(circuit, component.p) for component in components], dtype=int
+        )
+        self._component_n = np.asarray(
+            [_extended_index(circuit, component.n) for component in components], dtype=int
+        )
+        self._component_current = _CurrentGather(mode, components, probe_is_zero=True)
+
+    def output_values(
+        self,
+        extended: np.ndarray,
+        algebraic: np.ndarray,
+        states: np.ndarray,
+        times: np.ndarray,
+    ) -> np.ndarray:
+        values = np.zeros((len(times), len(self.outputs)))
+        if self._node_columns.size:
+            values[:, self._node_columns] = extended[:, self._node_index]
+        if self._voltage_columns.size:
+            values[:, self._voltage_columns] = (
+                extended[:, self._voltage_p] - extended[:, self._voltage_n]
+            )
+        if self._current_columns.size:
+            values[:, self._current_columns] = self._output_current(
+                extended, algebraic, states, times
+            )
+        return values
+
+    def component_voltage_current(
+        self,
+        extended: np.ndarray,
+        algebraic: np.ndarray,
+        states: np.ndarray,
+        times: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        voltage = extended[:, self._component_p] - extended[:, self._component_n]
+        return voltage, self._component_current(extended, algebraic, states, times)
+
+
+_QUADRATURE_PLANS: "weakref.WeakKeyDictionary[CompiledMode, _QuadraturePlan]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _quadrature_plan(mode: CompiledMode) -> _QuadraturePlan:
+    plan = _QUADRATURE_PLANS.get(mode)
+    if plan is None:
+        plan = _QuadraturePlan(mode)
+        _QUADRATURE_PLANS[mode] = plan
+    return plan
 
 
 def electrical_outputs(model: Any) -> tuple[str, ...]:
@@ -366,13 +547,79 @@ def _dense_step_state_polynomials(
     )
 
 
+def _batched_derivative_roots(coefficients: np.ndarray) -> np.ndarray:
+    """Roots of the derivative of every row of ``coefficients``, batched.
+
+    Row by row this is ``_poly_roots(_poly_derivative(row))`` BIT FOR BIT: the
+    same derivative products, the same trailing-zero trim, the same linear
+    shortcut, the same companion matrix handed to the same LAPACK routine
+    (``eigvals`` on a stack runs it once per matrix). Only the Python loop
+    around it is gone; on a 60 ms grid-following run the per-row calls were a
+    third of the wall time. Missing roots (lower effective degree) are NaN.
+    Shape: (rows, degree - 1), complex.
+    """
+
+    rows, length = coefficients.shape
+    width = max(length - 2, 0)
+    roots = np.full((rows, width), complex(math.nan, math.nan), dtype=complex)
+    if width == 0:
+        return roots
+    # polyder with scl == _DOMAIN_SCALE: c *= scl, then der[j-1] = j * c[j].
+    scaled = coefficients * _DOMAIN_SCALE
+    derivative = np.empty((rows, length - 1), dtype=float)
+    for power in range(length - 1, 0, -1):
+        derivative[:, power - 1] = power * scaled[:, power]
+    # as_series trims trailing EXACT zeros, keeping at least one coefficient.
+    nonzero = derivative != 0.0
+    effective = np.where(
+        nonzero.any(axis=1),
+        derivative.shape[1] - np.argmax(nonzero[:, ::-1], axis=1),
+        1,
+    )
+    for size in np.unique(effective):
+        size = int(size)
+        if size < 2:
+            continue
+        selected = np.flatnonzero(effective == size)
+        series = derivative[selected, :size]
+        if size == 2:
+            found = (-series[:, 0] / series[:, 1])[:, np.newaxis].astype(complex)
+        else:
+            degree = size - 1
+            companion = np.zeros((selected.size, degree, degree), dtype=float)
+            flat = companion.reshape(selected.size, -1)
+            flat[:, degree :: degree + 1] = 1
+            companion[:, :, -1] -= series[:, :-1] / series[:, -1:]
+            found = np.linalg.eigvals(companion).astype(complex)
+        roots[selected, : found.shape[1]] = _WINDOW_OFFSET + _WINDOW_SCALE * found
+    return roots
+
+
+def _batched_poly_value(coefficients: np.ndarray, points: np.ndarray) -> np.ndarray:
+    """``_poly_value`` row by row (same Horner statements), NaN points stay NaN."""
+
+    x = _DOMAIN_OFFSET + _DOMAIN_SCALE * points
+    value = coefficients[:, -1:] + x * 0
+    for index in range(2, coefficients.shape[1] + 1):
+        value = coefficients[:, -index : coefficients.shape[1] - index + 1] + value * x
+    return value
+
+
 def _dense_state_extrema(
     solution: Any,
     mode: CompiledMode,
     window_start: float,
     window_end: float,
 ) -> dict[str, dict[str, float]]:
-    """Evaluate every real dense-polynomial derivative root per accepted step."""
+    """Evaluate every real dense-polynomial derivative root per accepted step.
+
+    Per (step, state) the candidate set is the 17 probe points plus every real
+    derivative root inside the window; the extremum is the first candidate, in
+    step order and ascending time, that is strictly beyond all earlier ones.
+    The whole solution is evaluated as one batch (2026-11-17); the candidate
+    set, the arithmetic and the tie rule are the per-step loop's, so the
+    result is bit-identical (tests/test_dense_polynomials.py).
+    """
 
     if solution.sol is None or window_end <= window_start:
         return {}
@@ -383,35 +630,18 @@ def _dense_state_extrema(
             "refusing to publish incomplete state extrema"
         )
 
-    extrema: dict[str, dict[str, float]] = {}
-    state_components = tuple(
-        sorted(mode.circuit.state_components, key=lambda component: component.id)
-    )
-
-    def consider(component_id: str, value: float, time: float) -> None:
-        record = extrema.get(component_id)
-        if record is None:
-            extrema[component_id] = {
-                "minimum": value,
-                "minimum_time_s": time,
-                "maximum": value,
-                "maximum_time_s": time,
-            }
-            return
-        if value < record["minimum"]:
-            record["minimum"] = value
-            record["minimum_time_s"] = time
-        if value > record["maximum"]:
-            record["maximum"] = value
-            record["maximum_time_s"] = time
-
+    state_count = len(mode.circuit.state_components)
+    steps: list[int] = []
+    starts: list[float] = []
+    ends: list[float] = []
+    dense_starts: list[float] = []
+    dense_steps: list[float] = []
     for step_index, (raw_start, raw_end) in enumerate(
         zip(solution.t[:-1], solution.t[1:], strict=True)
     ):
         step_start = float(raw_start)
-        step_end = float(raw_end)
         start = max(step_start, window_start)
-        end = min(step_end, window_end)
+        end = min(float(raw_end), window_end)
         if end <= start:
             continue
         interpolant = interpolants[step_index]
@@ -427,48 +657,97 @@ def _dense_state_extrema(
                 "solve_ivp dense interpolant is not aligned with its accepted step; "
                 "refusing to publish incomplete state extrema"
             )
-        # A terminal root can truncate solution.t inside the integrator's accepted
-        # step. The interpolant still uses its original, longer h, so normalize with
-        # interpolant.t rather than the event-truncated raw_end.
-        normalized_start = (start - dense_start) / dense_step
-        normalized_end = (end - dense_start) / dense_step
-        probe_points = np.linspace(
-            normalized_start,
-            normalized_end,
-            _STATE_EXTREMA_PROBE_SUBINTERVALS + 1,
-        )
-        polynomials = _dense_step_state_polynomials(
-            interpolant,
-            len(mode.circuit.state_components),
-        )
+        steps.append(step_index)
+        starts.append(start)
+        ends.append(end)
+        dense_starts.append(dense_start)
+        dense_steps.append(dense_step)
+    if not steps:
+        return {}
 
-        for component in state_components:
-            state_index = mode.circuit.state_index[component.id]
-            polynomial = polynomials[state_index]
-            candidate_points = [float(point) for point in probe_points]
-            for raw_root in _poly_roots(_poly_derivative(polynomial)):
-                root = complex(raw_root)
-                if not (math.isfinite(root.real) and math.isfinite(root.imag)):
-                    continue
-                if abs(root.imag) > _STATE_EXTREMA_ROOT_IMAGINARY_TOLERANCE * max(
-                    1.0,
-                    abs(root.real),
-                ):
-                    continue
-                if (
-                    root.real < normalized_start - _STATE_EXTREMA_ROOT_BOUNDARY_TOLERANCE
-                    or root.real > normalized_end + _STATE_EXTREMA_ROOT_BOUNDARY_TOLERANCE
-                ):
-                    continue
-                candidate_points.append(
-                    min(normalized_end, max(normalized_start, float(root.real)))
-                )
+    # (step, state, power): every kept step's dense polynomials, one array.
+    polynomial_rows = [
+        _dense_step_state_polynomials(interpolants[index], state_count) for index in steps
+    ]
+    length = max(len(row) for polynomials in polynomial_rows for row in polynomials)
+    coefficients = np.zeros((len(steps), state_count, length), dtype=float)
+    for step_position, polynomials in enumerate(polynomial_rows):
+        for state_index, row in enumerate(polynomials):
+            # polyadd/polymul trim exact trailing zeros, so a row can be short.
+            # Zero padding is exact: the extra Horner steps add +-0 to the
+            # leading coefficient and the root search trims them again.
+            coefficients[step_position, state_index, : len(row)] = row
 
-            unique_points = np.asarray(sorted(set(candidate_points)), dtype=float)
-            values = np.asarray(_poly_value(polynomial, unique_points), dtype=float)
-            times = dense_start + dense_step * unique_points
-            for time, value in zip(times, values, strict=True):
-                consider(component.id, float(value), float(time))
+    dense_start_array = np.asarray(dense_starts)
+    dense_step_array = np.asarray(dense_steps)
+    # A terminal root can truncate solution.t inside the integrator's accepted
+    # step. The interpolant still uses its original, longer h, so normalize with
+    # interpolant.t rather than the event-truncated raw_end.
+    normalized_start = (np.asarray(starts) - dense_start_array) / dense_step_array
+    normalized_end = (np.asarray(ends) - dense_start_array) / dense_step_array
+    probes = np.stack(
+        [
+            np.linspace(low, high, _STATE_EXTREMA_PROBE_SUBINTERVALS + 1)
+            for low, high in zip(normalized_start, normalized_end, strict=True)
+        ]
+    )
+
+    flat = coefficients.reshape(len(steps) * state_count, length)
+    roots = _batched_derivative_roots(flat).reshape(len(steps), state_count, -1)
+    real = roots.real
+    low = normalized_start[:, np.newaxis, np.newaxis]
+    high = normalized_end[:, np.newaxis, np.newaxis]
+    keep = (
+        np.isfinite(roots.real)
+        & np.isfinite(roots.imag)
+        & ~(
+            np.abs(roots.imag)
+            > _STATE_EXTREMA_ROOT_IMAGINARY_TOLERANCE * np.maximum(1.0, np.abs(real))
+        )
+        & ~(real < low - _STATE_EXTREMA_ROOT_BOUNDARY_TOLERANCE)
+        & ~(real > high + _STATE_EXTREMA_ROOT_BOUNDARY_TOLERANCE)
+    )
+    clamped = np.where(keep, np.minimum(high, np.maximum(low, real)), math.nan)
+    candidates = np.concatenate(
+        (
+            np.broadcast_to(
+                probes[:, np.newaxis, :], (len(steps), state_count, probes.shape[1])
+            ),
+            clamped,
+        ),
+        axis=2,
+    )
+    # sorted(set(...)): ascending, duplicates dropped (NaN sorts last).
+    candidates = np.sort(candidates, axis=2)
+    duplicate = np.zeros(candidates.shape, dtype=bool)
+    duplicate[:, :, 1:] = candidates[:, :, 1:] == candidates[:, :, :-1]
+    candidates = np.where(duplicate, math.nan, candidates)
+
+    values = _batched_poly_value(
+        flat, candidates.reshape(len(steps) * state_count, -1)
+    ).reshape(candidates.shape)
+    times = (
+        dense_start_array[:, np.newaxis, np.newaxis]
+        + dense_step_array[:, np.newaxis, np.newaxis] * candidates
+    )
+
+    extrema: dict[str, dict[str, float]] = {}
+    for component in sorted(mode.circuit.state_components, key=lambda item: item.id):
+        state_index = mode.circuit.state_index[component.id]
+        # Step-major, then ascending time: the order the per-step loop visited.
+        ordered_points = candidates[:, state_index, :].reshape(-1)
+        valid = ~np.isnan(ordered_points)
+        ordered_values = values[:, state_index, :].reshape(-1)[valid]
+        ordered_times = times[:, state_index, :].reshape(-1)[valid]
+        # First occurrence wins a tie, exactly as the strict < / > updates did.
+        minimum = int(np.argmin(ordered_values))
+        maximum = int(np.argmax(ordered_values))
+        extrema[component.id] = {
+            "minimum": float(ordered_values[minimum]),
+            "minimum_time_s": float(ordered_times[minimum]),
+            "maximum": float(ordered_values[maximum]),
+            "maximum_time_s": float(ordered_times[maximum]),
+        }
     return extrema
 
 
