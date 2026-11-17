@@ -887,9 +887,14 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "Losses and junction temperatures are computed from recorded, "
             "auditable signals after the run — the kernel itself stays ideal, "
             "so device dissipation never feeds back into the switching "
-            "solution. The electrothermal LOOP is therefore OPEN by decision: "
-            "`tj_evaluation_c` is a declared constant and the Jacobian "
-            "carries an explicit 'no d/dT_j term' label. Table lookups outside "
+            "solution. By default (`tj_mode: declared`) the electrothermal "
+            "loop is OPEN: `tj_evaluation_c` is a declared constant. "
+            "`tj_mode: self_consistent` closes losses <-> Tj on the recorded "
+            "run (not Tj <-> waveforms), reports the loop gain, and returns "
+            "`thermal_runaway` without a number at gain >= 1; switching "
+            "energies stay at their card test temperature. The gradient "
+            "engine keeps the open loop and an explicit 'no d/dT_j term' "
+            "label, and refuses the self-consistent mode. Table lookups outside "
             "their declared axes surface as flags with signed edge distances, "
             "never as silent plateaus. Cards shipped in the repo are "
             "explicitly SYNTHETIC — there is no vendor part catalogue, and a "
@@ -900,6 +905,9 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "exponential sum to 1e-9; fan operating point checked by hand",
             "ASTM E1049 rainflow counting against the canonical example "
             "(counting, deliberately not a life model)",
+            "self-consistent Tj against the closed-form fixed point at loop "
+            "gains 0.3/0.9/-0.9 to 1e-6 K and runaway at 1.1 "
+            "(tests/test_self_consistent_tj.py)",
             "buck CCM loss totals and the liquid-cooling path "
             "(tests/test_losses_thermal.py, tests/test_liquid_cooling.py)",
         ],

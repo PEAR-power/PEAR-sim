@@ -30,8 +30,12 @@ must be the model's only logical control in this contract.
 The carrier ratio `N = carrier_frequency / fundamental_frequency` must be an integer
 from 2 through 8333. The modulation index is limited to `0 <= m < 1`; overmodulation and
 clamping are rejected. `sequence` is explicitly `abc` or `acb`. The dead time must
-be non-negative and strictly shorter than the smallest possible command pulse,
-`0.5 * (1 - m) / carrier_frequency`.
+be non-negative and strictly shorter than `0.25 * (1 - m) / carrier_frequency`: the
+low switch turns on one dead time after the high command ends, inside the same cell,
+and the cell tail after the longest pulse is half the smallest command pulse. (Until
+2026-11-16 the documented and loader bound was the full smallest pulse,
+`0.5 * (1 - m) / carrier_frequency`; models between the two passed `lint` and failed
+at run start.)
 
 For carrier cell `k`, references are mathematically sampled once at the cell center.
 This is an offline midpoint-sampled schedule: because the centered pulse begins before
@@ -156,10 +160,10 @@ On the same oracle, the textbook loss `|dV1| = (4/pi)*Td*fc*Vdc` holds within 2 
 the damped load. On the ripple-dominated load the real loss is 0.47-0.90 of the formula,
 because parts of the gaps sit at 0 V instead of on a rail.
 
-The dead time admitted by the scheduler is the tighter of the two documented bounds.
-The low switch must turn on inside the same carrier cell, so `dead_time` must stay below
-`0.25*(1 - m*reference_peak)/carrier_frequency`. A larger value passes the loader and
-is refused when the run starts (tracked separately).
+The matrix stops at 1 us because the low switch must turn on inside the same carrier
+cell: `dead_time` must stay below `0.25*(1 - m*reference_peak)/carrier_frequency`, and
+since 2026-11-16 the loader enforces that bound (it used to accept twice as much and
+the run failed at start).
 
 This is verification against an independent solution of the same ideal circuit. The
 floating-neutral star, the sector bridge driven with dead time, unbalanced loads,

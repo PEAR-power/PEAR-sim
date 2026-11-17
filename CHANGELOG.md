@@ -16,6 +16,16 @@ break the model format; every break carries a migration note).
   controller by the measured gain margin puts a multiplier on the unit circle at the
   measured frequency (1.2e-7). Unstable orbits, engaged limiters and injections that
   change the switching mode sequence are refused.
+- `loss_analysis.tj_mode: self_consistent` — conduction losses iterated to a
+  self-consistent junction temperature trajectory on the recorded run, with the
+  electrothermal loop gain measured and reported; loop gain ≥ 1 returns
+  `thermal_runaway` and no loss number (so does a fixed point that only exists
+  because v_on is clamped at the card's temperature-axis edge). Checked against the closed form
+  Tj* = (Ta + Rth·I²·R0·(1 − α·T0)) / (1 − Rth·I²·R0·α) at loop gains 0.3, 0.9
+  and −0.9 (worst 9e-13 K), runaway at 1.1. On `buck_with_loss_cards.yaml` the
+  devices settle at 53–66 °C instead of the declared 125 °C and the total loss
+  estimate moves 27.45 → 26.79 W. Default `declared` is unchanged bit for bit.
+
 - Dead-time acceptance matrix for the three-phase SPWM inverter (VAL-005): 24 runs
   (SPWM and min-max x dead time 0/0.5/1 us x damped and ripple-dominated RL x m 0.5/0.9)
   against a new independent oracle, `pear_sim.benchmarks.spwm_dead_time`, which solves
@@ -98,7 +108,23 @@ break the model format; every break carries a migration note).
   the expansions (`passive_parasitics`). Efficiency maps count declared ESR/DCR losses
   (`declared_parasitic_loss_w`) and refuse to count one twice.
 
+### Changed
+
+- Faster evidence: the dense-output quadrature and the state-extremum search run as
+  array operations (per-mode gather plan; one batched root search per segment) instead
+  of Python loops over every output, component and accepted step. Results are
+  **bit-identical** — pinned against the former loops, kept verbatim in
+  `tests/reference/dense_metrics_reference.py`, on every integrator and on whole runs.
+  `examples/grid_following_converter.yaml` (60 ms): full evidence 147.6 s -> 48.7 s,
+  lean 74.8 s -> 43.1 s; integration is now 57-64 % of the run.
+
 ### Fixed
+
+- Three-phase SPWM: the dead-time bound the loader (and `lint`) accepts is now the one
+  the scheduler can place, `0.25*(1-m*peak)/carrier_frequency`, not the full minimum
+  pulse `0.5*(...)`. A model between the two passed `lint` and failed at run start
+  ("not representable at the requested absolute time origin"). **Migration:** such
+  models never ran; they are now rejected at load time with the bound in the message.
 
 - A saturating `flux_map` no longer diverges in saturation. The machine driver carried
   `L_old*i -> L_new*i` across segment boundaries with the map's DIFFERENTIAL inductances,

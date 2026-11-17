@@ -146,6 +146,14 @@ def evaluate_losses(
             "be worse than refusing"
         )
 
+    if spec.tj_mode != "declared":
+        raise LossGradientError(
+            f"loss_analysis.tj_mode={spec.tj_mode!r} is not supported by the "
+            "gradient engine: it evaluates every card at the declared "
+            "tj_evaluation_c and carries no d/dT_j term; use tj_mode: declared "
+            "here, or the recorded-run estimate for the self-consistent loop"
+        )
+
     component_by_id = {component.id: component for component in model.components}
     per_device: dict[str, float] = {}
     margins: dict[str, _TableMargin] = {}
