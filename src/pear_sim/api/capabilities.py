@@ -805,8 +805,44 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
         "id": "electrical.general_descriptor_dae",
         "status": "unsupported",
         "scope": "dependent storage states, capacitor loops, and inductor cutsets",
-        "statement": "Only narrow topology-specific converter zero-current paths are covered.",
+        "statement": (
+            "Only narrow topology-specific converter zero-current paths are covered. "
+            "A capacitor loop closed by an ideal switch has an opt-in of its own "
+            "(`electrical.impulsive_commutation_conservation`); loops with time-varying "
+            "sources or diodes, coupled windings and index > 1 stay out of scope."
+        ),
         "evidence": [],
+    },
+    {
+        "id": "electrical.impulsive_commutation_conservation",
+        "status": "experimental",
+        "scope": (
+            "opt-in `analysis.transient.impulsive_events: conserve`: a loop of capacitors, "
+            "constant voltage sources and lossless ideal switches closed by a switch "
+            "event; transient runs only (steady state, closed-loop and gradient "
+            "analyses refuse the opt-in); inductor cuts are still refused"
+        ),
+        "statement": (
+            "The loop takes a charge-conserving jump (charge moves only around the "
+            "loops; their circulations are fixed by KVL after the jump) and the "
+            "dissipated energy is booked in the physics audit as `commutation_loss_j`, "
+            "with every jump listed under `impulsive_commutations`. After the jump one "
+            "capacitor per loop carries the loop law's derivative, the dual of the "
+            "inductor-star reduction. Verified against charge conservation on paper "
+            "and against the vanishing-resistance limit of the ordinary engine; "
+            "not validated against hardware, where the loss lands in ESR, wiring and "
+            "the switch."
+        ),
+        "evidence": [
+            "two capacitors (C1 != C2), a capacitor onto a DC source and a chain of "
+            "three agree with sum(C*V)/sum(C) and 1/2*sum(C*V^2) - 1/2*sum(C)*V^2 "
+            "to 1e-12 (tests/test_impulsive_capacitor_loops.py)",
+            "the same circuit with switch on-resistance R = 1, 0.1, 0.01 ohm on the "
+            "default engine dissipates the impulsive loss to 1e-6 for every R",
+            "the audit closes with commutation_loss_j and misses by exactly it "
+            "without; a jump solved with the wrong capacitances is refused by the "
+            "kernel's post-jump KVL check",
+        ],
     },
     {
         "id": "electrothermal.core_loss_igse",

@@ -598,6 +598,12 @@
             "atol": {
               "type": "number",
               "exclusiveMinimum": 0
+            },
+            "impulsive_events": {
+              "enum": [
+                "reject",
+                "conserve"
+              ]
             }
           },
           "additionalProperties": true

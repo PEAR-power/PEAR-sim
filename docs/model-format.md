@@ -467,7 +467,7 @@ Example: `examples/inverter_three_phase_floating_neutral.yaml` (dead time
 
 ### 6.2. Ideal topology restrictions
 
-Ideal shorts and sources can create a singular or contradictory circuit. The kernel does not add a hidden `gmin` or parasitics. An invalid topology ends with a `TopologyError` describing the closed elements. A loop of only capacitors and voltage sources (two capacitors in parallel, a capacitor directly across a source) is such a topology; the error then names the capacitors and suggests an `esr` (§6.1.0a).
+Ideal shorts and sources can create a singular or contradictory circuit. The kernel does not add a hidden `gmin` or parasitics. An invalid topology ends with a `TopologyError` describing the closed elements. A loop of only capacitors and voltage sources (two capacitors in parallel, a capacitor directly across a source) is such a topology; the error then names the capacitors and suggests an `esr` (§6.1.0a). When a switch or diode CLOSES such a loop at unequal voltages the error is `model.state_discontinuity` with the loop and the jump; `analysis.transient.impulsive_events: conserve` (§8) lets a switch-closed loop take a charge-conserving jump instead.
 
 The reference kernel has one narrow exception to the assumption that every L remains an
 active differential state in every mode. When an inductor current is exactly zero
@@ -816,6 +816,26 @@ analysis:
 | `rtol` | no | `1e-7` | finite float `>= 2.220446049250313e-14`; a smaller value would be silently raised by SciPy and is therefore rejected |
 | `atol` | no | `1e-9` | finite positive float |
 | `max_step` | no | none | positive time |
+| `impulsive_events` | no | `reject` | `reject` or `conserve` (experimental, see below) |
+
+`impulsive_events` decides what happens when a switch event closes a loop of capacitors
+(and constant voltage sources, lossless ideal switches) whose voltages disagree:
+
+- `reject` (default) — the run stops with `model.state_discontinuity` (§6.2);
+- `conserve` — the loop takes a charge-conserving jump at that instant. Charge moves only
+  around the closed loops, so for two capacitors the shared voltage is
+  `(C1·V1 + C2·V2)/(C1 + C2)`, and a capacitor closed onto a DC source takes the
+  source voltage. The energy the vanishing loop resistance would dissipate
+  (`½·C1·C2/(C1+C2)·ΔV²` for two capacitors, `½·C·ΔV²` onto a source) is reported in
+  `physics-audit.json` as `commutation_loss_j` per window, and every jump under
+  `impulsive_commutations` (time, event, loops, voltage mismatch, transferred charge,
+  loss, source energy). The balance closes with that term. While the loop stays
+  closed one capacitor per loop carries the derivative of the loop law. Refused under
+  `conserve`: a loop through a diode or thyristor, a loop with a `waveform` source
+  (it would drive `C·dV/dt` through the loop), and the steady-state, closed-loop and
+  gradient analyses. Inductor cuts are still refused. In hardware this loss lands in
+  ESR, wiring and the switch; the jump is the limit of a small loop resistance, not a
+  model of the inrush peak.
 
 `output_step` defines a common, uniform result grid. Internal adaptive steps and events may occur between grid points. A PWM breakpoint splits integration, so the solver never uses history from the wrong topology.
 

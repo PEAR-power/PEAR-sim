@@ -420,6 +420,11 @@ def _plan(model: Model) -> _Plan:
         raise ClosedLoopSteadyStateError(
             "closed-loop steady state requires at least one circuit state"
         )
+    if model.transient.impulsive_events != "reject":
+        raise ClosedLoopSteadyStateError(
+            "impulsive_events: conserve is outside the closed-loop steady state: a "
+            "charge-conserving jump is a state map the Floquet multipliers do not carry"
+        )
     _diodes, mode = HybridSimulator(model).initial_mode()
     if tuple(getattr(mode, "star_constraints", ())):
         raise ClosedLoopSteadyStateError(

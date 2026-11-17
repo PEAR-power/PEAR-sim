@@ -9,6 +9,19 @@ break the model format; every break carries a migration note).
 
 ### Added
 
+- `analysis.transient.impulsive_events: reject | conserve` (default `reject`, unchanged).
+  Under `conserve` a capacitor loop closed by an ideal switch takes a charge-conserving
+  jump; the dissipated energy is booked as `commutation_loss_j` in the physics audit
+  (every jump listed under `impulsive_commutations`) and the balance closes with it. After
+  the jump the loop is reduced (one capacitor per loop carries the loop law's derivative,
+  dual of the inductor-star reduction). Checked against charge conservation on paper (two
+  capacitors with C1 != C2, onto a DC source, a chain of three: 1e-12) and against the
+  ordinary engine with switch on-resistance 1/0.1/0.01 ohm, whose dissipation reaches the
+  same loss for every R (1e-6). Loops through diodes or with waveform sources are refused,
+  as are steady-state, closed-loop and gradient analyses under the opt-in. New capability
+  `electrical.impulsive_commutation_conservation` (experimental); the request hash
+  changes only for `conserve`.
+
 - `state_discontinuity` diagnostic (`StateDiscontinuityError`, code
   `model.state_discontinuity`, subclass of `TopologyError`): a switch or diode closing a
   loop of capacitors/voltage sources at unequal voltages, or opening the last path of an

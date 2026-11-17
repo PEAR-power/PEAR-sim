@@ -210,6 +210,34 @@ class CompiledMode:
                         matrix[row, an] += coefficient
             # A constrained PLAIN inductor intentionally keeps the default 0 V RHS.
 
+        # --- capacitor loops (opt-in impulsive_events: conserve) -------------
+        # A loop of voltage-defined branches (capacitors, voltage sources,
+        # closed lossless switches, frozen plain inductors) over-determines
+        # KVL: the capacitor voltages are tied, so the branch rows are linearly
+        # dependent and the matrix is singular. Dual of the inductor star
+        # below: the branch row of ONE capacitor per loop (the one that
+        # completes it) is replaced by the loop law's time derivative,
+        # sum(+/- i_k / C_k) = 0 over the loop's capacitors, which holds when
+        # every other branch voltage in the loop is constant. The loop law
+        # itself is an invariant the state must already satisfy; the solver
+        # restores it by a charge-conserving jump on entry
+        # (HybridSimulator._settle_impulsive_jumps). Only under the opt-in:
+        # by default the singular matrix stays a refusal.
+        self.capacitor_loops: tuple[CapacitorLoop, ...] = ()
+        if circuit.impulsive_conserve:
+            self.capacitor_loops = _reduce_capacitor_loops(
+                circuit,
+                branch_components,
+                self.branch_index,
+                gates,
+                diode_states,
+                constrained_inductors,
+                matrix,
+                state_rhs,
+                constant_rhs,
+                source_rhs,
+            )
+
         # --- structurally shorted node classes ------------------------------
         # Branches whose mode equation pins v_p - v_n = 0 EXACTLY: closed
         # ideal switches, conducting diodes/latches, and frozen PLAIN
@@ -750,6 +778,136 @@ class CompiledMode:
 
 
 
+@dataclass(frozen=True)
+class CapacitorLoop:
+    """One reduced capacitor loop of a compiled mode.
+
+    ``edges`` walks the loop once, each entry ``(component_id, sign)`` with
+    sign +1 when the walk goes from the component's ``p`` to its ``n``; the
+    loop law is sum(sign * v_branch) = 0. ``dependent`` is the capacitor
+    whose branch row carries the derivative of that law.
+    """
+
+    dependent: str
+    edges: tuple[tuple[str, int], ...]
+
+
+def _loop_edge_voltage_is_constant(component: Any) -> bool:
+    if component.type == "voltage_source":
+        return component.waveform is None
+    return True
+
+
+def fundamental_loops(
+    edges: list[tuple[int, Any]],
+) -> list[tuple[Any, tuple[tuple[str, int], ...]]]:
+    """Fundamental loops of a branch graph, closed by the lowest-priority edges.
+
+    ``edges`` are ``(priority, component)``; a spanning forest takes them in
+    (priority, id) order, so every edge that would close a loop is one of the
+    latest ones. Returns, for each closing edge, the loop as signed edges with
+    the closing edge first and traversed p -> n.
+    """
+
+    ordered = sorted(edges, key=lambda item: (item[0], item[1].id))
+    roots: dict[str, str] = {}
+
+    def find(node: str) -> str:
+        while roots.setdefault(node, node) != node:
+            roots[node] = roots[roots[node]]
+            node = roots[node]
+        return node
+
+    adjacency: dict[str, list[tuple[str, str, int]]] = {}
+    closing: list[Any] = []
+    for _priority, component in ordered:
+        a, b = find(component.p), find(component.n)
+        if a == b:
+            closing.append(component)
+            continue
+        roots[a] = b
+        adjacency.setdefault(component.p, []).append((component.n, component.id, 1))
+        adjacency.setdefault(component.n, []).append((component.p, component.id, -1))
+
+    loops: list[tuple[Any, tuple[tuple[str, int], ...]]] = []
+    for component in closing:
+        # Tree path from n back to p, so the loop runs p -> n -> ... -> p.
+        previous: dict[str, tuple[str, str, int] | None] = {component.n: None}
+        frontier = [component.n]
+        while frontier and component.p not in previous:
+            node = frontier.pop()
+            for other, edge_id, sign in adjacency.get(node, ()):
+                if other not in previous:
+                    previous[other] = (node, edge_id, sign)
+                    frontier.append(other)
+        path: list[tuple[str, int]] = []
+        node = component.p
+        while previous[node] is not None:
+            above, edge_id, sign = previous[node]  # type: ignore[misc]
+            # Walking above -> node along the edge: +1 when that is p -> n.
+            path.append((edge_id, sign))
+            node = above
+        loops.append((component, ((component.id, 1), *reversed(path))))
+    return loops
+
+
+def _reduce_capacitor_loops(
+    circuit: "Circuit",
+    branch_components: Iterable[Any],
+    branch_index: dict[str, int],
+    gates: dict[str, bool],
+    diode_states: dict[str, bool],
+    constrained_inductors: frozenset[str],
+    matrix: np.ndarray,
+    state_rhs: np.ndarray,
+    constant_rhs: np.ndarray,
+    source_rhs: np.ndarray,
+) -> tuple[CapacitorLoop, ...]:
+    edges: list[tuple[int, Any]] = []
+    for component in branch_components:
+        if component.type == "voltage_source":
+            edges.append((0, component))
+        elif component.type in SWITCHING_BRANCH_TYPES:
+            if not component.on_resistance:
+                edges.append((1, component))
+        elif component.type == "inductor" and component.id in constrained_inductors:
+            if component.id not in circuit.coupling_by_inductor:
+                edges.append((1, component))
+        elif component.type == "capacitor":
+            edges.append((2, component))
+    loops: list[CapacitorLoop] = []
+    for closing, signed in fundamental_loops(edges):
+        if closing.type != "capacitor":
+            continue  # a loop without a capacitor: a short, left singular
+        members = [circuit.component_by_id[edge_id] for edge_id, _sign in signed]
+        names = " - ".join(sorted(edge_id for edge_id, _sign in signed))
+        diodes = [m.id for m in members if m.type in LATCHING_OR_DIODE]
+        if diodes:
+            raise TopologyError(
+                f"impulsive_events: conserve covers capacitor loops closed by ideal "
+                f"switches; the loop {names} runs through {', '.join(sorted(diodes))}, "
+                "whose conduction during an impulse is not modelled"
+            )
+        varying = [m.id for m in members if not _loop_edge_voltage_is_constant(m)]
+        if varying:
+            raise TopologyError(
+                f"impulsive_events: conserve needs constant voltages around a capacitor "
+                f"loop; the loop {names} contains the waveform source(s) "
+                f"{', '.join(sorted(varying))}, which would drive an unbounded current "
+                "C*dV/dt through it"
+            )
+        row = branch_index[closing.id]
+        matrix[row, :] = 0.0
+        state_rhs[row, :] = 0.0
+        constant_rhs[row] = 0.0
+        source_rhs[row, :] = 0.0
+        for member, (edge_id, sign) in zip(members, signed):
+            if member.type == "capacitor":
+                matrix[row, branch_index[edge_id]] += sign / float(member.value)
+        loops.append(CapacitorLoop(dependent=closing.id, edges=tuple(signed)))
+    return tuple(loops)
+
+
 def dcr_star_hint(components: Iterable[Any], ground: str, parasitics: Iterable[Any]) -> str:
     """Name inductors whose ``dcr`` sits at a node where only inductors meet.
 
@@ -1020,6 +1178,9 @@ class Circuit:
     def __init__(self, model: Model):
         self.model = model
         self.ground = model.ground
+        self.impulsive_conserve = (
+            getattr(model.transient, "impulsive_events", "reject") == "conserve"
+        )
         self.components = model.components
         self.component_by_id = {component.id: component for component in self.components}
         node_names = sorted(

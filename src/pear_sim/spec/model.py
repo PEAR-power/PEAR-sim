@@ -287,6 +287,13 @@ class TransientSettings:
     rtol: float
     atol: float
     max_step: float | None
+    # "reject" (default): a state jump at an event is a state_discontinuity.
+    # "conserve": a capacitor loop closed by a switch takes a charge-conserving
+    # jump with its dissipated energy booked as commutation_loss_j.
+    impulsive_events: str = "reject"
+
+
+IMPULSIVE_EVENT_POLICIES = ("reject", "conserve")
 
 
 @dataclass(frozen=True)
@@ -1467,7 +1474,7 @@ def load_model(path: str | Path, overrides: dict[str, str] | None = None) -> Mod
         raise ModelError("analysis.transient must be an object")
     _reject_unknown(
         transient_raw,
-        {"start", "stop", "output_step", "solver", "rtol", "atol", "max_step"},
+        {"start", "stop", "output_step", "solver", "rtol", "atol", "max_step", "impulsive_events"},
         name="analysis.transient",
     )
     start = _resolve(transient_raw.get("start", 0.0), parameters, "time", name="transient.start")
@@ -1521,7 +1528,15 @@ def load_model(path: str | Path, overrides: dict[str, str] | None = None) -> Mod
     )
     if max_step is not None and max_step <= 0:
         raise ModelError("transient.max_step must be positive")
-    transient = TransientSettings(start, stop, output_step, solver, rtol, atol, max_step)
+    impulsive_events = transient_raw.get("impulsive_events", "reject")
+    if impulsive_events not in IMPULSIVE_EVENT_POLICIES:
+        raise ModelError(
+            "analysis.transient.impulsive_events must be one of "
+            + ", ".join(IMPULSIVE_EVENT_POLICIES)
+        )
+    transient = TransientSettings(
+        start, stop, output_step, solver, rtol, atol, max_step, impulsive_events
+    )
 
     raw_outputs = data.get("outputs")
     if not isinstance(raw_outputs, list) or not raw_outputs:
