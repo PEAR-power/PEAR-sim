@@ -421,6 +421,9 @@ def simulation_request_dict(model: Model) -> dict[str, Any]:
         "max_step_s": settings.max_step,
         "outputs": list(model.outputs),
     }
+    if settings.impulsive_events != "reject":
+        # Additive: the default leaves every existing request hash unchanged.
+        request["impulsive_events"] = settings.impulsive_events
     if model.harmonics is not None:
         request["harmonics"] = {
             "start_s": model.harmonics.start,

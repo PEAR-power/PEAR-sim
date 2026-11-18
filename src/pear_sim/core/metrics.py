@@ -801,6 +801,9 @@ class _MetricAccumulator:
         )
         self.initial_state = initial_state.copy()
         self.last_half_initial_state: np.ndarray | None = None
+        # Impulsive jumps (impulsive_events: conserve), set by the simulator
+        # before finalize; empty for every run without one.
+        self.impulses: list[dict[str, Any]] = []
         self.topology_segments = 0
         self._seen_topologies: set[Any] = set()
         self._output_maps: dict[str, list[tuple[np.ndarray, float, np.ndarray]]] = {
@@ -962,8 +965,35 @@ class _MetricAccumulator:
                 if component_id not in storage_ids
             )
         )
-        balance_residual = delta_storage + non_storage_absorbed
-        balance_scale = abs(delta_storage) + sum(
+        # A jump moves storage energy at one instant, outside every quadrature
+        # interval: what the sources delivered in it is added to their energy,
+        # and what the vanishing loop resistance dissipated is its own term.
+        impulses = [
+            impulse
+            for impulse in self.impulses
+            if window.start <= impulse["time_s"] <= window.end
+        ]
+        if window is self.last_half:
+            impulses = [i for i in impulses if i["time_s"] >= self.midpoint]
+        commutation_loss = 0.0
+        for impulse in impulses:
+            commutation_loss += impulse["commutation_loss_j"]
+            for component_id, value in impulse["source_absorbed_energy_j"].items():
+                component_energy[component_id] = component_energy.get(component_id, 0.0) + value
+        if impulses:
+            source_absorbed = float(
+                sum(component_energy[component_id] for component_id in source_ids)
+            )
+            source_delivered = -source_absorbed
+            non_storage_absorbed = float(
+                sum(
+                    value
+                    for component_id, value in component_energy.items()
+                    if component_id not in storage_ids
+                )
+            )
+        balance_residual = delta_storage + non_storage_absorbed + commutation_loss
+        balance_scale = abs(delta_storage) + abs(commutation_loss) + sum(
             abs(value)
             for component_id, value in component_energy.items()
             if component_id not in storage_ids
@@ -1021,6 +1051,14 @@ class _MetricAccumulator:
             "machine_electromagnetic_energy_j": machine_energy,
             "machine_electromagnetic_mean_power_w": machine_energy / window.integrated_interval_s,
             **self._parasitic_window(component_energy, window.integrated_interval_s),
+            **(
+                {
+                    "commutation_loss_j": commutation_loss,
+                    "impulsive_commutations": len(impulses),
+                }
+                if self.model.transient.impulsive_events == "conserve"
+                else {}
+            ),
         }
 
     def _parasitic_window(
@@ -1122,4 +1160,8 @@ class _MetricAccumulator:
                 ),
                 "restore_with": "re-run without --lean (the full evidence mode)",
             }
+        if self.impulses:
+            # Every jump, with its loop, mismatch, transferred charge and loss —
+            # also in lean mode, where no balance is integrated.
+            physics_audit["impulsive_commutations"] = [dict(item) for item in self.impulses]
         return time_integrals, self._continuous_outputs(), physics_audit

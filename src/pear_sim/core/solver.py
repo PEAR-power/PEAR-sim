@@ -75,6 +75,31 @@ from pear_sim.core.scheduling import scheduled_edges as scheduled_edges  # noqa:
 BACKENDS = ("python", "rust")
 
 
+def impulsive_loop_charges(
+    capacitance: np.ndarray, incidence: np.ndarray, residuals: np.ndarray
+) -> np.ndarray:
+    """Loop circulations alpha of a charge-conserving jump.
+
+    ``incidence[l, k]`` is +1/-1 when loop l runs through capacitor k from p
+    to n / n to p; ``residuals[l]`` is the KVL sum around loop l before the
+    jump. The impulse can only circulate around the loops, so capacitor k
+    receives Q_k = sum_l incidence[l, k] * alpha_l, and KVL after the jump is
+    (incidence diag(1/C) incidence^T) alpha = -residuals.
+    """
+
+    return np.linalg.solve((incidence / capacitance) @ incidence.T, -residuals)
+
+
+def commutation_loss(storage_change_j: float, source_absorbed_j: float) -> float:
+    """Energy the vanishing loop resistance dissipates in a jump.
+
+    Conservation over the instant: storage change + energy absorbed by the
+    sources in the loop + dissipation = 0.
+    """
+
+    return -(storage_change_j + source_absorbed_j)
+
+
 def _describe_events(events: list["SimulationEvent"]) -> str:
     """Human-readable cause of a mode change, for a state_discontinuity."""
 
@@ -331,6 +356,7 @@ class HybridSimulator:
         self.time_tolerance = max(1e-15, span * 1e-12)
         self.guard_tolerance = 1e-10
         self.constraint_tolerance = STATE_CONSTRAINT_TOLERANCE
+        self._impulses: list[dict[str, Any]] = []
         # Shadow of the unforced gate schedule, refreshed at the start of each
         # run. Initialized here too so callers that drive _apply_scheduled_edges
         # directly (the scheduler tests do) work without a full simulate().
@@ -411,6 +437,11 @@ class HybridSimulator:
         except StateDiscontinuityError as exc:
             exc.event = exc.event or "the initial state"
             raise
+        self._impulses = []
+        declared_state = state
+        diodes, mode, state = self._settle_impulsive_jumps(
+            gates, diodes, mode, state, settings.start, "the initial state"
+        )
         self._assert_star_invariants(mode, state)
         state, constrained_state_projections = self._project_constrained_state(state, mode)
         state_constraint_events = 0
@@ -420,6 +451,9 @@ class HybridSimulator:
             state,
             evidence_mode=self.evidence_mode,
         )
+        if self._impulses:
+            # The audit must see the jump at the run start: storage before it.
+            metric_accumulator.initial_state = np.array(declared_state, dtype=float)
         metric_accumulator._record_mode(mode)
         harmonic_accumulator = HarmonicAccumulator(self.model)
 
@@ -1215,6 +1249,9 @@ class HybridSimulator:
                 except StateDiscontinuityError as exc:
                     exc.event = exc.event or cause
                     raise
+                stabilized, mode, state = self._settle_impulsive_jumps(
+                    gates, stabilized, mode, state, current_time, cause
+                )
                 self._assert_star_continuity(mode, state, current_time, cause)
                 state, projection_count = self._project_constrained_state(state, mode)
                 constrained_state_projections += projection_count
@@ -1272,6 +1309,7 @@ class HybridSimulator:
         if sample_index < len(sample_times):
             record(float(sample_times[-1]), state, mode)
 
+        metric_accumulator.impulses = list(self._impulses)
         time_integrals, continuous_outputs, physics_audit = metric_accumulator.finalize(
             state,
             self.time_tolerance,
@@ -1327,6 +1365,11 @@ class HybridSimulator:
                     if self.model.sampled_controls
                     else {}
                 ),
+                **(
+                    {"impulsive_commutations": len(self._impulses)}
+                    if self.circuit.impulsive_conserve
+                    else {}
+                ),
                 "wall_time_s": wall_time_s,
             },
             time_integrals=time_integrals,
@@ -1362,6 +1405,132 @@ class HybridSimulator:
                     "Declare initial_current values that sum to zero at the "
                     "star point."
                 )
+
+    def _loop_edge_voltage(self, component_id: str, state: np.ndarray) -> float:
+        component = self.circuit.component_by_id[component_id]
+        if component.type == "capacitor":
+            return float(state[self.circuit.state_index[component_id]])
+        if component.type == "voltage_source":
+            return float(component.value)  # waveform sources are refused in loops
+        if component.type == "inductor":
+            return 0.0  # frozen plain inductor: a 0 V branch
+        return float(component.forward_voltage or 0.0)
+
+    def _settle_impulsive_jumps(
+        self,
+        gates: dict[str, bool],
+        diodes: dict[str, bool],
+        mode: CompiledMode,
+        state: np.ndarray,
+        time: float,
+        cause: str,
+    ) -> tuple[dict[str, bool], CompiledMode, np.ndarray]:
+        """Charge-conserving jump into a mode whose capacitor loops disagree.
+
+        Under impulsive_events: conserve a closed loop of capacitors (and
+        constant sources, lossless switches) must satisfy KVL from its first
+        instant. The impulse that enforces it is a circulation through the
+        loops only — it cannot pass resistors, inductors or current sources —
+        so with B the loop-capacitor incidence (sign +1 when the loop runs
+        p -> n) the transferred charges are Q = B^T alpha and the new
+        voltages v + Q/C. KVL after the jump fixes alpha:
+
+            (B diag(1/C) B^T) alpha = -r,   r_l = sum_k B_lk v_k (all edges).
+
+        For two capacitors this is V = (C1 V1 + C2 V2)/(C1 + C2). The energy
+        the vanishing loop resistance dissipates is the storage drop plus what
+        the sources delivered; it is booked as commutation_loss_j so the
+        physics audit closes WITH it and misses by exactly it without.
+        The mode is then re-selected on the new state (a diode elsewhere may
+        see a new voltage); a second jump in a row is allowed, a third means
+        the configuration does not settle.
+        """
+
+        if not getattr(self.circuit, "impulsive_conserve", False):
+            return diodes, mode, state
+        settings = self.model.transient
+        for _attempt in range(4):
+            loops = getattr(mode, "capacitor_loops", ())
+            if not loops:
+                return diodes, mode, state
+            residuals = []
+            consistent = True
+            for loop in loops:
+                voltages = [self._loop_edge_voltage(edge, state) for edge, _sign in loop.edges]
+                residual = sum(sign * v for (_edge, sign), v in zip(loop.edges, voltages))
+                scale = max((abs(v) for v in voltages), default=0.0)
+                tolerance = max(
+                    STATE_CONSTRAINT_TOLERANCE * max(1.0, scale),
+                    float(settings.atol) + float(settings.rtol) * scale,
+                )
+                residuals.append(residual)
+                consistent = consistent and abs(residual) <= tolerance
+            if consistent:
+                return diodes, mode, state
+            capacitors = sorted(
+                {
+                    edge
+                    for loop in loops
+                    for edge, _sign in loop.edges
+                    if self.circuit.component_by_id[edge].type == "capacitor"
+                }
+            )
+            column = {edge: index for index, edge in enumerate(capacitors)}
+            capacitance = np.array(
+                [float(self.circuit.component_by_id[edge].value) for edge in capacitors]
+            )
+            incidence = np.zeros((len(loops), len(capacitors)))
+            for row, loop in enumerate(loops):
+                for edge, sign in loop.edges:
+                    if edge in column:
+                        incidence[row, column[edge]] += sign
+            try:
+                alpha = impulsive_loop_charges(capacitance, incidence, np.asarray(residuals))
+            except np.linalg.LinAlgError as exc:
+                raise SimulationError(
+                    f"Impulsive jump at t={time:.12g} s has no unique solution: the "
+                    "closed capacitor loops are not independent"
+                ) from exc
+            charge: dict[str, float] = {}
+            for row, loop in enumerate(loops):
+                for edge, sign in loop.edges:
+                    charge[edge] = charge.get(edge, 0.0) + sign * float(alpha[row])
+            new_state = state.copy()
+            stored_before = stored_after = 0.0
+            absorbed: dict[str, float] = {}
+            for edge, value in sorted(charge.items()):
+                component = self.circuit.component_by_id[edge]
+                if component.type == "capacitor":
+                    index = self.circuit.state_index[edge]
+                    c = float(component.value)
+                    before = float(state[index])
+                    after = before + value / c
+                    new_state[index] = after
+                    stored_before += 0.5 * c * before * before
+                    stored_after += 0.5 * c * after * after
+                else:
+                    energy = self._loop_edge_voltage(edge, state) * value
+                    if energy != 0.0:
+                        absorbed[edge] = energy
+            loss = commutation_loss(stored_after - stored_before, sum(absorbed.values()))
+            self._impulses.append(
+                {
+                    "time_s": time,
+                    "event": cause,
+                    "loops": [sorted(edge for edge, _sign in loop.edges) for loop in loops],
+                    "voltage_mismatch_v": [abs(float(r)) for r in residuals],
+                    "commutation_loss_j": loss,
+                    "source_absorbed_energy_j": absorbed,
+                    "transferred_charge_c": {edge: charge[edge] for edge in sorted(charge)},
+                }
+            )
+            state = new_state
+            diodes, mode = self.circuit.stable_mode(
+                gates, diodes, state, self.guard_tolerance, time=time
+            )
+        raise SimulationError(
+            f"Impulsive jumps at t={time:.12g} s did not settle after four re-selections"
+        )
 
     def _assert_star_continuity(
         self, mode: CompiledMode, state: np.ndarray, time: float, cause: str
@@ -1767,6 +1936,9 @@ class HybridSimulator:
         except StateDiscontinuityError as exc:
             exc.event = exc.event or cause
             raise
+        stabilized, mode, state = self._settle_impulsive_jumps(
+            new_gates, stabilized, mode, state, time, cause
+        )
         self._assert_star_continuity(mode, state, time, cause)
         for diode_id, current in stabilized.items():
             previous = diodes[diode_id]
