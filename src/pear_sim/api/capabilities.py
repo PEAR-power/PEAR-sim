@@ -840,7 +840,8 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
         "scope": "dependent storage states, capacitor loops, and inductor cutsets",
         "statement": (
             "Only narrow topology-specific converter zero-current paths are covered. "
-            "A capacitor loop closed by an ideal switch has an opt-in of its own "
+            "A capacitor loop closed by an ideal switch and an inductor current cut "
+            "at a node of plain inductors have an opt-in of their own "
             "(`electrical.impulsive_commutation_conservation`); loops with time-varying "
             "sources or diodes, coupled windings and index > 1 stay out of scope."
         ),
@@ -852,8 +853,10 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
         "scope": (
             "opt-in `analysis.transient.impulsive_events: conserve`: a loop of capacitors, "
             "constant voltage sources and lossless ideal switches closed by a switch "
-            "event; transient runs only (steady state, closed-loop and gradient "
-            "analyses refuse the opt-in); inductor cuts are still refused"
+            "event, and a node left with only plain inductors when a switch opens "
+            "(series pair, star, lone inductor); transient runs only (steady state, "
+            "closed-loop and gradient analyses refuse the opt-in); coupled windings are "
+            "still refused"
         ),
         "statement": (
             "The loop takes a charge-conserving jump (charge moves only around the "
@@ -861,8 +864,11 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "dissipated energy is booked in the physics audit as `commutation_loss_j`, "
             "with every jump listed under `impulsive_commutations`. After the jump one "
             "capacitor per loop carries the loop law's derivative, the dual of the "
-            "inductor-star reduction. Verified against charge conservation on paper "
-            "and against the vanishing-resistance limit of the ordinary engine; "
+            "inductor-star reduction. Dually, a cut inductor current takes a "
+            "flux-conserving jump and every such cut is a warning "
+            "(IMPULSIVE_INDUCTOR_CUT): in hardware it is an overvoltage across the "
+            "switch. Verified against charge and flux conservation on paper "
+            "and against the vanishing-resistance/conductance limit of the ordinary engine; "
             "not validated against hardware, where the loss lands in ESR, wiring and "
             "the switch."
         ),
@@ -875,6 +881,11 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
             "the audit closes with commutation_loss_j and misses by exactly it "
             "without; a jump solved with the wrong capacitances is refused by the "
             "kernel's post-jump KVL check",
+            "two inductors in series (L1 != L2), a lone inductor and a star of three "
+            "agree with sum(L*i)/sum(L) and the flux-conserving loss to 1e-12; a "
+            "resistor of 1k/10k/100k ohm across the switch on the default engine "
+            "dissipates the impulsive loss to 1e-6 for every R "
+            "(tests/test_impulsive_inductor_cuts.py)",
         ],
     },
     {

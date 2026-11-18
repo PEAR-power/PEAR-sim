@@ -9,6 +9,16 @@ break the model format; every break carries a migration note).
 
 ### Added
 
+- `impulsive_events: conserve` now also covers inductor cuts: a switch opening that
+  leaves a node with only plain inductors (series pair, star, lone inductor) takes a
+  flux-conserving jump, `(L1·i1 + L2·i2)/(L1+L2)`, with the loss booked as
+  `commutation_loss_j` (`kind: inductor_cut` in `impulsive_commutations`). Every cut is an
+  `IMPULSIVE_INDUCTOR_CUT` warning (an overvoltage across the switch in hardware). Checked
+  against flux conservation on paper (1e-12) and against a resistor of 1k/10k/100k ohm
+  across the switch on the default engine, whose dissipation reaches the same loss for
+  every R (1e-6). `state_discontinuity` findings gain `preferred_configuration` (the
+  finding belongs to the diodes' actual configuration, not another search candidate).
+
 - `pear-sim analyze loop-gain` and MCP `measure_loop_gain`: the loop gain of a
   closed-loop model measured by injection on the switching circuit (Middlebrook,
   started on the closed-loop orbit, phasors fitted on the controller's samples),
@@ -16,6 +26,7 @@ break the model format; every break carries a migration note).
   controller by the measured gain margin puts a multiplier on the unit circle at the
   measured frequency (1.2e-7). Unstable orbits, engaged limiters and injections that
   change the switching mode sequence are refused.
+
 - `analysis.transient.impulsive_events: reject | conserve` (default `reject`, unchanged).
   Under `conserve` a capacitor loop closed by an ideal switch takes a charge-conserving
   jump; the dissipated energy is booked as `commutation_loss_j` in the physics audit

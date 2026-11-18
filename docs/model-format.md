@@ -829,11 +829,17 @@ analysis:
   (`½·C1·C2/(C1+C2)·ΔV²` for two capacitors, `½·C·ΔV²` onto a source) is reported in
   `physics-audit.json` as `commutation_loss_j` per window, and every jump under
   `impulsive_commutations` (time, event, loops, voltage mismatch, transferred charge,
-  loss, source energy). The balance closes with that term. While the loop stays
+  loss, source energy). The balance closes with that term. Dually, when a switch opens
+  and leaves a node with only plain inductors (two in series, a star, a lone inductor),
+  the currents take a flux-conserving jump — `(L1·i1 + L2·i2)/(L1+L2)` for two, `0` for
+  one — with loss `½·L1·L2/(L1+L2)·Δi²` (`½·L·i²`), listed with `kind: inductor_cut`.
+  **Every** such cut is also an `IMPULSIVE_INDUCTOR_CUT` warning in `warnings.json`: in
+  hardware it is an overvoltage across the switch, which the opt-in lets the run
+  continue past, not disappear. While the loop stays
   closed one capacitor per loop carries the derivative of the loop law. Refused under
   `conserve`: a loop through a diode or thyristor, a loop with a `waveform` source
   (it would drive `C·dV/dt` through the loop), and the steady-state, closed-loop and
-  gradient analyses. Inductor cuts are still refused. In hardware this loss lands in
+  gradient analyses; coupled windings in a cut. In hardware this loss lands in
   ESR, wiring and the switch; the jump is the limit of a small loop resistance, not a
   model of the inrush peak.
 

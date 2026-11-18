@@ -90,6 +90,20 @@ def impulsive_loop_charges(
     return np.linalg.solve((incidence / capacitance) @ incidence.T, -residuals)
 
 
+def impulsive_cut_fluxes(
+    inductance: np.ndarray, incidence: np.ndarray, residuals: np.ndarray
+) -> np.ndarray:
+    """Node flux impulses lambda of a flux-conserving jump (dual of the loop charges).
+
+    ``incidence[n, k]`` is +1/-1 when inductor k's current flows into/out of
+    cut node n; ``residuals[n]`` is the KCL sum at n before the jump. Inductor
+    k changes by sum_n incidence[n, k] * lambda_n / L_k, and KCL after the
+    jump is (incidence diag(1/L) incidence^T) lambda = -residuals.
+    """
+
+    return np.linalg.solve((incidence / inductance) @ incidence.T, -residuals)
+
+
 def commutation_loss(storage_change_j: float, source_absorbed_j: float) -> float:
     """Energy the vanishing loop resistance dissipates in a jump.
 
@@ -426,21 +440,10 @@ class HybridSimulator:
             gates = self._force_gate_windows(gates, settings.start)
         self._assert_complementary_interlocks(gates, time=settings.start)
         diodes = dict(self.circuit.initial_diodes)
-        try:
-            diodes, mode = self.circuit.stable_mode(
-                gates,
-                diodes,
-                state,
-                self.guard_tolerance,
-                time=settings.start,
-            )
-        except StateDiscontinuityError as exc:
-            exc.event = exc.event or "the initial state"
-            raise
         self._impulses = []
         declared_state = state
-        diodes, mode, state = self._settle_impulsive_jumps(
-            gates, diodes, mode, state, settings.start, "the initial state"
+        diodes, mode, state = self._enter_mode(
+            gates, diodes, state, settings.start, "the initial state", initial=True
         )
         self._assert_star_invariants(mode, state)
         state, constrained_state_projections = self._project_constrained_state(state, mode)
@@ -1238,21 +1241,9 @@ class HybridSimulator:
                         )
                     ]
                 )
-                try:
-                    stabilized, mode = self.circuit.stable_mode(
-                        gates,
-                        diodes,
-                        state,
-                        self.guard_tolerance,
-                        time=current_time,
-                    )
-                except StateDiscontinuityError as exc:
-                    exc.event = exc.event or cause
-                    raise
-                stabilized, mode, state = self._settle_impulsive_jumps(
-                    gates, stabilized, mode, state, current_time, cause
+                stabilized, mode, state = self._enter_mode(
+                    gates, diodes, state, current_time, cause
                 )
-                self._assert_star_continuity(mode, state, current_time, cause)
                 state, projection_count = self._project_constrained_state(state, mode)
                 constrained_state_projections += projection_count
                 if frozenset(mode.constrained_inductors) - previous_constraints:
@@ -1406,6 +1397,145 @@ class HybridSimulator:
                     "star point."
                 )
 
+    def _enter_mode(
+        self,
+        gates: dict[str, bool],
+        diodes: dict[str, bool],
+        state: np.ndarray,
+        time: float,
+        cause: str,
+        *,
+        initial: bool = False,
+    ) -> tuple[dict[str, bool], CompiledMode, np.ndarray]:
+        """Select the mode after an event, with every state-jump policy applied.
+
+        Default (reject): the stable mode, a named state_discontinuity when the
+        event would force a jump. Under impulsive_events: conserve, an inductor
+        current left without a path in the preferred configuration takes a
+        flux-conserving jump first and the search runs again; capacitor loops
+        and inductor stars of the selected mode are then made consistent by
+        _settle_impulsive_jumps. The star check runs last either way — after a
+        correct jump it is silent, so it also polices the jump.
+        """
+
+        conserve = getattr(self.circuit, "impulsive_conserve", False)
+        for _attempt in range(4):
+            try:
+                diodes, mode = self.circuit.stable_mode(
+                    gates, diodes, state, self.guard_tolerance, time=time
+                )
+                break
+            except StateDiscontinuityError as exc:
+                exc.event = exc.event or cause
+                preferred = [f for f in exc.findings if f.get("preferred_configuration")]
+                if (
+                    not conserve
+                    or not preferred
+                    or any(f["kind"] != "inductor_cut" for f in preferred)
+                ):
+                    raise
+                cuts = []
+                for finding in preferred:
+                    node = finding["node"]
+                    cuts.append(
+                        (
+                            node,
+                            [
+                                (
+                                    member,
+                                    1.0
+                                    if self.circuit.component_by_id[member].n == node
+                                    else -1.0,
+                                )
+                                for member in finding["members"]
+                            ],
+                        )
+                    )
+                state = self._flux_jump(cuts, state, time, cause, exc)
+        else:
+            raise SimulationError(
+                f"Impulsive inductor cuts at t={time:.12g} s did not settle after "
+                "four re-selections"
+            )
+        diodes, mode, state = self._settle_impulsive_jumps(gates, diodes, mode, state, time, cause)
+        if not initial:
+            self._assert_star_continuity(mode, state, time, cause)
+        return diodes, mode, state
+
+    def _flux_jump(
+        self,
+        cuts: list[tuple[str, list[tuple[str, float]]]],
+        state: np.ndarray,
+        time: float,
+        cause: str,
+        refusal: StateDiscontinuityError | None = None,
+    ) -> np.ndarray:
+        """Flux-conserving jump at nodes where only inductors remain.
+
+        Dual of the capacitor-loop jump. An impulsive node voltage applies a
+        flux impulse lambda_n to every inductor at node n, so with S the
+        node-inductor incidence (+1 when the inductor's current flows INTO the
+        node) the currents change by diag(1/L) S^T lambda, and KCL after the
+        jump fixes lambda:
+
+            (S diag(1/L) S^T) lambda = -r,   r_n = sum_k S_nk i_k.
+
+        Two inductors in series end at (L1 i1 + L2 i2)/(L1 + L2); a lone
+        inductor at 0. The stored energy that disappears is the commutation
+        loss — in hardware an overvoltage across the opening switch, which is
+        why every such jump is also a warning in the run bundle.
+        """
+
+        members = sorted({member for _node, terms in cuts for member, _sign in terms})
+        coupled = [m for m in members if m in self.circuit.coupling_by_inductor]
+        plain = [m for m in members if self.circuit.component_by_id[m].type == "inductor"]
+        if coupled or len(plain) != len(members):
+            if refusal is not None:
+                raise refusal
+            raise SimulationError(
+                f"impulsive_events: conserve covers plain inductors; the cut at t={time:.12g} s "
+                f"involves {', '.join(sorted(set(members) - set(plain)) or coupled)}"
+            )
+        column = {member: index for index, member in enumerate(members)}
+        inductance = np.array([float(self.circuit.component_by_id[m].value) for m in members])
+        incidence = np.zeros((len(cuts), len(members)))
+        residuals = np.zeros(len(cuts))
+        for row, (_node, terms) in enumerate(cuts):
+            for member, sign in terms:
+                incidence[row, column[member]] += sign
+                residuals[row] += sign * float(state[self.circuit.state_index[member]])
+        flux = impulsive_cut_fluxes(inductance, incidence, residuals)
+        delta = (incidence.T @ flux) / inductance
+        new_state = state.copy()
+        stored_before = stored_after = 0.0
+        for member, change in zip(members, delta):
+            index = self.circuit.state_index[member]
+            before = float(state[index])
+            after = before + float(change)
+            new_state[index] = after
+            inductor = float(self.circuit.component_by_id[member].value)
+            stored_before += 0.5 * inductor * before * before
+            stored_after += 0.5 * inductor * after * after
+        self._impulses.append(
+            {
+                "kind": "inductor_cut",
+                "time_s": time,
+                "event": cause,
+                "cuts": [
+                    {"node": node, "members": sorted(member for member, _sign in terms)}
+                    for node, terms in cuts
+                ],
+                "current_mismatch_a": [abs(float(r)) for r in residuals],
+                "commutation_loss_j": commutation_loss(stored_after - stored_before, 0.0),
+                "source_absorbed_energy_j": {},
+                "transferred_flux_wb": {
+                    member: float(inductance[column[member]] * delta[column[member]])
+                    for member in members
+                },
+            }
+        )
+        return new_state
+
     def _loop_edge_voltage(self, component_id: str, state: np.ndarray) -> float:
         component = self.circuit.component_by_id[component_id]
         if component.type == "capacitor":
@@ -1450,6 +1580,38 @@ class HybridSimulator:
             return diodes, mode, state
         settings = self.model.transient
         for _attempt in range(4):
+            stars = []
+            for node_name, terms in getattr(mode, "star_constraints", ()):
+                currents = [float(state[index]) for index, _sign in terms]
+                residual = sum(sign * float(state[index]) for index, sign in terms)
+                scale = max((abs(value) for value in currents), default=0.0)
+                tolerance = max(
+                    STATE_CONSTRAINT_TOLERANCE * max(1.0, scale),
+                    float(settings.atol) + float(settings.rtol) * scale,
+                )
+                if abs(residual) > tolerance:
+                    stars.append(
+                        (
+                            node_name,
+                            [
+                                (self.circuit.state_components[index].id, float(sign))
+                                for index, sign in terms
+                            ],
+                        )
+                    )
+            if stars:
+                if any(
+                    member in self.circuit.coupling_by_inductor
+                    for _node, terms in stars
+                    for member, _sign in terms
+                ):
+                    # Coupled windings: no jump; the star check names the refusal.
+                    return diodes, mode, state
+                state = self._flux_jump(stars, state, time, cause)
+                diodes, mode = self.circuit.stable_mode(
+                    gates, diodes, state, self.guard_tolerance, time=time
+                )
+                continue
             loops = getattr(mode, "capacitor_loops", ())
             if not loops:
                 return diodes, mode, state
@@ -1515,6 +1677,7 @@ class HybridSimulator:
             loss = commutation_loss(stored_after - stored_before, sum(absorbed.values()))
             self._impulses.append(
                 {
+                    "kind": "capacitor_loop",
                     "time_s": time,
                     "event": cause,
                     "loops": [sorted(edge for edge, _sign in loop.edges) for loop in loops],
@@ -1925,21 +2088,7 @@ class HybridSimulator:
                 edge_index += 1
         self._assert_complementary_interlocks(new_gates, time=time)
         cause = _describe_events(new_events) or "a source waveform breakpoint"
-        try:
-            stabilized, mode = self.circuit.stable_mode(
-                new_gates,
-                diodes,
-                state,
-                self.guard_tolerance,
-                time=time,
-            )
-        except StateDiscontinuityError as exc:
-            exc.event = exc.event or cause
-            raise
-        stabilized, mode, state = self._settle_impulsive_jumps(
-            new_gates, stabilized, mode, state, time, cause
-        )
-        self._assert_star_continuity(mode, state, time, cause)
+        stabilized, mode, state = self._enter_mode(new_gates, diodes, state, time, cause)
         for diode_id, current in stabilized.items():
             previous = diodes[diode_id]
             if current != previous:

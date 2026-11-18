@@ -1723,7 +1723,7 @@ class Circuit:
             if repaired is not None:
                 self._active_set_stats["anchor_repairs"] += 1
                 return repaired
-            self._raise_state_discontinuity(failures, state, time)
+            self._raise_state_discontinuity(failures, state, time, preferred_diodes)
             first_failure = (
                 f"; first failure: {_failure_text(failures[0])}" if failures else ""
             )
@@ -1741,7 +1741,7 @@ class Circuit:
                 f"{capacitor_loop_hint(self.components, self.ground)}"
                 f"{dcr_star_hint(self.components, self.ground, self.model.passive_parasitics)}"
             )
-        self._raise_state_discontinuity(failures, state, time)
+        self._raise_state_discontinuity(failures, state, time, preferred_diodes)
         detail = (
             _failure_text(failures[0])
             if failures
@@ -1758,6 +1758,7 @@ class Circuit:
         failures: list[TopologyError],
         state: np.ndarray,
         time: float | None,
+        preferred_diodes: dict[str, bool] | None = None,
     ) -> None:
         """Name the state jump behind a failed search, if there is one.
 
@@ -1779,8 +1780,18 @@ class Circuit:
                 found = inductor_cut_jumps(self, topology, failure.floating_node, state)
             else:
                 continue
+            # A finding from the configuration the diodes are actually in is the
+            # jump the event forces; one from another candidate is only what
+            # that candidate would have forced. The opt-in jump acts on the first.
+            preferred = preferred_diodes is not None and all(
+                preferred_diodes.get(diode_id) == value for diode_id, value in topology.diodes
+            )
             for finding in found:
-                findings.setdefault((finding["kind"], tuple(finding["members"])), finding)
+                key = (finding["kind"], tuple(finding["members"]))
+                if key in findings:
+                    findings[key]["preferred_configuration"] |= preferred
+                else:
+                    findings[key] = {**finding, "preferred_configuration": preferred}
         if findings:
             raise StateDiscontinuityError(
                 [findings[key] for key in sorted(findings)], time=time
