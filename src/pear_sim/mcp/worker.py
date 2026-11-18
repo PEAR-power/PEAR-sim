@@ -96,6 +96,21 @@ def _floquet(request: dict[str, Any]) -> dict[str, Any]:
     return {"bundle": str(Path(artifacts.output_dir))}
 
 
+def _measure_loop_gain(request: dict[str, Any]) -> dict[str, Any]:
+    from pear_sim.evidence.loop_gain import run_loop_gain_analysis
+
+    artifacts = run_loop_gain_analysis(
+        request["model"],
+        request["out"],
+        request["frequencies_hz"],
+        inject_at=request.get("inject_at"),
+        amplitude=request.get("amplitude"),
+        initial_state=request.get("initial_state") or None,
+        overrides=request.get("overrides") or None,
+    )
+    return {"bundle": str(Path(artifacts.output_dir))}
+
+
 def _sweep_parameter(request: dict[str, Any]) -> dict[str, Any]:
     from pear_sim.evidence.parameter_sweep import run_parameter_sweep
 
@@ -137,6 +152,7 @@ OPERATIONS = {
     "steady_state": _steady_state,
     "stability": _stability,
     "floquet": _floquet,
+    "measure_loop_gain": _measure_loop_gain,
     "sweep_parameter": _sweep_parameter,
     "tolerance_corners": _tolerance_corners,
     "evaluate_designs": _evaluate_designs,

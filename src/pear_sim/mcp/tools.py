@@ -1058,6 +1058,110 @@ def floquet(
     return _sig(result)
 
 
+#: A measurement is ~1500 switching periods per frequency, refined crossovers
+#: included: minutes, not seconds, so this tool does not inherit the 120 s default.
+MEASURE_LOOP_GAIN_TIMEOUT_S = 600.0
+
+
+def measure_loop_gain(
+    workspace: Workspace,
+    *,
+    start_hz: float,
+    stop_hz: float,
+    points: int = 9,
+    inject_at: str | None = None,
+    amplitude: float | None = None,
+    model_yaml: str | None = None,
+    model_path: str | None = None,
+    example: str | None = None,
+    overrides: dict[str, Any] | None = None,
+    initial_state: dict[str, float] | None = None,
+    timeout_s: float | None = None,
+) -> dict[str, Any]:
+    try:
+        low, high, count = float(start_hz), float(stop_hz), int(points)
+    except (TypeError, ValueError) as exc:
+        raise ToolInputError("start_hz, stop_hz are numbers in Hz; points an integer") from exc
+    if not (0.0 < low < high) or count < 2:
+        raise ToolInputError("need 0 < start_hz < stop_hz and points >= 2")
+    if count > 40:
+        raise ToolInputError("points is capped at 40 (each point is a ~1500-period run)")
+    path = resolve_model(workspace, model_yaml, model_path, example)
+    resolved_overrides = _overrides(overrides)
+    model = _load(path, resolved_overrides)
+    start: dict[str, float] | None = None
+    if initial_state:
+        try:
+            start = {str(name): float(value) for name, value in initial_state.items()}
+        except (TypeError, ValueError) as exc:
+            raise ToolInputError(
+                "initial_state maps state names to plain SI numbers, e.g. "
+                '{"l1": 0.92, "c1": 12.0, "signal:int_prev": 0.0167}'
+            ) from exc
+    frequencies = [low * (high / low) ** (index / (count - 1)) for index in range(count)]
+    run_id, out = workspace.new_run_dir(model.name, kind="loop-gain")
+    _run_worker(
+        {
+            "op": "measure_loop_gain",
+            "model": str(path),
+            "out": str(out),
+            "frequencies_hz": frequencies,
+            "inject_at": inject_at,
+            "amplitude": None if amplitude is None else float(amplitude),
+            "overrides": resolved_overrides,
+            "initial_state": start,
+        },
+        _timeout(MEASURE_LOOP_GAIN_TIMEOUT_S if timeout_s is None else timeout_s),
+    )
+    data = json.loads((out / "loop_gain.json").read_text(encoding="utf-8"))
+    evidence = json.loads((out / "loop-gain-evidence.json").read_text(encoding="utf-8"))
+    result: dict[str, Any] = {
+        "run_id": run_id,
+        "overall_status": evidence.get("overall_status"),
+        "gates": evidence.get("gates"),
+        "claim_boundary": evidence.get("claim_boundary"),
+        "injection_block": data.get("injection_block"),
+        "phase_margin_deg": data.get("phase_margin_deg"),
+        "gain_margin": data.get("gain_margin"),
+        "gain_margin_db": data.get("gain_margin_db"),
+        "gain_crossovers": data.get("gain_crossovers"),
+        "phase_crossovers": data.get("phase_crossovers"),
+        "points": [
+            {
+                "frequency_hz": item["frequency_hz"],
+                "gain_db": item["gain_db"],
+                "phase_deg": item["phase_deg"],
+            }
+            for item in data.get("points") or []
+        ],
+        "amplitude": data.get("amplitude"),
+        "settle_cycles": data.get("settle_cycles"),
+        "orbit_max_multiplier_magnitude": data.get("orbit_max_multiplier_magnitude"),
+        "notes": data.get("notes") or [],
+        "artifacts": sorted(p.name for p in out.iterdir() if p.is_file()),
+    }
+    margin = data.get("phase_margin_deg")
+    if margin is not None:
+        crossing = data["gain_crossovers"][0]["frequency_hz"]
+        result["interpretation"] = (
+            f"phase margin {margin:.4g} deg at {crossing:.4g} Hz"
+            + (
+                f"; gain margin x{data['gain_margin']:.4g} "
+                f"({data['gain_margin_db']:.3g} dB) at "
+                f"{data['phase_crossovers'][0]['frequency_hz']:.4g} Hz: scaling the "
+                "controller by that factor puts a Floquet multiplier on the unit circle"
+                if data.get("gain_margin") is not None
+                else "; no -180 deg crossing inside the band (no gain margin measured)"
+            )
+            + "."
+        )
+    result["note"] = (
+        "Every point with its fit residual is in loop_gain.json: "
+        "get_artifact(run_id, 'loop_gain.json')."
+    )
+    return _sig(result)
+
+
 def _request_file(workspace: Workspace, request: dict[str, Any], out: Path, schema: str) -> Path:
     payload = dict(request)
     payload.setdefault("schema", schema)

@@ -238,3 +238,57 @@ Verification (`tests/test_closed_loop_floquet.py`):
   averaged margins agree on which design is unstable and on the crossover
   within 15 %. That agreement is between two methods of this tool —
   verification, not validation against hardware.
+
+## Loop gain measured by injection (experimental)
+
+The margins in the first half of this page come from an averaged model and a
+compensator declared a second time. `measure_loop_gain` measures the loop the
+model actually closes, on the switching circuit, as a bench would:
+
+```console
+uv run pear-sim analyze loop-gain examples/buck_closed_loop_floquet.yaml \
+    --out runs/lg --start 50 --stop 20000 --points 9
+```
+
+On the example: phase margin 92.41 deg at 115.5 Hz, gain margin 2.4508
+(7.79 dB) at 2452.75 Hz. The bundle holds `loop_gain.json` (every point with
+its fit residual, the crossovers, amplitude, settle length), the evidence
+file with the blocking gate `gain_crossover_in_sweep` and
+`artifact-manifest.json`. Agents use the MCP tool `measure_loop_gain`.
+
+How it works:
+
+- **Injection.** At a signal block `x` (`--inject`, default: the block the PWM
+  duty reads) every consumer is rewired to read `y = x + A sin(2 pi f t)`. The
+  loop stays closed, so the orbit does not move. `L = -X/Y` (negative-feedback
+  convention: phase margin = 180 deg + phase of L where |L| = 1).
+- **Samples, not waveforms.** X and Y are fitted (least squares on
+  `[1, sin, cos]`) on the controller's tick samples. That is the discrete
+  loop gain the sampled controller lives in, and the orbit's samples are
+  constant, so switching ripple never reaches the fit.
+- **Start on the orbit, settle by the multipliers.** The run begins on the
+  closed-loop periodic orbit (the Floquet solve), and the injection's own
+  transient decays with the largest multiplier: the settle length is
+  `ceil(log(1e-6) / log(max |mu|))` cycles (1328 on the example). Measured:
+  600 cycles left 3e-4 in the gain margin, 1500 left 1.5e-8.
+- **Refusals instead of numbers.** An unstable orbit (a closed loop cannot
+  settle around it — use `analyze floquet`), a limiter or the duty clamp
+  engaging, and an injection that changes the per-cycle switching mode
+  sequence. The last one matters: at 4.5e-3 of duty the buck tips into DCM for
+  some cycles near the LC resonance and the gain read there gives a margin of
+  3.42 instead of 2.45, with no limiter anywhere. The default amplitude is
+  1e-3 of the orbit's distance to the nearest limiter.
+
+Verification (`tests/test_loop_gain.py`) uses a different method, Floquet:
+scaling kp and ki together by the measured gain margin must put a multiplier
+on the unit circle at the measured phase-crossover frequency (the orbit's
+circuit part does not move with the gains, so L scales exactly). Agreement
+1.2e-7 in the margin, 2e-8 in frequency; 3 % either side the verdict flips;
+a too-short settle is caught. Both sides share the simulator kernel: this is
+verification, not validation against hardware. In DCM the measurement runs
+(PM 38 deg at 112 Hz with a 60 ohm load), but the -180 deg crossing sits at
+the controller's Nyquist rate, so this gate does not cover it.
+
+Cost: about 2.8 s per frequency on the example (~1500 switching periods);
+a 9-point sweep with refined crossovers takes 1-2 minutes.
+
