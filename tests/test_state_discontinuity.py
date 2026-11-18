@@ -135,7 +135,8 @@ def test_one_inductor_cut_by_an_opening_switch(tmp_path: Path) -> None:
     (finding,) = error.findings
     assert finding == {"kind": "inductor_cut", "members": ["l1"], "node": "a",
                        "jump": pytest.approx(1.0 + 10.0 / 1e-3 * CLOSE_S, rel=BUDGET),
-                       "unit": "A", "open_switches": ["s1"]}
+                       "unit": "A", "open_switches": ["s1"],
+                       "preferred_configuration": True}
     assert error.event == "gate 'pwm' on->off"
     assert "antiparallel diode across s1" in str(error)
 

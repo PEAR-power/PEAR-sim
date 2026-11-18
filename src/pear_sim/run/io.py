@@ -351,6 +351,33 @@ def write_result(
                 ),
             }
         )
+    for impulse in (result.physics_audit or {}).get("impulsive_commutations", ()):
+        if impulse.get("kind") != "inductor_cut":
+            continue
+        # Every one, never summarised: under impulsive_events: conserve the run
+        # goes on, but in hardware each of these is an overvoltage across the
+        # opening switch, and the opt-in must not silence that.
+        where = "; ".join(
+            f"node {cut['node']!r} ({', '.join(cut['members'])})" for cut in impulse["cuts"]
+        )
+        mismatch = max(impulse["current_mismatch_a"])
+        warnings.append(
+            {
+                "code": "IMPULSIVE_INDUCTOR_CUT",
+                "severity": "warning",
+                "scope": "event",
+                "time_s": impulse["time_s"],
+                "message": (
+                    f"At t={impulse['time_s']:.12g} s ({impulse['event']}) inductor current "
+                    f"was cut at {where}: {mismatch:.6g} A had no path and "
+                    f"{impulse['commutation_loss_j']:.6g} J was removed by a flux-conserving "
+                    "jump (impulsive_events: conserve). In hardware this is an overvoltage "
+                    "across the opening switch (avalanche, or a missing snubber/clamp/"
+                    "freewheeling path); the simulated continuation is not evidence that the "
+                    "switch survives it."
+                ),
+            }
+        )
     warnings.extend(_ripple_current_warnings(result))
     lossy_devices = sorted(
         component.id
