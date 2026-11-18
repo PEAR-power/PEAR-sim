@@ -252,6 +252,11 @@ def solve_periodic_steady_state(
 ) -> PeriodicSteadyState:
     """Newton shooting on the one-period cycle map of the production solver."""
 
+    if model.transient.impulsive_events != "reject":
+        raise SteadyStateError(
+            "impulsive_events: conserve is outside periodic steady-state shooting: "
+            "a charge-conserving jump is a state map the Newton Jacobian does not carry"
+        )
     period = _shooting_period(model)
     circuit = Circuit(model)
     names = tuple(component.id for component in circuit.state_components)

@@ -478,6 +478,11 @@ def _evaluate(
         )
     if model.machines:
         raise GradientEngineError("machines are outside the v1 engine scope")
+    if model.transient.impulsive_events != "reject":
+        raise GradientEngineError(
+            "impulsive_events: conserve is outside the v1 engine scope: a "
+            "charge-conserving jump is a state map the period sensitivity does not carry"
+        )
     if circuit.sat_inductors:
         raise GradientEngineError(
             "saturable inductors are outside the v1 engine scope"
