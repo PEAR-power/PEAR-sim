@@ -709,6 +709,7 @@ def write_result(
             "artifact": "switching-transitions.json",
             "schema": switching_transitions["schema"],
             "validation_status": switching_transitions["validation_status"],
+            "status": switching_transitions["status"],
             **switching_transitions["summary"],
             "legs": {
                 leg["leg"]: {

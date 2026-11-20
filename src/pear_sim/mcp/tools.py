@@ -478,7 +478,9 @@ def _switching_transitions_summary(bundle: Path) -> dict[str, Any] | None:
     return {
         "artifact": "switching-transitions.json",
         "validation_status": data.get("validation_status"),
+        "status": data.get("status"),
         "all_zvs": (data.get("summary") or {}).get("all_zvs"),
+        "not_evaluated_windows": (data.get("summary") or {}).get("not_evaluated_windows"),
         "legs": legs,
     }
 

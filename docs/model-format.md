@@ -1519,6 +1519,7 @@ switching_transitions:
       commutation_inductance: 195 uH # optional -> lumped LC regime (needs far_voltage)
       far_voltage: {v(lsec): 0.95}   # recorded v(...) terms, sampled before the edge
       bridge_partner: b              # optional: a full bridge swings both legs together
+                                     # (the pair's loop_inductance goes HERE; on b it is refused)
       loop_inductance: 0.4 nH        # optional, user-declared Lσ -> overshoot
       current_fall_time: 2 ns        # optional, needs loop_inductance
 ```
@@ -1531,11 +1532,20 @@ tied to `loss_analysis`, which refuses components with `forward_voltage` — the
 reverse conduction is described.
 
 **Windows.** For each turn-off of one switch of a leg, the window runs to the next
-turn-on of the other switch, taken from the recorded gate events, in the last half of the
-run. The commutating current is the leg's node current
+turn-on of the other switch, taken from every effective gate change in the recorded events
+(`scheduled_gate` and `forced_gate`, §perturbations), in the last half of the run. The
+commutating current is the leg's node current
 `(i(high) − i(high_diode)) − (i(low) − i(low_diode))` just before the edge (linear
-extrapolation over the last two samples when no event lies between them). Windows of
-two declared legs that overlap without `bridge_partner` are `not_evaluated`.
+extrapolation over the last two samples when no event lies between them). A turn-off that
+opens no evaluable window is never dropped silently: it is counted per reason in the leg's
+`not_evaluated` (windows of two declared legs that overlap without `bridge_partner`, a partner
+whose window does not match, an outgoing switch that turns back on before the incoming one).
+A window whose incoming turn-on lies beyond the run goes to `windows_cut_by_end_of_run`.
+
+**Verdict over the run.** `status` is `ok` when every window was evaluated, `partial` when
+some were skipped, `not_evaluated` when none was. `summary.all_zvs` is `true` only with
+nothing skipped, `false` as soon as one evaluated edge misses ZVS, and `null` when every
+evaluated edge passed but some were skipped — passing edges prove nothing about skipped ones.
 
 **Transition.** In the frame of the incoming device (u = its voltage, V at the start):
 `C_node(u) = Coss(u) + Coss(V − u) + C_extra`, `du/dt = −i / C_node(u)`. Without
@@ -1549,13 +1559,16 @@ swings back is clamped at V.
 
 **Reported per edge** (`switching-transitions.json`, schema
 `pear-sim/switching-transitions/v0.1`): `zvs`, `voltage_at_turn_on_v`,
-`minimum_dead_time_s` (all nodes below the threshold), `maximum_dead_time_s` (lumped LC:
+`minimum_dead_time_s` (first time every node is at or below the ZVS threshold, so `zvs` ⇔
+`minimum_dead_time_s` ≤ the dead time), `maximum_dead_time_s` (lumped LC:
 after the clamped current reverses, the first time a node leaves the threshold),
 `capacitive_turn_on_energy_j` = Eoss_in(u_r) + ∫_{V−u_r}^{V}(V − w)·Coss(w) dw +
 ½·C_extra·u_r² (= Qoss(V)·V for a full hard turn-on), `incoming_eoss_j`, the shadow
-metrics `transition_fraction_of_dead_time` and `volt_second_deficit_v_s` (the volt-seconds
-the ideal run applied that the real node did not; published, not gated), and, with
-`loop_inductance`, `overshoot`:
+metrics `transition_fraction_of_dead_time` and `volt_second_deficit_v_s` = ∫(u − u_ideal) dt
+over the window, where the ideal run holds the node on the rail its freewheeling diode picks
+at the edge (u_ideal = 0 toward ZVS, V otherwise) — zero when both hold the same rail;
+published, not gated — and, with `loop_inductance`, `overshoot`, qualified and sized by the
+current the turn-off interrupts AT t_off:
 
 - `vpeak_conventional_v` = V + Lσ·I/t_f (with `current_fall_time`);
 - `vpeak_ramp_v`: lossless Lσ–Coss loop with the device current falling linearly over

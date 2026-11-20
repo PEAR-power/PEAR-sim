@@ -335,11 +335,18 @@ def simulate_transition(
             f"(t = {t:.3e} s of a {horizon:.3e} s horizon); refusing to report a partial result"
         )
 
+    settled_at = t
+
     def evaluate(at: float) -> np.ndarray:
         for start, end, dense in segments:
             if start - 1e-18 <= at <= end + 1e-18:
                 return dense(min(max(at, start), end))
-        return state
+        # Past the last segment nothing moves (the loop only stops early when the
+        # state is settled), but the volt-second integral keeps accruing sum(u).
+        value = state.copy()
+        if at > settled_at:
+            value[count + 1] += float(np.sum(state[:count])) * (at - settled_at)
+        return value
 
     def excess(at: float) -> float:
         return float(np.max(evaluate(at)[:count])) - threshold_v
@@ -351,10 +358,10 @@ def simulate_transition(
         t_max = _first_crossing(segments, excess, below=False, after=t_min)
     else:
         t_max = None
-    at_turn_on = evaluate(dead_time_s) if segments else state
+    at_turn_on = evaluate(dead_time_s)
     voltages = tuple(float(min(max(x, 0.0), v)) for x in at_turn_on[:count])
     end_time = min(dead_time_s, t_min) if t_min is not None else dead_time_s
-    end_state = evaluate(end_time) if segments else state
+    end_state = evaluate(end_time)
     return TransitionResult(
         voltage_at_turn_on_v=voltages,
         minimum_dead_time_s=t_min,
@@ -432,11 +439,14 @@ def instant_cut_overshoot(curve: CossCurve, bus: float, current: float, loop_h: 
     def residual(delta: float) -> float:
         return curve.integral(bus, bus + delta, lambda w: w - bus) - target
 
+    limit = 10.0 * max(bus, 1.0)
     high = max(bus, 1.0) * 1e-3
     while residual(high) < 0.0:
-        high *= 2.0
-        if high > 10.0 * max(bus, 1.0):
+        if high >= limit:
             return None
+        # Doubling may step past the limit: clamp the last step ONTO it and test
+        # there, or a root between the last bracket and the limit is lost.
+        high = min(2.0 * high, limit)
     return float(brentq(residual, 0.0, high, xtol=1e-9 * max(bus, 1.0), rtol=1e-12))
 
 
@@ -491,31 +501,46 @@ class _Window:
     falling: bool  # outgoing high, incoming low
 
 
+# Every EFFECTIVE gate change: the solver records one event per control and
+# timestamp, "forced_gate" when a perturbation window overrides the schedule.
+# Reading only "scheduled_gate" silently drops a forced turn-off and its window.
+_GATE_EVENT_KINDS = frozenset({"scheduled_gate", "forced_gate"})
+
+
 def _switch_timeline(result: Any, control: str) -> list[tuple[float, bool]]:
     return [
         (float(event.time), bool(event.current))
         for event in result.events
-        if event.kind == "scheduled_gate" and event.target == control
+        if event.kind in _GATE_EVENT_KINDS and event.target == control
         and bool(event.current) != bool(event.previous)
     ]
 
 
-def _windows(result: Any, high: Any, low: Any) -> list[_Window]:
+def _windows(result: Any, high: Any, low: Any) -> tuple[list[_Window], list[tuple[float, str]]]:
+    """Dead-time windows of one leg, and every turn-off that opened none, with the reason.
+
+    A turn-off is never dropped silently: either it opens a window, or it is
+    returned here and lands in the leg's ``not_evaluated`` counts.
+    """
+
     high_edges = _switch_timeline(result, high.control)
     low_edges = _switch_timeline(result, low.control)
     windows = []
+    dropped: list[tuple[float, str]] = []
     for outgoing, incoming, falling in ((high_edges, low_edges, True), (low_edges, high_edges, False)):
         for index, (t_off, state) in enumerate(outgoing):
             if state:
                 continue
             next_on = next((t for t, s in incoming if s and t >= t_off), None)
             if next_on is None:
+                dropped.append((t_off, "window_cut_by_end_of_run"))
                 continue
             outgoing_back = next((t for t, s in outgoing[index + 1:] if s), math.inf)
             if next_on > outgoing_back:
+                dropped.append((t_off, "outgoing_back_on_before_incoming"))
                 continue
             windows.append(_Window(t_off=t_off, t_on=next_on, falling=falling))
-    return sorted(windows, key=lambda w: w.t_off)
+    return sorted(windows, key=lambda w: w.t_off), sorted(dropped)
 
 
 def _pre_edge(
@@ -563,12 +588,11 @@ def build_switching_transitions_observation(result: Any) -> dict[str, Any]:
     partners = {leg.bridge_partner: leg.id for leg in spec.legs if leg.bridge_partner}
 
     leg_windows: dict[str, list[_Window]] = {}
+    leg_dropped: dict[str, list[str]] = {}
     for leg in spec.legs:
-        leg_windows[leg.id] = [
-            w
-            for w in _windows(result, components[leg.high], components[leg.low])
-            if w.t_off >= window_start
-        ]
+        windows, dropped = _windows(result, components[leg.high], components[leg.low])
+        leg_windows[leg.id] = [w for w in windows if w.t_off >= window_start]
+        leg_dropped[leg.id] = [reason for t_off, reason in dropped if t_off >= window_start]
 
     def at_edge(t_edge: float) -> Callable[[np.ndarray], float]:
         return lambda signal: _pre_edge(signal, time, t_edge, step, event_times)
@@ -602,6 +626,14 @@ def build_switching_transitions_observation(result: Any) -> dict[str, Any]:
         partner_curve = curves[partner.card_id] if partner else None
         edges = []
         skipped: dict[str, int] = {}
+        cut_by_end = 0
+        for reason in leg_dropped[unit] + (leg_dropped[partner.id] if partner else []):
+            if reason == "window_cut_by_end_of_run":
+                # The incoming turn-on lies beyond the run: no transition inside
+                # the run was skipped. Counted, but it does not make the verdict partial.
+                cut_by_end += 1
+                continue
+            skipped[reason] = skipped.get(reason, 0) + 1
         extrapolated = 0
         for window in leg_windows[unit]:
             other = overlaps(unit, window)
@@ -664,6 +696,12 @@ def build_switching_transitions_observation(result: Any) -> dict[str, Any]:
                 )
                 eoss += partner_curve.energy(residuals[1])
             zvs = max(residuals) <= threshold_v * (1 + 1e-9)
+            # The recorded IDEAL run puts each node, for the whole window, on the
+            # rail its freewheeling diode picks at the edge: the incoming rail
+            # (u = 0) when the current drives toward ZVS, the outgoing rail (u = V)
+            # otherwise. The deficit is the transition MINUS that, in the same
+            # orientation, so a node both runs hold at the same rail adds nothing.
+            ideal_volt_seconds = 0.0 if current_u > 0.0 else len(capacitances) * bus * dead
             edge: dict[str, Any] = {
                 "time_s": window.t_off,
                 "direction": "high_to_low" if window.falling else "low_to_high",
@@ -687,16 +725,18 @@ def build_switching_transitions_observation(result: Any) -> dict[str, Any]:
                     if outcome.minimum_dead_time_s is not None and dead > 0.0
                     else None
                 ),
-                "volt_second_deficit_v_s": outcome.volt_second_deficit_v_s,
+                "volt_second_deficit_v_s": outcome.volt_second_deficit_v_s - ideal_volt_seconds,
                 "extrapolated_lookup": bool(edge_extrapolated),
                 "overshoot": None,
             }
             if leg.regime == "lumped_lc":
                 edge["far_voltage_u_v"] = u_x
             if leg.loop_inductance_h is not None:
-                edge["overshoot"] = _overshoot(
-                    curve, bus, outcome.current_at_end_a, leg, capacitances[0]
-                )
+                # The turn-off at t_off interrupts the current flowing AT t_off:
+                # that current decides whether the outgoing device ends up
+                # blocking, and sizes the overshoot. A current the resonance
+                # builds later in the window belongs to a later commutation.
+                edge["overshoot"] = _overshoot(curve, bus, current_u, leg, capacitances[0])
                 if edge["overshoot"].get("extrapolated_lookup"):
                     edge_extrapolated = True
             extrapolated += int(edge_extrapolated)
@@ -714,15 +754,29 @@ def build_switching_transitions_observation(result: Any) -> dict[str, Any]:
                 "current_fall_time_s": leg.current_fall_time_s,
                 "edges": edges,
                 "not_evaluated": skipped,
+                "windows_cut_by_end_of_run": cut_by_end,
                 "extrapolated_lookups": extrapolated,
                 "summary": _summary(edges, stop - window_start),
             }
         )
     zvs_total = sum(leg["summary"]["zvs_edges"] for leg in payload_legs)
     edge_total = sum(leg["summary"]["edges"] for leg in payload_legs)
+    skipped_total = sum(sum(leg["not_evaluated"].values()) for leg in payload_legs)
+    # A verdict over ALL edges exists only when every window was evaluated. With
+    # windows skipped, a failing evaluated edge still proves "not all ZVS", but
+    # "all evaluated passed" proves nothing about the skipped ones: null, partial.
+    if edge_total > 0 and zvs_total < edge_total:
+        all_zvs: bool | None = False
+    elif edge_total > 0 and skipped_total == 0:
+        all_zvs = True
+    else:
+        all_zvs = None
+    status = "ok" if skipped_total == 0 and edge_total > 0 else (
+        "partial" if edge_total > 0 else "not_evaluated"
+    )
     return {
         "schema": SCHEMA,
-        "status": "ok",
+        "status": status,
         "claim_boundary": CLAIM_BOUNDARY,
         "validation_status": VALIDATION_STATUS,
         "zvs_threshold_fraction": spec.zvs_threshold,
@@ -731,7 +785,8 @@ def build_switching_transitions_observation(result: Any) -> dict[str, Any]:
         "summary": {
             "edges": edge_total,
             "zvs_edges": zvs_total,
-            "all_zvs": edge_total > 0 and zvs_total == edge_total,
+            "not_evaluated_windows": skipped_total,
+            "all_zvs": all_zvs,
         },
     }
 

@@ -337,6 +337,13 @@ def parse_switching_transition_section(
                 f"{name}: the commutation path is declared once, on {leg.id!r}; remove "
                 f"commutation_inductance/far_voltage from {partner.id!r}"
             )
+        if partner.loop_inductance_h is not None or partner.current_fall_time_s is not None:
+            # The pair is evaluated as ONE unit, on the leg that names it; a loop
+            # declared on the partner would be accepted and then never used.
+            raise ModelError(
+                f"{name}: declare loop_inductance/current_fall_time on {leg.id!r}, the leg "
+                f"that names the pair; on {partner.id!r} they would be ignored"
+            )
         if partner.bus_voltage != leg.bus_voltage:
             raise ModelError(f"{name}: both legs of a bridge must share bus_voltage")
         partnered[partner.id] = leg.id

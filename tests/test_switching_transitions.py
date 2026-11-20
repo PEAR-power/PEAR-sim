@@ -365,3 +365,168 @@ def test_models_without_section_have_no_artifact(tmp_path):
     out = tmp_path / "run"
     write_result(HybridSimulator(model).simulate(), out)
     assert not (out / "switching-transitions.json").exists()
+
+
+# --- regressions from the 2026-11-20 review of PR #44 -------------------------------------
+
+
+@pytest.mark.parametrize("current", [43.2, 30.0])
+def test_instant_cut_finds_a_root_just_below_the_search_limit(current):
+    # 48 V, 50 nH, constant 500 pF: ΔV = I·√(L/C) = 432 V at 43.2 A, i.e. 9·V —
+    # inside the 10·V limit. The doubling search used to step past the limit
+    # without testing it and returned None.
+    capacitance, loop, bus = 500e-12, 50e-9, 48.0
+    card = _card((0.0, 1000.0), coss=(capacitance, capacitance))
+    delta = instant_cut_overshoot(CossCurve(card), bus, current, loop)
+    assert delta == pytest.approx(current * math.sqrt(loop / capacitance), rel=1e-9)
+
+
+def test_instant_cut_beyond_the_limit_is_none():
+    card = _card((0.0, 1000.0), coss=(500e-12, 500e-12))
+    assert instant_cut_overshoot(CossCurve(card), 48.0, 60.0, 50e-9) is None  # 600 V > 480 V
+
+
+def test_overshoot_is_qualified_by_the_current_at_turn_off(buck_result, monkeypatch):
+    # A lumped-LC window can end with the current reversed (resonance). The
+    # turn-off at t_off interrupted the current flowing AT t_off; a later current
+    # must neither qualify the edge nor size its overshoot.
+    original = st.simulate_transition
+
+    def reversed_by_resonance(capacitances, bus, current, *args, **kwargs):
+        outcome = original(capacitances, bus, current, *args, **kwargs)
+        return st.TransitionResult(
+            outcome.voltage_at_turn_on_v,
+            outcome.minimum_dead_time_s,
+            outcome.maximum_dead_time_s,
+            -current,  # what the window ends with
+            outcome.volt_second_deficit_v_s,
+            outcome.horizon_s,
+        )
+
+    monkeypatch.setattr(st, "simulate_transition", reversed_by_resonance)
+    observation = build_switching_transitions_observation(buck_result)
+    for edge in observation["legs"][0]["edges"]:
+        overshoot = edge["overshoot"]
+        if edge["commutating_current_a"] > 0.0:
+            assert overshoot["status"] == "ok"
+            assert overshoot["current_a"] == edge["commutating_current_a"]
+        else:
+            assert overshoot["status"] == "not_evaluated"
+
+
+def test_volt_second_deficit_is_relative_to_the_ideal_run(buck_result):
+    # Hard low->high edges: the ideal node and the transition both sit on the
+    # outgoing rail for the whole window, so the difference is zero. ZVS edges:
+    # the ideal node is at the incoming rail at once, the real one swings down.
+    observation = build_switching_transitions_observation(buck_result)
+    for edge in observation["legs"][0]["edges"]:
+        if edge["direction"] == "low_to_high":
+            assert abs(edge["volt_second_deficit_v_s"]) < 1e-15
+        else:
+            assert 0.0 < edge["volt_second_deficit_v_s"] < 48.0 * edge["dead_time_s"]
+
+
+def test_forced_gate_turn_off_opens_a_window(tmp_path):
+    source = BUCK.read_text(encoding="utf-8") + (
+        "\nperturbations:\n  forced_gate_windows:\n"
+        '    - {control: leg.high, from: 22.40 us, to: 22.50 us, level: "off"}\n'
+    )
+    path = tmp_path / "forced.yaml"
+    path.write_text(source, encoding="utf-8")
+    result = HybridSimulator(load_model(path)).simulate()
+    assert any(event.kind == "forced_gate" for event in result.events)
+    edges = build_switching_transitions_observation(result)["legs"][0]["edges"]
+    forced = [edge for edge in edges if abs(edge["time_s"] - 22.40e-6) < 1e-12]
+    assert len(forced) == 1
+    assert forced[0]["direction"] == "high_to_low"
+    assert forced[0]["dead_time_s"] == pytest.approx(120e-9, rel=1e-9)
+
+
+_FULL_BRIDGE = """
+schema: pear-sim/v0.1
+name: full_bridge_partial
+circuit:
+  ground: gnd
+  components:
+    - {{id: vin, type: voltage_source, p: dcp, n: gnd, value: 48 V}}
+    - {{id: qah, type: ideal_switch, p: dcp, n: a, control: p.high}}
+    - {{id: qal, type: ideal_switch, p: a, n: gnd, control: p.low}}
+    - {{id: dah, type: diode, p: a, n: dcp, initial: off}}
+    - {{id: dal, type: diode, p: gnd, n: a, initial: off}}
+    - {{id: qbh, type: ideal_switch, p: dcp, n: b, control: p.low}}
+    - {{id: qbl, type: ideal_switch, p: b, n: gnd, control: p.high}}
+    - {{id: dbh, type: diode, p: b, n: dcp, initial: off}}
+    - {{id: dbl, type: diode, p: gnd, n: b, initial: off}}
+    - {{id: rl, type: resistor, p: a, n: m, value: 2 ohm}}
+    - {{id: ll, type: inductor, p: m, n: b, value: 50 uH, initial_current: -4 A}}
+controls:
+  p: {{type: complementary_pwm, frequency: 100 kHz, duty: 50 %, phase: 0 s, dead_time: 50 ns}}
+switching_transitions:
+  coss_cards:
+    c:
+      voltage_axis_v: [0, 10, 80]
+      coss_f: [1.0e-9, 0.6e-9, 0.4e-9]
+      provenance: {{source: test}}
+  legs:
+    a: {{high: qah, low: qal, high_diode: dah, low_diode: dal, card: c, bus_voltage: v(dcp){partner}}}
+    b: {{high: qbh, low: qbl, high_diode: dbh, low_diode: dbl, card: c, bus_voltage: v(dcp)}}
+analysis:
+  transient: {{start: 0 s, stop: 60 us, output_step: 10 ns, solver: dop853, rtol: 1.0e-9, atol: 1.0e-11}}
+outputs: [v(dcp), i(ll), i(qah), i(qal), i(dah), i(dal), i(qbh), i(qbl), i(dbh), i(dbl)]
+"""
+
+
+@pytest.mark.parametrize("paired", [True, False])
+def test_a_verdict_over_skipped_windows_is_partial(tmp_path, paired):
+    # A full bridge swings both legs in one dead time. Unpaired, every window
+    # overlaps the other leg's and is skipped: then "all evaluated edges are
+    # ZVS" proves nothing — all_zvs must be null and the status partial.
+    path = tmp_path / "fb.yaml"
+    path.write_text(
+        _FULL_BRIDGE.format(partner=", bridge_partner: b" if paired else ""), encoding="utf-8"
+    )
+    observation = build_switching_transitions_observation(
+        HybridSimulator(load_model(path)).simulate()
+    )
+    summary = observation["summary"]
+    if paired:
+        assert observation["status"] == "ok"
+        assert summary["not_evaluated_windows"] == 0
+        assert summary["edges"] > 0
+        assert summary["all_zvs"] is (summary["zvs_edges"] == summary["edges"])
+    else:
+        assert observation["status"] in {"partial", "not_evaluated"}
+        assert summary["not_evaluated_windows"] > 0
+        assert summary["all_zvs"] is None or summary["all_zvs"] is False
+        assert summary["all_zvs"] is not True
+
+
+@pytest.mark.parametrize("inductance", [None, 100e-9])
+def test_raw_volt_seconds_accrue_while_the_node_stands_still(inductance):
+    # The integral of u over the window, before the ideal run is subtracted: a
+    # node held at V by a current in the wrong direction accrues V·t. (It used to
+    # stay 0 when nothing moved, which hid the missing ideal-run subtraction.)
+    bus, dead = 48.0, 10e-9
+    outcome = simulate_transition(
+        [_node(CossCurve(_card()), bus)], bus, -1.0, dead, 0.48, inductance, 30.0 if inductance else 0.0
+    )
+    if inductance is None:
+        assert outcome.volt_second_deficit_v_s == pytest.approx(bus * dead, rel=1e-9)
+    else:
+        # L·di/dt = u − u_x = 18 V pulls the current up from −1 A; the node only
+        # leaves V once it crosses zero (~5.6 ns), so the integral stays close to V·t.
+        assert 0.9 * bus * dead < outcome.volt_second_deficit_v_s <= bus * dead * (1 + 1e-9)
+
+
+def test_loop_inductance_on_the_bridge_partner_is_refused(tmp_path):
+    # The pair is evaluated as one unit on the leg that names it; a loop declared
+    # on the partner used to load and then be ignored (max_overshoot: null).
+    source = _FULL_BRIDGE.format(partner=", bridge_partner: b").replace(
+        "card: c, bus_voltage: v(dcp)}}\n".replace("}}", "}"),
+        "card: c, bus_voltage: v(dcp), loop_inductance: 5 nH, current_fall_time: 5 ns}\n",
+    )
+    assert "loop_inductance: 5 nH" in source
+    path = tmp_path / "fb.yaml"
+    path.write_text(source, encoding="utf-8")
+    with pytest.raises(ModelError, match="the leg that names the pair"):
+        load_model(path)

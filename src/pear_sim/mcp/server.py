@@ -49,7 +49,9 @@ Claim boundaries you must pass on to the user:
   (typical values, small-signal; Coss hysteresis not included): the waveforms do not
   change. Verified against closed forms and ngspice; validation against published
   measurements is partial (see validation/switching_transitions/README.md) — never call
-  its numbers measured. Never add capacitive_turn_on_energy_j to card E_on.
+  its numbers measured. Never add capacitive_turn_on_energy_j to card E_on. A status
+  "partial" (all_zvs null) means some dead times were NOT evaluated: report them, never
+  read it as ZVS everywhere.
 - Out of scope, say so instead of estimating: EMI and compliance, real part catalogues
   and switching losses of named parts, reverse recovery, FEM, extraction of PCB
   parasitics (a loop inductance is only ever user-declared).
