@@ -233,7 +233,9 @@ Read this before trusting a number.
 
 - **Piecewise-linear devices at best.** A switch or diode is ideal unless you give it
   `on_resistance` / `forward_voltage`; then conduction is `v = V_f + R_on·i` in the
-  circuit equations. There is no reverse recovery, no switching transient, no
+  circuit equations. There is no reverse recovery, no switching transient in the
+  circuit equations (the dead-time Coss swing and the loop overshoot exist only as a
+  post-processed estimate, `switching_transitions`, §7c of the format), no
   temperature dependence and no EMI, and no parasitics unless you declare them as
   circuit elements (ESR and DCR are series resistors). Switching losses come *after*
   the run from declared cards, so that dissipation never feeds back into the solution —

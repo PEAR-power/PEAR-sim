@@ -1,0 +1,91 @@
+schema: pear-sim/v0.1
+name: synchronous_buck_gan_transition
+
+# 48 V -> 12 V synchronous buck on an 80 V GaN half-bridge, 500 kHz, 20 ns dead
+# time, with the post-processed switching-transition check (docs/model-format.md §7c).
+#
+# What the switching_transitions section answers, per dead-time window:
+# - high -> low (inductor current positive): the current itself swings the node
+#   down through both devices' Coss; ZVS if it gets there within 20 ns.
+# - low -> high: the same current pushes the node the WRONG way, so the high side
+#   turns on hard and dissipates about Qoss(48 V)·48 V per edge
+#   (capacitive_turn_on_energy_j) — the classic hard-switched buck edge.
+# - turn-off overshoot of the high side from the declared 0.4 nH loop and a 2 ns
+#   current fall (hard-commutation estimate).
+#
+# CARD: EPC2065 Coss(V) read from the datasheet plot (Fig. 5a, linear scale),
+# reading precision about ±20 pF; typical values. The datasheet TABLE states
+# QOSS = 33 nC typ at 40 V, which this curve reproduces within reading precision.
+#
+# CLAIM BOUNDARY: ideal switches in the circuit; the transition is post-processed
+# on the recorded waveforms and does not feed back. Verified (closed form,
+# ngspice), not validated on this board.
+
+parameters:
+  vin: 48 V
+  fsw: 500 kHz
+  duty: 25 %
+  dead_time: 20 ns
+  load: 1.2 ohm
+  loop: 0.4 nH
+  fall: 2 ns
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vin, type: voltage_source, p: in, n: gnd, value: "${vin}"}
+    - {id: qh, type: ideal_switch, p: in, n: sw, control: leg.high}
+    - {id: ql, type: ideal_switch, p: sw, n: gnd, control: leg.low}
+    - {id: dh, type: diode, p: sw, n: in, initial: off}
+    - {id: dl, type: diode, p: gnd, n: sw, initial: off}
+    # Warm-start seeds near the steady state (declared, not derived).
+    - {id: l1, type: inductor, p: sw, n: out, value: 4.7 uH, initial_current: 10 A}
+    - {id: c1, type: capacitor, p: out, n: gnd, value: 47 uF, initial_voltage: 12 V}
+    - {id: rload, type: resistor, p: out, n: gnd, value: "${load}"}
+
+controls:
+  leg:
+    type: complementary_pwm
+    frequency: "${fsw}"
+    duty: "${duty}"
+    phase: 0 s
+    dead_time: "${dead_time}"
+
+switching_transitions:
+  coss_cards:
+    epc2065:
+      voltage_axis_v: [0, 10, 20, 40, 60, 80]
+      coss_f: [1.34e-9, 1.23e-9, 0.64e-9, 0.535e-9, 0.49e-9, 0.445e-9]
+      provenance:
+        source: "EPC2065 datasheet (EPC, rev. 2021-06-11), Coss read from plot, typical"
+        page: 3
+        figure: "Fig. 5a"
+  legs:
+    leg:
+      high: qh
+      low: ql
+      high_diode: dh
+      low_diode: dl
+      card: epc2065
+      bus_voltage: v(in)
+      loop_inductance: "${loop}"
+      current_fall_time: "${fall}"
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 40 us
+    output_step: 2 ns
+    solver: dop853
+    rtol: 1.0e-9
+    atol: 1.0e-11
+
+outputs:
+  - v(out)
+  - v(sw)
+  - v(in)
+  - i(l1)
+  - i(qh)
+  - i(ql)
+  - i(dh)
+  - i(dl)
