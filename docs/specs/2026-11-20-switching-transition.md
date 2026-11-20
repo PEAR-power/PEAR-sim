@@ -1,7 +1,7 @@
 # Switching-transition post-processing: dead-time Coss transition (ZVS) and commutation-loop overshoot
 
-Status: draft (2026-11-20). Source brief: kokpit backlog item "Model przejścia łącznika" (2026-11-20),
-literature note `~/kokpit/plany/arxiv-llm-agenci-energoelektronika-2026-11-20.md`.
+Status: draft (2026-11-20). Source brief: maintainer backlog item "switching-transition model" (2026-11-20),
+and a literature review of agentic power-electronics design tools (2026-11-20).
 
 ## 📝 TLDR
 
