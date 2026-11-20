@@ -205,6 +205,8 @@ def test_the_loop_hint_names_a_capacitor_across_a_voltage_source(tmp_path: Path)
 DCR_STAR_BREAKS = {
     "grid_following_converter", "inverter_signal_svpwm",
     "inverter_three_phase_floating_neutral", "inverter_three_phase_svpwm", "llc_resonant",
+    # 2026-11-20: the dead-time copy of the LLC has the same tank star.
+    "llc_resonant_zvs",
     "npc_three_phase_midpoint", "rectifier_6pulse_transformer",
     "traction_inverter_liquid_cooled",
 }
