@@ -32,8 +32,8 @@ Workflow that works:
 
 Claim boundaries you must pass on to the user:
 - Switches and diodes are IDEAL unless the model declares on_resistance /
-  forward_voltage (then conduction is v = V_f + R_on*i, still without recovery or
-  switching transitions). Declare capacitor ESR (`esr`) and inductor DCR (`dcr`) on
+  forward_voltage (then conduction is v = V_f + R_on*i, still without recovery; switching
+  transitions only as the post-processed estimate below). Declare capacitor ESR (`esr`) and inductor DCR (`dcr`) on
   the component: constant series resistances, no frequency dependence, no ESL.
   A capacitor's `ripple_current_rating` (needs `esr`) is checked against its
   RMS current; the audit reports `parasitic_loss_by_component_w`.
@@ -42,8 +42,17 @@ Claim boundaries you must pass on to the user:
 - Every result carries warnings and a confidence level; report them, don't drop them.
 - Loop-gain margins attest the DECLARED compensator on an averaged model; they are not a
   closed-loop proof.
+- switching_transitions (optional model section, docs §7c) post-processes each dead time
+  of a declared half-bridge leg: ZVS yes/no, node voltage at turn-on, minimum/maximum
+  dead time, capacitive turn-on energy, and a turn-off overshoot from a DECLARED loop
+  inductance. It is an estimate on the ideal waveforms from a datasheet Coss table
+  (typical values, small-signal; Coss hysteresis not included): the waveforms do not
+  change. Verified against closed forms and ngspice; validation against published
+  measurements is partial (see validation/switching_transitions/README.md) — never call
+  its numbers measured. Never add capacitive_turn_on_energy_j to card E_on.
 - Out of scope, say so instead of estimating: EMI and compliance, real part catalogues
-  and switching losses of named parts, reverse recovery, FEM, PCB parasitics.
+  and switching losses of named parts, reverse recovery, FEM, extraction of PCB
+  parasitics (a loop inductance is only ever user-declared).
 - For ripple and efficiency of a converter, prefer steady_state: a transient's last half
   can still carry start-up ringing.
 - Capability status (supported / experimental / unsupported) is in the capabilities tool.

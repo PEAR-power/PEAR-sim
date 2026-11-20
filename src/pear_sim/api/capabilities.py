@@ -280,6 +280,62 @@ _CAPABILITY_RECORDS: tuple[dict[str, Any], ...] = (
         ],
     },
     {
+        "id": "analysis.switching_transitions.coss_dead_time",
+        "status": "experimental",
+        "scope": (
+            "post-processed dead-time transition of a declared half-bridge leg (or a "
+            "full-bridge pair) through a datasheet Coss(V)/Qoss(V) table: ZVS yes/no, "
+            "node voltage at turn-on, minimum and maximum dead time, capacitive turn-on "
+            "energy; constant-current or lumped-LC commutation"
+        ),
+        "statement": (
+            "An estimate on the IDEAL recorded run: the circuit equations are unchanged "
+            "and the transition never feeds back. Coss is the small-signal typical table; "
+            "large-signal Qoss and Coss hysteresis are not included. The commutating "
+            "current is the recorded one at the outgoing turn-off; the lumped-LC regime "
+            "uses one declared static inductance and a far voltage frozen over the window. "
+            "Reverse-conduction drop, gate drive and the Miller plateau are not modelled. "
+            "capacitive_turn_on_energy_j must never be summed with card E_on."
+        ),
+        "evidence": [
+            "VERIFICATION, closed forms by exact piecewise integration of literal tables: "
+            "Q_node/I, the LC energy condition for ZVS, Qoss(V)*V hard turn-on "
+            "(tests/test_switching_transitions.py)",
+            "VERIFICATION, ngspice with behavioural nonlinear capacitors: constant current, "
+            "lumped LC, full-bridge pair (tests/test_switching_transitions_ngspice.py, "
+            "required CI job ngspice-oracle); gates fire on Coss x 1.2 and on an inverted "
+            "current",
+            "VALIDATION, partial: EPC2065 at 48 V / 150 ns (Barba et al., Energies 2024): the "
+            "stated ZVS boundary between 0.5 A and 1 A is reproduced; plot-read fall "
+            "times lie inside the datasheet typ-max Coss band "
+            "(validation/switching_transitions/RESULTS.md)",
+            "NOT validated: other devices, voltages, the lumped-LC and bridge-pair regimes",
+        ],
+    },
+    {
+        "id": "analysis.switching_transitions.loop_overshoot",
+        "status": "experimental",
+        "scope": (
+            "turn-off peak voltage from a USER-DECLARED commutation-loop inductance: "
+            "V + Lsigma*I/t_f, the lossless Lsigma-Coss ramp response, and the "
+            "instant-cut energy estimate"
+        ),
+        "statement": (
+            "Hard-commutation estimates, not envelopes; the loop inductance is never "
+            "extracted from a layout. The lossless ramp keeps the ringing undamped and "
+            "over-estimates; the conventional formula ignores ringing and slightly "
+            "under-estimates. Turn-offs into the outgoing device's own diode are not "
+            "evaluated (reverse recovery is out of scope)."
+        ),
+        "evidence": [
+            "VERIFICATION: linear-C closed forms I*sqrt(L/C) and the ramp response; "
+            "ngspice for nonlinear Coss (tests/test_switching_transitions*.py)",
+            "VALIDATION, partial: onsemi AND90238/D Table 7 (SiC module, 400 V, 600 A, "
+            "23/30/37 nH): the measured peak lies between V + Lsigma*di/dt and the lossless "
+            "ramp at all three points (validation/switching_transitions/RESULTS.md)",
+        ],
+    },
+    {
         "id": "analysis.transient.reference_python",
         "status": "supported",
         "scope": "small independent-state RLC networks within documented topology limits",
