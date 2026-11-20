@@ -2,15 +2,17 @@
 # Copyright 2026 PEAR Power and the PEARSim contributors.
 """Switching transitions against ngspice: the independent-engine verification.
 
-ngspice integrates the SAME physical case with its own engine: behavioural
-capacitors ``C='pwl(V, table)'`` written from literal tables in this file, its
-own time stepping, and its own initial operating point (sources step at t=0
-so the DC solution sets the starting node voltages and inductor current —
-behavioural capacitors ignore ``ic=``). Agreement is VERIFICATION of the
-post-processing integrator, not validation against hardware.
+ngspice integrates the SAME physical case with its own engine and its own time
+stepping. A nonlinear node capacitance is written as an integrator: the node is
+driven by an E-source copying an auxiliary 1 F capacitor whose current is
+``-i_node / C(v)`` (a B-source with ``pwl()`` tables written literally in this
+file), so ``C(v)·dv/dt = -i_node`` exactly. Initial voltages and inductor
+currents are set with ``ic=`` + ``uic`` on linear elements, which every ngspice
+version honours (behavioural ``C='expr'`` capacitors ignore ``ic=``, and the
+DC-step workaround stalls ngspice 42 at t ≈ 1e-14 s). Agreement is VERIFICATION
+of the post-processing integrator, not validation against hardware.
 
-Declared budget: relative 2e-3 (ngspice transient tolerances at the options
-below, plus the 1 ps source steps used to set the initial state). Each gate is
+Declared budget: relative 2e-3 (ngspice transient tolerances). Each gate is
 shown silent on correct code and firing on a mutation (Coss x 1.2).
 
 Runs in CI's ``ngspice-oracle`` job, where a skip is a failure.
@@ -44,7 +46,6 @@ COSS = (1.34e-9, 1.23e-9, 0.64e-9, 0.535e-9, 0.49e-9, 0.445e-9)
 HV_AXIS = (0.0, 10.0, 50.0, 100.0, 200.0, 400.0, 650.0)
 HV_COSS = (1.5e-9, 6.0e-10, 2.0e-10, 1.2e-10, 8.0e-11, 6.5e-11, 5.5e-11)
 
-_OPTIONS = "* ngspice default transient tolerances"
 
 
 def _pwl(probe: str, axis, values, scale: float = 1.0) -> str:
@@ -74,10 +75,25 @@ def _ngspice(tmp_path: Path, name: str, netlist: str) -> dict[str, float]:
     return values
 
 
-def _leg_caps(node: str, bus: str, axis, values, scale=1.0) -> str:
+def _node(name: str, initial: float, capacitance_expr: str) -> str:
+    """A node whose capacitance to the rails is C(v): C(v)·dv/dt = -i_out."""
+
     return (
-        f"Cl_{node} {node} 0 C='{_pwl(f'V({node})', axis, values, scale)}'\n"
-        f"Ch_{node} {bus} {node} C='{_pwl(f'V({bus},{node})', axis, values, scale)}'\n"
+        f"E{name} {name}_drv 0 {name}_aux 0 1\n"
+        f"VS{name} {name}_drv {name} 0\n"
+        f"CA{name} {name}_aux 0 1 ic={initial}\n"
+        f"BA{name} 0 {name}_aux I=-I(VS{name})/({capacitance_expr})\n"
+    )
+
+
+def _leg_node(name: str, bus: float, initial: float, axis, values, scale=1.0) -> str:
+    """Half-bridge node: low device v, high device bus − v (bus is a constant)."""
+
+    v = f"V({name}_aux)"
+    return _node(
+        name,
+        initial,
+        f"{_pwl(v, axis, values, scale)} + {_pwl(f'({bus}-{v})', axis, values, scale)}",
     )
 
 
@@ -90,12 +106,9 @@ def _rel(a: float, b: float) -> float:
 
 def _constant_current_netlist(bus, current, stop, threshold, scale=1.0, axis=AXIS, values=COSS):
     return f"""* constant-current dead-time swing
-VB bus 0 DC {bus}
-RL n bus 1e12
-{_leg_caps('n', 'bus', axis, values, scale)}
-I1 n 0 PWL(0 0 1p {current})
-{_OPTIONS}
-.tran 1p {stop} 0 2p
+{_leg_node('n', bus, bus, axis, values, scale)}
+I1 n 0 DC {current}
+.tran 1p {stop} 0 2p uic
 .control
 run
 meas tran tcross WHEN V(n)={threshold} FALL=1
@@ -114,8 +127,7 @@ def test_constant_current_swing_time(tmp_path, bus, current):
     spice = _ngspice(
         tmp_path, "cc", _constant_current_netlist(bus, current, 3 * pear.minimum_dead_time_s, threshold)
     )
-    # ngspice's current source ramps over 1 ps: half a picosecond of delay.
-    assert _rel(pear.minimum_dead_time_s, spice["tcross"] - 0.5e-12) < BUDGET
+    assert _rel(pear.minimum_dead_time_s, spice["tcross"]) < BUDGET
 
 
 @_live
@@ -124,21 +136,18 @@ def test_constant_current_gate_fires_on_coss_mutation(tmp_path):
     spice = _ngspice(tmp_path, "cc", _constant_current_netlist(bus, current, 30e-9, 0.48))
     mutated = CossCurve(_card(scale=1.2))
     pear = simulate_transition([st._node_capacitance(mutated, bus, 0.0)], bus, current, 1e-6, 0.48)
-    assert _rel(pear.minimum_dead_time_s, spice["tcross"] - 0.5e-12) > 0.15
+    assert _rel(pear.minimum_dead_time_s, spice["tcross"]) > 0.15
 
 
 # --- lumped LC, single leg -------------------------------------------------------------
 
 
 def _lc_netlist(bus, current, far, inductance, at, scale=1.0):
-    return f"""* lumped LC dead-time swing, initial state from the DC operating point
-VB bus 0 DC {bus}
-VX far 0 PWL(0 {bus} 1p {far})
-IINIT 0 n PWL(0 {current} 1p 0)
-{_leg_caps('n', 'bus', AXIS, COSS, scale)}
-L1 n far {inductance}
-{_OPTIONS}
-.tran 1p {at * 1.2} 0 2p
+    return f"""* lumped LC dead-time swing
+VX far 0 DC {far}
+{_leg_node('n', bus, bus, AXIS, COSS, scale)}
+L1 n far {inductance} ic={current}
+.tran 1p {at * 1.2} 0 2p uic
 .control
 run
 meas tran vat FIND V(n) AT={at}
@@ -184,20 +193,11 @@ def test_bridge_pair_against_ngspice(tmp_path):
     # L in series with a source v_t. u-frame: u_x = V + v_t.
     bus, inductance, current, v_t, at = 380.0, 50e-6, 1.5, 150.0, 50e-9
     netlist = f"""* full-bridge pair on one commutation current
-VB bus 0 DC {bus}
-* The pair floats as a whole (only L and VT join a to b): it needs DC paths.
-* 100 Mohm leaks set a = V, b = 0 at the operating point; they carry ~4 uA
-* against 1.5 A (3e-6) and shift the start by ~0.04 V (1e-4 of V): in budget.
-RA a bus 1e8
-RB b 0 1e8
-{_leg_caps('a', 'bus', HV_AXIS, HV_COSS)}
-{_leg_caps('b', 'bus', HV_AXIS, HV_COSS)}
-L1 a x {inductance}
-* The loop current is set by a source ACROSS the inductor, stepped off at t=0.
-ILOOP x a PWL(0 {current} 1p 0)
-VT x b PWL(0 {bus} 1p {v_t})
-.options rshunt=1e12
-.tran 1p {at * 1.2} 0 5p
+{_leg_node('a', bus, bus, HV_AXIS, HV_COSS)}
+{_leg_node('b', bus, 0.0, HV_AXIS, HV_COSS)}
+L1 a x {inductance} ic={current}
+VT x b DC {v_t}
+.tran 1p {at * 1.2} 0 5p uic
 .control
 run
 meas tran va FIND V(a) AT={at}
@@ -224,11 +224,10 @@ quit
 def _overshoot_netlist(bus, current, loop, fall, stop, scale=1.0):
     return f"""* commutation-loop overshoot: device current falls linearly over t_f
 VB bus 0 DC {bus}
-L1 bus d {loop}
-Cd d 0 C='{_pwl('V(d)', AXIS, COSS, scale)}'
+L1 bus d {loop} ic={current}
+{_node('d', bus, _pwl('V(d_aux)', AXIS, COSS, scale))}
 ID d 0 PWL(0 {current} {fall} 0)
-{_OPTIONS}
-.tran 0.1p {stop} 0 1p
+.tran 0.1p {stop} 0 1p uic
 .control
 run
 meas tran vmax MAX V(d)
