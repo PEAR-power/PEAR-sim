@@ -59,7 +59,9 @@ antiparallel diodes) on the recorded ideal waveforms:
    L_c·di/dt = u_a + u_b − (V ± v_t), with v_t the declared voltage of the rest of the path (+ when
    leg a falls, − when it rises).
 3. Report per edge: `zvs` (u ≤ `zvs_threshold`·V, default 1 %), `voltage_at_turn_on_v`,
-   `minimum_dead_time_s` (all nodes clamped; `null` when not reached within the horizon),
+   `minimum_dead_time_s` (first time every node is at or below the ZVS threshold — the same
+   threshold as the `zvs` verdict, so `zvs` ⇔ `minimum_dead_time_s` ≤ dead time; `null` when not
+   reached within the horizon),
    `maximum_dead_time_s` (lumped LC only: after the clamped current reverses, the first time a node
    leaves the threshold), `capacitive_turn_on_energy_j` = energy dissipated when the incoming
    channel discharges the residual: E = Eoss_in(u_r) + ∫_{V−u_r}^{V}(V − w)·Coss_out(w) dw + ½·C_extra·u_r²
@@ -67,7 +69,9 @@ antiparallel diodes) on the recorded ideal waveforms:
    NOT added to §7a switching energies: a DPT E_on usually already contains the Coss energy, and
    the V·I overlap loss at u_r is not part of it. The two are reported side by side, never summed.
 4. Overshoot (phase 2) for every turn-off that hard-commutates the current into the opposite device
-   (the outgoing device ends up blocking V): `vpeak_conventional_v` = V + Lσ·|I|/t_f when
+   (the outgoing device ends up blocking V). Both the qualification and I are the current AT t_off —
+   the current the turn-off interrupts; a current the resonance builds later in the window belongs
+   to a later commutation and never sizes this one: `vpeak_conventional_v` = V + Lσ·|I|/t_f when
    `current_fall_time` is declared; `vpeak_ramp_v` from the lossless ramp ODE
    (Lσ·di_L/dt = −x, Coss_out(V + x)·dx/dt = i_L − i_dev(t), i_dev a linear fall over t_f);
    `vpeak_instant_cut_v` from ½·Lσ·I² = ∫_V^{V+ΔV}(w − V)·Coss_out(w) dw. Turn-offs whose current goes
@@ -90,9 +94,10 @@ separate backlog item.
   own `coss_cards` (`voltage_axis_v` starting at 0, exactly one of `coss_f` (piecewise-linear C) or
   `qoss_c` (piecewise-linear Q, Q(0)=0, strictly increasing → piecewise-constant C), mandatory
   `provenance`); independent of `loss_analysis`.
-- `analysis/switching_transitions.py` (new): the producer. Uses `result.events` (`scheduled_gate`
-  edges of the switches' controls) to find windows: the outgoing switch's off edge and the incoming
-  switch's next on edge of the same leg.
+- `analysis/switching_transitions.py` (new): the producer. Uses `result.events` — every EFFECTIVE
+  gate change of the switches' controls, `scheduled_gate` and `forced_gate` (a perturbation window
+  overriding the schedule) — to find windows: the outgoing switch's off edge and the incoming
+  switch's next on edge of the same leg. A turn-off that opens no window is counted with its reason.
 - `run/io.py`: writes `switching-transitions.json`, adds a summary to `summary.json`, adds a
   `SWITCHING_TRANSITIONS_POSTPROCESSED` info warning carrying the claim boundary.
 - Capabilities: `analysis.switching_transitions.coss_dead_time` and
@@ -123,7 +128,7 @@ switching_transitions:           # NEW, optional
       extra_node_capacitance: 0 F            # optional (transformer winding, snubber)
       commutation_inductance: 195 uH         # optional → lumped LC regime
       far_voltage: {v(lsec): 0.95}           # required iff commutation_inductance
-      bridge_partner: b                      # optional, full bridge
+      bridge_partner: b                      # optional, full bridge; the pair's loop is declared here, never on b
       loop_inductance: 5 nH                  # optional → overshoot (phase 2)
       current_fall_time: 5 ns                # optional
 ```
@@ -131,20 +136,33 @@ switching_transitions:           # NEW, optional
 Both antiparallel diodes are REQUIRED: without a reverse-conduction path the ideal run cuts the
 inductor current in the dead time and the recorded waveform is not a usable basis.
 Required outputs: `i(high)`, `i(low)`, `i(<diodes>)`, the bus voltage and every
-`far_voltage` term. Fail closed on any missing one, on wrong orientation (high.p must equal
-low.n), on a card without provenance, on non-positive values.
+`far_voltage` term. Fail closed on any missing one, on wrong orientation (`high.n == low.p`, the
+shared switching node; `high.p != low.n`, two distinct rails), on a loop inductance declared on a
+bridge partner, on a card without provenance, on non-positive values.
 
 ## 📝 API Contracts
 
 `switching-transitions.json` (schema `pear-sim/switching-transitions/v0.1`):
-`{schema, status, claim_boundary, legs: [{leg, regime, card, provenance, edges: [{time_s,
-outgoing, incoming, bus_voltage_v, commutating_current_a, dead_time_s, zvs, voltage_at_turn_on_v,
-minimum_dead_time_s, maximum_dead_time_s, hard_turn_on_energy_j, incoming_eoss_j,
-transition_fraction_of_dead_time, volt_second_deficit_v_s, current_at_end_a, overshoot: {...}|null}], summary: {edges, zvs_edges, worst_voltage_at_turn_on_v,
-max_minimum_dead_time_s, hard_turn_on_energy_total_j, extrapolated_lookups}}]}`.
+`{schema, status, claim_boundary, legs: [{leg, regime, card, provenance, not_evaluated: {reason:
+count}, windows_cut_by_end_of_run, edges: [{time_s, outgoing, incoming, bus_voltage_v,
+commutating_current_a, dead_time_s, zvs, voltage_at_turn_on_v, minimum_dead_time_s,
+maximum_dead_time_s, capacitive_turn_on_energy_j, incoming_eoss_j,
+transition_fraction_of_dead_time, volt_second_deficit_v_s, current_at_end_a, overshoot: {...}|null}],
+summary: {...}}], summary: {edges, zvs_edges, not_evaluated_windows, all_zvs}}`.
+
+Verdict over the run: `status` is `ok` only when every window was evaluated, `partial` when some
+were skipped (`not_evaluated` names the reason), `not_evaluated` when none was. `all_zvs` is `true`
+only with nothing skipped, `false` as soon as one evaluated edge fails, and `null` when every
+evaluated edge passed but some were skipped — passing edges say nothing about skipped ones. A
+window whose incoming turn-on lies beyond the run is counted in `windows_cut_by_end_of_run` and does
+not make the run partial (no transition inside the run was skipped).
 Shadow metrics (published, not gated — no history yet to set a threshold):
-`transition_fraction_of_dead_time` = t_min / dead time, and `volt_second_deficit_v_s` = ∫ u dt over the
-dead time: the volt-seconds the ideal run applied to the load path that the real node did not.
+`transition_fraction_of_dead_time` = t_min / dead time, and `volt_second_deficit_v_s` =
+∫ (u − u_ideal) dt over the dead time, both in the incoming-device frame and summed over the nodes:
+the volt-seconds by which the transition differs from the recorded ideal run. The ideal run holds each
+node for the whole window on the rail its freewheeling diode picks at the edge — u_ideal = 0 when the
+commutating current drives toward ZVS, u_ideal = V otherwise — so a node that both hold at the same
+rail contributes nothing.
 Large values mean the recorded waveform after this edge is itself off (DAB duty loss, light-load or
 TCM buck), so later edges inherit an error the post-processing cannot see.
 
@@ -156,7 +174,9 @@ TCM buck), so later edges inherit an error the post-processing cannot see.
 - Bus voltage above the Coss axis: lookups hold the last value and increment
   `extrapolated_lookups` (same as §7a).
 - Overshoot above the Coss axis: same; the instant-cut root search fails closed if no root ≤ 10·V.
-- Windows straddling the end of the run are dropped and counted.
+- Windows straddling the end of the run are dropped and counted (`windows_cut_by_end_of_run`).
+- A turn-off whose outgoing switch turns back on before the incoming one: `not_evaluated`
+  (`outgoing_back_on_before_incoming`).
 
 ## 📝 Risks & Impact Review
 
