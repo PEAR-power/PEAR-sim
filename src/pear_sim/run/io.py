@@ -23,6 +23,7 @@ from pear_sim.analysis.gate_drive import build_gate_drive_observation
 from pear_sim.analysis.confidence import build_confidence_card
 from pear_sim.analysis.core_losses import build_core_losses_observation
 from pear_sim.analysis.losses_thermal import build_losses_thermal_observation
+from pear_sim.analysis.switching_transitions import build_switching_transitions_observation
 from pear_sim.analysis.mode_coverage import build_mode_coverage
 from pear_sim.spec.model import Model
 from pear_sim.core.solver import SimulationResult
@@ -278,6 +279,9 @@ def write_result(
     core_losses = None
     if getattr(result.model, "core_losses", None) is not None:
         core_losses = build_core_losses_observation(result)
+    switching_transitions = None
+    if getattr(result.model, "switching_transitions", None) is not None:
+        switching_transitions = build_switching_transitions_observation(result)
     resonance = build_resonance_observation(result)
     harmonic_analysis = _bound_harmonic_analysis(
         getattr(result, "harmonic_analysis", None),
@@ -394,8 +398,24 @@ def write_result(
                     "Conduction is modelled as v = V_f + R_on * i for "
                     + ", ".join(lossy_devices)
                     + "; the drop is constant (no temperature or current dependence "
-                    "beyond R_on) and switching transitions, reverse recovery and EMI "
-                    "are still not modelled."
+                    "beyond R_on); reverse recovery and EMI are not modelled, and switching "
+                    "transitions only as the post-processed estimate of "
+                    "switching_transitions (docs/model-format.md §7c)."
+                ),
+            }
+        )
+    if getattr(result.model, "switching_transitions", None) is not None:
+        warnings.append(
+            {
+                "code": "SWITCHING_TRANSITIONS_POSTPROCESSED",
+                "severity": "info",
+                "scope": "model",
+                "message": (
+                    "switching-transitions.json is a post-processed estimate on the ideal "
+                    "waveforms (datasheet Coss table, declared commutation and loop "
+                    "inductances); the circuit equations are unchanged. Verified against "
+                    "closed forms and ngspice, NOT validated against measurements on this "
+                    "design. Do not sum capacitive_turn_on_energy_j with card E_on."
                 ),
             }
         )
@@ -605,6 +625,8 @@ def write_result(
         _write_json(destination / "losses-thermal.json", losses_thermal)
     if core_losses is not None:
         _write_json(destination / "core-losses.json", core_losses)
+    if switching_transitions is not None:
+        _write_json(destination / "switching-transitions.json", switching_transitions)
     confidence_card = build_confidence_card(result.model)
     _write_json(destination / "confidence-card.json", confidence_card)
     _write_json(destination / "model.resolved.json", resolved_model_dict(result.model))
@@ -682,6 +704,21 @@ def write_result(
             "total_power_w": core_losses["total_power_w"],
             "warnings": core_losses["warnings"],
         }
+    if switching_transitions is not None:
+        summary_payload["switching_transitions"] = {
+            "artifact": "switching-transitions.json",
+            "schema": switching_transitions["schema"],
+            "validation_status": switching_transitions["validation_status"],
+            "status": switching_transitions["status"],
+            **switching_transitions["summary"],
+            "legs": {
+                leg["leg"]: {
+                    key: leg["summary"].get(key)
+                    for key in ("edges", "zvs_edges", "by_direction", "capacitive_turn_on_power_w", "max_overshoot")
+                }
+                for leg in switching_transitions["legs"]
+            },
+        }
     _write_json(destination / "summary.json", summary_payload)
 
     run_files: dict[str, str] = {
@@ -715,6 +752,8 @@ def write_result(
         run_files["losses_thermal"] = "losses-thermal.json"
     if core_losses is not None:
         run_files["core_losses"] = "core-losses.json"
+    if switching_transitions is not None:
+        run_files["switching_transitions"] = "switching-transitions.json"
     run_files["resonance"] = "resonance.json"
     run_files["confidence_card"] = "confidence-card.json"
 

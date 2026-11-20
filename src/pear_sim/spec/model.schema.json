@@ -888,6 +888,185 @@
         }
       }
     },
+    "switching_transitions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coss_cards",
+        "legs"
+      ],
+      "properties": {
+        "zvs_threshold": {
+          "type": [
+            "string",
+            "number"
+          ]
+        },
+        "coss_cards": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 8,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "voltage_axis_v",
+              "provenance"
+            ],
+            "oneOf": [
+              {
+                "required": [
+                  "coss_f"
+                ]
+              },
+              {
+                "required": [
+                  "qoss_c"
+                ]
+              }
+            ],
+            "properties": {
+              "voltage_axis_v": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 64,
+                "items": {
+                  "type": "number"
+                }
+              },
+              "coss_f": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 64,
+                "items": {
+                  "type": "number"
+                }
+              },
+              "qoss_c": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 64,
+                "items": {
+                  "type": "number"
+                }
+              },
+              "provenance": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "source"
+                ],
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "page": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "figure": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "legs": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 12,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "high",
+              "low",
+              "high_diode",
+              "low_diode",
+              "card",
+              "bus_voltage"
+            ],
+            "properties": {
+              "high": {
+                "type": "string",
+                "minLength": 1
+              },
+              "low": {
+                "type": "string",
+                "minLength": 1
+              },
+              "high_diode": {
+                "type": "string",
+                "minLength": 1
+              },
+              "low_diode": {
+                "type": "string",
+                "minLength": 1
+              },
+              "card": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bus_voltage": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "object",
+                    "minProperties": 1,
+                    "maxProperties": 6,
+                    "additionalProperties": {
+                      "type": "number"
+                    }
+                  }
+                ]
+              },
+              "extra_node_capacitance": {
+                "type": [
+                  "string",
+                  "number"
+                ]
+              },
+              "commutation_inductance": {
+                "type": [
+                  "string",
+                  "number"
+                ]
+              },
+              "far_voltage": {
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 6,
+                "additionalProperties": {
+                  "type": "number"
+                }
+              },
+              "loop_inductance": {
+                "type": [
+                  "string",
+                  "number"
+                ]
+              },
+              "current_fall_time": {
+                "type": [
+                  "string",
+                  "number"
+                ]
+              },
+              "bridge_partner": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
     "machines": {
       "type": "object",
       "minProperties": 1,

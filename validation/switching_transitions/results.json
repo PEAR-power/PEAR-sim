@@ -1,0 +1,1009 @@
+{
+  "schema": "pear-sim/switching-transitions-validation/v0.1",
+  "sensitivity": {
+    "coss_band": {
+      "scales": [
+        1.0,
+        1.25,
+        1.5151515151515151
+      ],
+      "source": "EPC2065 QOSS max/typ at 40 V (datasheet p. 1) = 50/33"
+    },
+    "examples": {
+      "dab_phase_shift_zvs": {
+        "cases": [
+          {
+            "coss_scale": 1.0,
+            "digest": {
+              "primary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 7.400995710849915e-09,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 8.29379374148954e-09,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.0,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 406.25977279692404,
+                  "vpeak_instant_cut_v": 488.4261830056663
+                }
+              },
+              "secondary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 4.488606624933679e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 2.597723955820938e-07,
+                    "worst_voltage_at_turn_on_v": 87.70980000475652,
+                    "zvs_edges": 7
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.03567032948282483,
+                "max_overshoot": null
+              }
+            },
+            "loop_inductance_nh": 2.0
+          },
+          {
+            "coss_scale": 1.0,
+            "digest": {
+              "primary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 7.400995710849915e-09,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 8.29379374148954e-09,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.0,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 415.64943199231016,
+                  "vpeak_instant_cut_v": 541.4182779256589
+                }
+              },
+              "secondary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 4.488606624933679e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 2.597723955820938e-07,
+                    "worst_voltage_at_turn_on_v": 87.70980000475652,
+                    "zvs_edges": 7
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.03567032948282483,
+                "max_overshoot": null
+              }
+            },
+            "loop_inductance_nh": 5.0
+          },
+          {
+            "coss_scale": 1.0,
+            "digest": {
+              "primary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 7.400995710849915e-09,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 8.29379374148954e-09,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.0,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 431.2988639846203,
+                  "vpeak_instant_cut_v": 602.7201112107068
+                }
+              },
+              "secondary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 4.488606624933679e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 2.597723955820938e-07,
+                    "worst_voltage_at_turn_on_v": 87.70980000475652,
+                    "zvs_edges": 7
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.03567032948282483,
+                "max_overshoot": null
+              }
+            },
+            "loop_inductance_nh": 10.0
+          },
+          {
+            "coss_scale": 1.25,
+            "digest": {
+              "primary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 9.251468784186267e-09,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 1.0367562661084345e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.0,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 406.25977279692404,
+                  "vpeak_instant_cut_v": 478.9314262833244
+                }
+              },
+              "secondary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 5.574153608539164e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 2.8982530421247256e-07,
+                    "worst_voltage_at_turn_on_v": 141.05273490109667,
+                    "zvs_edges": 1
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.09607398051111414,
+                "max_overshoot": null
+              }
+            },
+            "loop_inductance_nh": 2.0
+          },
+          {
+            "coss_scale": 1.25,
+            "digest": {
+              "primary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 9.251468784186267e-09,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 1.0367562661084345e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.0,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 415.64943199231016,
+                  "vpeak_instant_cut_v": 526.0676373857132
+                }
+              },
+              "secondary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 5.574153608539164e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 2.8982530421247256e-07,
+                    "worst_voltage_at_turn_on_v": 141.05273490109667,
+                    "zvs_edges": 1
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.09607398051111414,
+                "max_overshoot": null
+              }
+            },
+            "loop_inductance_nh": 5.0
+          },
+          {
+            "coss_scale": 1.25,
+            "digest": {
+              "primary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 9.251468784186267e-09,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 1.0367562661084345e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.0,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 431.2988639846203,
+                  "vpeak_instant_cut_v": 580.4204551247246
+                }
+              },
+              "secondary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 5.574153608539164e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 2.8982530421247256e-07,
+                    "worst_voltage_at_turn_on_v": 141.05273490109667,
+                    "zvs_edges": 1
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.09607398051111414,
+                "max_overshoot": null
+              }
+            },
+            "loop_inductance_nh": 10.0
+          },
+          {
+            "coss_scale": 1.5151515151515151,
+            "digest": {
+              "primary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 1.1214191026879201e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 1.2567151873427304e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.0,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 406.25977279692404,
+                  "vpeak_instant_cut_v": 471.5815826151684
+                }
+              },
+              "secondary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 6.71061628836626e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 3.1856622515624517e-07,
+                    "worst_voltage_at_turn_on_v": 179.98895335407897,
+                    "zvs_edges": 0
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.1850275806592459,
+                "max_overshoot": null
+              }
+            },
+            "loop_inductance_nh": 2.0
+          },
+          {
+            "coss_scale": 1.5151515151515151,
+            "digest": {
+              "primary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 1.1214191026879201e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 1.2567151873427304e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.0,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 415.64943199231016,
+                  "vpeak_instant_cut_v": 514.2141357737008
+                }
+              },
+              "secondary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 6.71061628836626e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 3.1856622515624517e-07,
+                    "worst_voltage_at_turn_on_v": 179.98895335407897,
+                    "zvs_edges": 0
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.1850275806592459,
+                "max_overshoot": null
+              }
+            },
+            "loop_inductance_nh": 5.0
+          },
+          {
+            "coss_scale": 1.5151515151515151,
+            "digest": {
+              "primary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 1.1214191026879201e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 1.2567151873427304e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.0,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 431.2988639846203,
+                  "vpeak_instant_cut_v": 563.2554154166033
+                }
+              },
+              "secondary_a": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 6.71061628836626e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 60
+                  },
+                  "low_to_high": {
+                    "edges": 60,
+                    "max_minimum_dead_time_s": 3.1856622515624517e-07,
+                    "worst_voltage_at_turn_on_v": 179.98895335407897,
+                    "zvs_edges": 0
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.1850275806592459,
+                "max_overshoot": null
+              }
+            },
+            "loop_inductance_nh": 10.0
+          }
+        ],
+        "robustness": {
+          "primary_a": {
+            "high_to_low": {
+              "robust": true,
+              "worst_voltage_at_turn_on_range_v": [
+                0.0,
+                0.0
+              ],
+              "zvs_fraction_values": [
+                1.0
+              ]
+            },
+            "low_to_high": {
+              "robust": true,
+              "worst_voltage_at_turn_on_range_v": [
+                0.0,
+                0.0
+              ],
+              "zvs_fraction_values": [
+                1.0
+              ]
+            }
+          },
+          "secondary_a": {
+            "high_to_low": {
+              "robust": true,
+              "worst_voltage_at_turn_on_range_v": [
+                0.0,
+                0.0
+              ],
+              "zvs_fraction_values": [
+                1.0
+              ]
+            },
+            "low_to_high": {
+              "robust": false,
+              "worst_voltage_at_turn_on_range_v": [
+                87.70980000475652,
+                179.98895335407897
+              ],
+              "zvs_fraction_values": [
+                0.0,
+                0.016666666666666666,
+                0.11666666666666667
+              ]
+            }
+          }
+        }
+      },
+      "llc_resonant_zvs": {
+        "cases": [
+          {
+            "coss_scale": 1.0,
+            "digest": {
+              "half_bridge": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 80,
+                    "max_minimum_dead_time_s": 1.6503443490343626e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 80
+                  },
+                  "low_to_high": {
+                    "edges": 80,
+                    "max_minimum_dead_time_s": 1.650344338706831e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 80
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.0,
+                "max_overshoot": null
+              }
+            },
+            "loop_inductance_nh": null
+          },
+          {
+            "coss_scale": 1.25,
+            "digest": {
+              "half_bridge": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 80,
+                    "max_minimum_dead_time_s": 2.0631988303621235e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 80
+                  },
+                  "low_to_high": {
+                    "edges": 80,
+                    "max_minimum_dead_time_s": 2.0631989914033785e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 80
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.0,
+                "max_overshoot": null
+              }
+            },
+            "loop_inductance_nh": null
+          },
+          {
+            "coss_scale": 1.5151515151515151,
+            "digest": {
+              "half_bridge": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 80,
+                    "max_minimum_dead_time_s": 2.501193496730499e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 80
+                  },
+                  "low_to_high": {
+                    "edges": 80,
+                    "max_minimum_dead_time_s": 2.501193526162153e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 80
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.0,
+                "max_overshoot": null
+              }
+            },
+            "loop_inductance_nh": null
+          }
+        ],
+        "robustness": {
+          "half_bridge": {
+            "high_to_low": {
+              "robust": true,
+              "worst_voltage_at_turn_on_range_v": [
+                0.0,
+                0.0
+              ],
+              "zvs_fraction_values": [
+                1.0
+              ]
+            },
+            "low_to_high": {
+              "robust": true,
+              "worst_voltage_at_turn_on_range_v": [
+                0.0,
+                0.0
+              ],
+              "zvs_fraction_values": [
+                1.0
+              ]
+            }
+          }
+        }
+      },
+      "synchronous_buck_gan_transition": {
+        "cases": [
+          {
+            "coss_scale": 1.0,
+            "digest": {
+              "leg": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": 7.812328697628149e-09,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 10
+                  },
+                  "low_to_high": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": null,
+                    "worst_voltage_at_turn_on_v": 48.0,
+                    "zvs_edges": 0
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.9157920000000002,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 50.16209280368611,
+                  "vpeak_instant_cut_v": 57.644775178522714
+                }
+              }
+            },
+            "loop_inductance_nh": 0.4
+          },
+          {
+            "coss_scale": 1.0,
+            "digest": {
+              "leg": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": 7.812328697628149e-09,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 10
+                  },
+                  "low_to_high": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": null,
+                    "worst_voltage_at_turn_on_v": 48.0,
+                    "zvs_edges": 0
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.9157920000000002,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 53.40523200921527,
+                  "vpeak_instant_cut_v": 63.38200526070397
+                }
+              }
+            },
+            "loop_inductance_nh": 1.0
+          },
+          {
+            "coss_scale": 1.0,
+            "digest": {
+              "leg": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": 7.812328697628149e-09,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 10
+                  },
+                  "low_to_high": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": null,
+                    "worst_voltage_at_turn_on_v": 48.0,
+                    "zvs_edges": 0
+                  }
+                },
+                "capacitive_turn_on_power_w": 0.9157920000000002,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 56.64837121474442,
+                  "vpeak_instant_cut_v": 67.58215846222326
+                }
+              }
+            },
+            "loop_inductance_nh": 1.6
+          },
+          {
+            "coss_scale": 1.25,
+            "digest": {
+              "leg": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": 9.765407933945032e-09,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 10
+                  },
+                  "low_to_high": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": null,
+                    "worst_voltage_at_turn_on_v": 48.0,
+                    "zvs_edges": 0
+                  }
+                },
+                "capacitive_turn_on_power_w": 1.1447400000000003,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 50.16209280368611,
+                  "vpeak_instant_cut_v": 56.61329992033078
+                }
+              }
+            },
+            "loop_inductance_nh": 0.4
+          },
+          {
+            "coss_scale": 1.25,
+            "digest": {
+              "leg": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": 9.765407933945032e-09,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 10
+                  },
+                  "low_to_high": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": null,
+                    "worst_voltage_at_turn_on_v": 48.0,
+                    "zvs_edges": 0
+                  }
+                },
+                "capacitive_turn_on_power_w": 1.1447400000000003,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 53.40523200921527,
+                  "vpeak_instant_cut_v": 61.7235678880843
+                }
+              }
+            },
+            "loop_inductance_nh": 1.0
+          },
+          {
+            "coss_scale": 1.25,
+            "digest": {
+              "leg": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": 9.765407933945032e-09,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 10
+                  },
+                  "low_to_high": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": null,
+                    "worst_voltage_at_turn_on_v": 48.0,
+                    "zvs_edges": 0
+                  }
+                },
+                "capacitive_turn_on_power_w": 1.1447400000000003,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 56.64837121474442,
+                  "vpeak_instant_cut_v": 65.45786794972437
+                }
+              }
+            },
+            "loop_inductance_nh": 1.6
+          },
+          {
+            "coss_scale": 1.5151515151515151,
+            "digest": {
+              "leg": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": 1.1836860023252443e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 10
+                  },
+                  "low_to_high": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": null,
+                    "worst_voltage_at_turn_on_v": 48.0,
+                    "zvs_edges": 0
+                  }
+                },
+                "capacitive_turn_on_power_w": 1.3875636363636363,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 50.16209280368611,
+                  "vpeak_instant_cut_v": 55.814132299864355
+                }
+              }
+            },
+            "loop_inductance_nh": 0.4
+          },
+          {
+            "coss_scale": 1.5151515151515151,
+            "digest": {
+              "leg": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": 1.1836860023252443e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 10
+                  },
+                  "low_to_high": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": null,
+                    "worst_voltage_at_turn_on_v": 48.0,
+                    "zvs_edges": 0
+                  }
+                },
+                "capacitive_turn_on_power_w": 1.3875636363636363,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 53.40523200921527,
+                  "vpeak_instant_cut_v": 60.44096476340471
+                }
+              }
+            },
+            "loop_inductance_nh": 1.0
+          },
+          {
+            "coss_scale": 1.5151515151515151,
+            "digest": {
+              "leg": {
+                "by_direction": {
+                  "high_to_low": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": 1.1836860023252443e-08,
+                    "worst_voltage_at_turn_on_v": 0.0,
+                    "zvs_edges": 10
+                  },
+                  "low_to_high": {
+                    "edges": 10,
+                    "max_minimum_dead_time_s": null,
+                    "worst_voltage_at_turn_on_v": 48.0,
+                    "zvs_edges": 0
+                  }
+                },
+                "capacitive_turn_on_power_w": 1.3875636363636363,
+                "max_overshoot": {
+                  "vpeak_conventional_v": 56.64837121474442,
+                  "vpeak_instant_cut_v": 63.81729285391481
+                }
+              }
+            },
+            "loop_inductance_nh": 1.6
+          }
+        ],
+        "robustness": {
+          "leg": {
+            "high_to_low": {
+              "robust": true,
+              "worst_voltage_at_turn_on_range_v": [
+                0.0,
+                0.0
+              ],
+              "zvs_fraction_values": [
+                1.0
+              ]
+            },
+            "low_to_high": {
+              "robust": true,
+              "worst_voltage_at_turn_on_range_v": [
+                48.0,
+                48.0
+              ],
+              "zvs_fraction_values": [
+                0.0
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "validation": {
+    "overshoot": {
+      "device": "NVXR17S90M2SPC SiC half-bridge module, low-side DPT, 400 V, 600 A, RG(off) = 1.8 ohm",
+      "note": "di/dt is the table's 80-20 % average; t_f = I/(di/dt) turns it into the declared linear fall. Coss above 400 V is not published and is held at the 400 V table value (extrapolated lookup). The lossless ramp keeps the Lsigma-Coss ringing undamped.",
+      "rows": [
+        {
+          "conventional_error": -0.012055641421947379,
+          "loop_inductance_nh": 23.0,
+          "lossless_ramp_error": 0.3576506955079129,
+          "measured_di_dt_a_per_ns": 10.4,
+          "measured_vpeak_v": 647.0,
+          "measured_within_bracket": true,
+          "vpeak_conventional_v": 639.2,
+          "vpeak_lossless_ramp_v": 878.3999999936196
+        },
+        {
+          "conventional_error": -0.0697350069735007,
+          "loop_inductance_nh": 30.0,
+          "lossless_ramp_error": 0.3026499302550582,
+          "measured_di_dt_a_per_ns": 8.9,
+          "measured_vpeak_v": 717.0,
+          "measured_within_bracket": true,
+          "vpeak_conventional_v": 667.0,
+          "vpeak_lossless_ramp_v": 933.9999999928767
+        },
+        {
+          "conventional_error": -0.07687338501291989,
+          "loop_inductance_nh": 37.0,
+          "lossless_ramp_error": 0.3294573643302468,
+          "measured_di_dt_a_per_ns": 8.5,
+          "measured_vpeak_v": 774.0,
+          "measured_within_bracket": true,
+          "vpeak_conventional_v": 714.5,
+          "vpeak_lossless_ramp_v": 1028.999999991611
+        }
+      ],
+      "source": "onsemi, 'Impact of Stray Inductance on EliteSiC Power and VE-Trac IGBT Module's Switching Characteristics', AND90238/D Rev. 1, 2025-03, Table 7 (p. 6), test conditions p. 5, loop setups Table 1 (p. 2)"
+    },
+    "zvs": {
+      "card_provenance": {
+        "figure": "Fig. 5a",
+        "page": 3,
+        "source": "EPC2065 datasheet (EPC, 2021-06-11), Coss typical read from plot (\u00b120 pF)"
+      },
+      "coss_band_scales": {
+        "max": 1.5151515151515151,
+        "typ": 1.0
+      },
+      "coss_band_source": "EPC2065 datasheet table p. 1: QOSS(40 V) 33 nC typ, 50 nC max",
+      "device": "EPC2065 half-bridge, 48 V, high-side turn-off with Ia > 0, tdt = 150 ns",
+      "plot_reading": {
+        "onset_ambiguity_s": [
+          1e-08,
+          2e-08
+        ],
+        "residual_precision_v": 1.5,
+        "time_precision_s": 5e-09
+      },
+      "plot_residual_at_0p5a_v": 14.0,
+      "qoss_40v_from_card_c": 3.3949999999999996e-08,
+      "rows": [
+        {
+          "current_a": 0.5,
+          "max_plot_window": {
+            "minimum_dead_time_s": 2.28562601680703e-07,
+            "voltage_at_turn_on_v": 16.911449691257875,
+            "zvs": false
+          },
+          "max_stated_dead_time": {
+            "minimum_dead_time_s": 2.28562601680703e-07,
+            "voltage_at_turn_on_v": 15.314950108923137,
+            "zvs": false
+          },
+          "typ_plot_window": {
+            "minimum_dead_time_s": 1.5085130866800376e-07,
+            "voltage_at_turn_on_v": 2.609476203371636,
+            "zvs": false
+          },
+          "typ_stated_dead_time": {
+            "minimum_dead_time_s": 1.5085130866800376e-07,
+            "voltage_at_turn_on_v": 0.7098604760143794,
+            "zvs": false
+          }
+        },
+        {
+          "current_a": 1.0,
+          "max_plot_window": {
+            "minimum_dead_time_s": 1.1428130029541071e-07,
+            "voltage_at_turn_on_v": 0.0,
+            "zvs": true
+          },
+          "max_stated_dead_time": {
+            "minimum_dead_time_s": 1.1428130029541071e-07,
+            "voltage_at_turn_on_v": 0.0,
+            "zvs": true
+          },
+          "measured_fall_time_s": 1e-07,
+          "typ_plot_window": {
+            "minimum_dead_time_s": 7.54256421265732e-08,
+            "voltage_at_turn_on_v": 0.0,
+            "zvs": true
+          },
+          "typ_stated_dead_time": {
+            "minimum_dead_time_s": 7.54256421265732e-08,
+            "voltage_at_turn_on_v": 0.0,
+            "zvs": true
+          }
+        },
+        {
+          "current_a": 1.5,
+          "max_plot_window": {
+            "minimum_dead_time_s": 7.618752958132434e-08,
+            "voltage_at_turn_on_v": 0.0,
+            "zvs": true
+          },
+          "max_stated_dead_time": {
+            "minimum_dead_time_s": 7.618752958132434e-08,
+            "voltage_at_turn_on_v": 0.0,
+            "zvs": true
+          },
+          "measured_fall_time_s": 6.2e-08,
+          "typ_plot_window": {
+            "minimum_dead_time_s": 5.028376724813794e-08,
+            "voltage_at_turn_on_v": 0.0,
+            "zvs": true
+          },
+          "typ_stated_dead_time": {
+            "minimum_dead_time_s": 5.028376724813794e-08,
+            "voltage_at_turn_on_v": 0.0,
+            "zvs": true
+          }
+        },
+        {
+          "current_a": 2.0,
+          "max_plot_window": {
+            "minimum_dead_time_s": 5.714064569818313e-08,
+            "voltage_at_turn_on_v": 0.0,
+            "zvs": true
+          },
+          "max_stated_dead_time": {
+            "minimum_dead_time_s": 5.714064569818313e-08,
+            "voltage_at_turn_on_v": 0.0,
+            "zvs": true
+          },
+          "measured_fall_time_s": 3.7e-08,
+          "typ_plot_window": {
+            "minimum_dead_time_s": 3.771282173373442e-08,
+            "voltage_at_turn_on_v": 0.0,
+            "zvs": true
+          },
+          "typ_stated_dead_time": {
+            "minimum_dead_time_s": 3.771282173373442e-08,
+            "voltage_at_turn_on_v": 0.0,
+            "zvs": true
+          }
+        }
+      ],
+      "source": "V. Barba, S. Musumeci, F. Stella, F. Mandrile, M. Palma, 'Investigation of Dead Time Losses in Inverter Switching Leg Operation: GaN FET vs. MOSFET Comparison', Energies 17(15) 3855, 2024, doi:10.3390/en17153855 (CC-BY)",
+      "zvs_boundary_agrees": {
+        "max_plot_window": true,
+        "max_stated_dead_time": true,
+        "typ_plot_window": true,
+        "typ_stated_dead_time": true
+      }
+    }
+  }
+}

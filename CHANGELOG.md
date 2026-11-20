@@ -9,6 +9,20 @@ break the model format; every break carries a migration note).
 
 ### Added
 
+- Optional model section `switching_transitions` (docs/model-format.md §7c): a
+  post-processed estimate of the dead-time Coss swing of declared half-bridge legs (or
+  full-bridge pairs) from a datasheet Coss(V)/Qoss(V) card with mandatory provenance —
+  ZVS yes/no, node voltage at turn-on, minimum/maximum dead time, capacitive turn-on
+  energy — and of the turn-off overshoot from a user-declared loop inductance. New
+  artifact `switching-transitions.json`, a summary in `summary.json` and in the MCP
+  `simulate` reply, warning `SWITCHING_TRANSITIONS_POSTPROCESSED`, capabilities
+  `analysis.switching_transitions.coss_dead_time` and `.loop_overshoot` (experimental).
+  The circuit equations are unchanged. Verified against closed forms and ngspice;
+  validated only at the cited published operating points
+  (`validation/switching_transitions/`). Examples `synchronous_buck_gan_transition`,
+  `dab_phase_shift_zvs`, `llc_resonant_zvs`. Additive: models without the section are
+  unchanged.
+
 - `impulsive_events: conserve` now also covers inductor cuts: a switch opening that
   leaves a node with only plain inductors (series pair, star, lone inductor) takes a
   flux-conserving jump, `(L1·i1 + L2·i2)/(L1+L2)`, with the loss booked as

@@ -285,8 +285,10 @@ diode turns on when its voltage reaches `forward_voltage`. A MOSFET is an
 in hardware.
 
 Limits (also in the `model.piecewise_linear_conduction` capability): the drop is
-constant (no temperature or current dependence beyond `R_on`), and switching
-transitions, reverse recovery and EMI are not modelled. A component with a drop cannot
+constant (no temperature or current dependence beyond `R_on`); reverse recovery and EMI
+are not modelled, and switching transitions are not part of the circuit equations — the
+dead-time Coss swing and the loop overshoot exist only as the post-processed estimate of
+§7c. A component with a drop cannot
 also be bound to a loss card in `loss_analysis` — both would describe the same
 conduction loss. Units are case-sensitive: `mohm` is milliohm, `Mohm` megaohm;
 `milliohm` is the unambiguous spelling. Declaring `0` is the ideal device and keeps
@@ -332,7 +334,8 @@ would. Because the resistor is added between the inductor and its `n` node, a st
 at the `n` side is no longer recognised as one, and such a model ends with a
 `TopologyError`. Measured 2026-11-15 on the shipped examples: adding `dcr` to every inductor breaks
 8 of the 27 that contain inductors (three-phase loads with a floating star, a wye
-transformer winding, an LCL filter's two series inductors, the LLC tank). The error then
+transformer winding, an LCL filter's two series inductors, the LLC tank; since 2026-11-20
+also `llc_resonant_zvs`, the same tank with a dead time). The error then
 names those inductors and the node, e.g. "la, lb, lc at node 'star'". Model the winding
 resistance there with an explicit resistor on the side away from that node.
 
@@ -1486,6 +1489,113 @@ material coefficients in `examples/buck_core_losses_n87.yaml` come from the MAS
 database and are NOT covered by that validation (MAS fits its ferrites preferring
 MagNet data, so the comparison would be circular).
 Example: `examples/buck_core_losses_n87.yaml`.
+
+## 7c. Switching transitions (section `switching_transitions`)
+
+A post-processing **estimate** of what the ideal switches leave out at each dead time
+of a declared half-bridge leg: does the node reach zero-voltage switching (ZVS), at
+what voltage the incoming device turns on and what that costs, and how far the
+declared commutation-loop inductance pushes the turn-off peak. The kernel stays ideal:
+the recorded waveforms do not change and nothing feeds back (same paradigm as §7a and
+§7b). Design and derivations: `docs/specs/2026-11-20-switching-transition.md`.
+
+```yaml
+switching_transitions:
+  zvs_threshold: 1 %                 # optional, ZVS = node within this fraction of the bus
+  coss_cards:
+    epc2065:
+      voltage_axis_v: [0, 10, 20, 40, 60, 80]     # must start at 0 V
+      coss_f: [1.34e-9, 1.23e-9, 0.64e-9, 0.535e-9, 0.49e-9, 0.445e-9]   # OR qoss_c
+      provenance: {source: "EPC2065 datasheet", page: 3, figure: "Fig. 5a"}
+  legs:
+    leg:
+      high: qh                       # ideal_switch, p = bus+, n = node
+      low: ql                        # ideal_switch, p = node, n = bus-
+      high_diode: dh                 # REQUIRED, antiparallel to high
+      low_diode: dl                  # REQUIRED, antiparallel to low
+      card: epc2065                  # both devices of the leg
+      bus_voltage: v(in)             # or {v(vp): 1, v(vn): 1}
+      extra_node_capacitance: 0 F    # optional, linear (winding, snubber, board)
+      commutation_inductance: 195 uH # optional -> lumped LC regime (needs far_voltage)
+      far_voltage: {v(lsec): 0.95}   # recorded v(...) terms, sampled before the edge
+      bridge_partner: b              # optional: a full bridge swings both legs together
+                                     # (the pair's loop_inductance goes HERE; on b it is refused)
+      loop_inductance: 0.4 nH        # optional, user-declared Lσ -> overshoot
+      current_fall_time: 2 ns        # optional, needs loop_inductance
+```
+
+**Card.** `coss_f`: Coss piecewise linear in V. `qoss_c` (0 at 0 V, strictly
+increasing): Qoss piecewise linear, i.e. Coss piecewise constant. Above the last axis
+point the last capacitance is held and the edge is flagged `extrapolated_lookup`.
+`provenance` is mandatory. Cards live in this section, not in `device_cards`: those are
+tied to `loss_analysis`, which refuses components with `forward_voltage` — the way GaN
+reverse conduction is described.
+
+**Windows.** For each turn-off of one switch of a leg, the window runs to the next
+turn-on of the other switch, taken from every effective gate change in the recorded events
+(`scheduled_gate` and `forced_gate`, §perturbations), in the last half of the run. The
+commutating current is the leg's node current
+`(i(high) − i(high_diode)) − (i(low) − i(low_diode))` just before the edge (linear
+extrapolation over the last two samples when no event lies between them). A turn-off that
+opens no evaluable window is never dropped silently: it is counted per reason in the leg's
+`not_evaluated` (windows of two declared legs that overlap without `bridge_partner`, a partner
+whose window does not match, an outgoing switch that turns back on before the incoming one).
+A window whose incoming turn-on lies beyond the run goes to `windows_cut_by_end_of_run`.
+
+**Verdict over the run.** `status` is `ok` when every window was evaluated, `partial` when
+some were skipped, `not_evaluated` when none was. `summary.all_zvs` is `true` only with
+nothing skipped, `false` as soon as one evaluated edge misses ZVS, and `null` when every
+evaluated edge passed but some were skipped — passing edges prove nothing about skipped ones.
+
+**Transition.** In the frame of the incoming device (u = its voltage, V at the start):
+`C_node(u) = Coss(u) + Coss(V − u) + C_extra`, `du/dt = −i / C_node(u)`. Without
+`commutation_inductance` the current is constant (the stiff-inductor limit: a buck's
+filter inductor). With it, `L·di/dt = Σu − u_x`, where u_x is the far-terminal voltage
+held at its pre-edge value: `far_voltage` measured from the leg's negative rail for a
+single leg (u_x = v_x when the node falls, V − v_x when it rises); for a bridge pair,
+`far_voltage` is the voltage of the rest of the path from leg A to leg B and
+u_x = V ± v_t. Reverse conduction clamps a node at 0 (its drop is ignored); a node that
+swings back is clamped at V.
+
+**Reported per edge** (`switching-transitions.json`, schema
+`pear-sim/switching-transitions/v0.1`): `zvs`, `voltage_at_turn_on_v`,
+`minimum_dead_time_s` (first time every node is at or below the ZVS threshold, so `zvs` ⇔
+`minimum_dead_time_s` ≤ the dead time), `maximum_dead_time_s` (lumped LC:
+after the clamped current reverses, the first time a node leaves the threshold),
+`capacitive_turn_on_energy_j` = Eoss_in(u_r) + ∫_{V−u_r}^{V}(V − w)·Coss(w) dw +
+½·C_extra·u_r² (= Qoss(V)·V for a full hard turn-on), `incoming_eoss_j`, the shadow
+metrics `transition_fraction_of_dead_time` and `volt_second_deficit_v_s` = ∫(u − u_ideal) dt
+over the window, where the ideal run holds the node on the rail its freewheeling diode picks
+at the edge (u_ideal = 0 toward ZVS, V otherwise) — zero when both hold the same rail;
+published, not gated — and, with `loop_inductance`, `overshoot`, qualified and sized by the
+current the turn-off interrupts AT t_off:
+
+- `vpeak_conventional_v` = V + Lσ·I/t_f (with `current_fall_time`);
+- `vpeak_ramp_v`: lossless Lσ–Coss loop with the device current falling linearly over
+  t_f — the undamped ringing makes it an over-estimate; `null` with
+  `ramp_applicable: false` when t_f < Q_node(V)/I (the current is gone before the node
+  moves);
+- `vpeak_instant_cut_v`: ½·Lσ·I² = ∫_V^{V+ΔV}(w − V)·Coss(w) dw.
+
+All three are hard-commutation estimates, not envelopes. A turn-off whose current goes
+into the outgoing device's own diode is `not_evaluated` (its stress is the incoming
+device's hard turn-on: reverse recovery, out of scope).
+
+**Claim boundary.** Datasheet Coss is small-signal and typical: large-signal Qoss and
+Coss hysteresis (GaN, superjunction) make the real charge and soft-switching loss
+larger. One static commutation inductance cannot follow an LLC whose path changes with
+rectifier conduction. Gate-drive dynamics, the Miller plateau, reverse-conduction drop,
+reverse recovery and EMI are not modelled. **`capacitive_turn_on_energy_j` is never added
+to the card E_on of §7a** — a double-pulse E_on usually already contains it.
+
+**Evidence.** Verified (two methods that are not PEARSim): closed forms by exact
+piecewise integration of literal tables (`tests/test_switching_transitions.py`) and
+ngspice with behavioural nonlinear capacitors (`tests/test_switching_transitions_ngspice.py`,
+required CI job `ngspice-oracle`); each gate fires on Coss × 1.2 and on an inverted
+current. Validation against published measurements is PARTIAL and limited to the cited
+operating points: `validation/switching_transitions/README.md` and the generated
+`RESULTS.md`. Examples: `examples/synchronous_buck_gan_transition.yaml`,
+`examples/dab_phase_shift_zvs.yaml`, `examples/llc_resonant_zvs.yaml`.
 
 ## 10. Format-related CLI
 

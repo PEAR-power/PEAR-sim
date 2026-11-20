@@ -40,6 +40,10 @@ from pear_sim.spec.controls import (
 )
 from pear_sim.spec.core_loss_cards import CoreLossSpec, parse_core_loss_section
 from pear_sim.spec.device_cards import LossAnalysisSpec, parse_loss_sections
+from pear_sim.spec.switching_transitions import (
+    SwitchingTransitionSpec,
+    parse_switching_transition_section,
+)
 from pear_sim.spec.parasitics import PassiveParasitic, expand_passive_parasitics
 from pear_sim.spec.perturbation import (
     ForcedGateWindow,
@@ -334,6 +338,9 @@ class Model:
     # loss_analysis it is a CHECK on the run, not an input to it, so it does
     # not enter the physics hash.
     core_losses: CoreLossSpec | None = None
+    # Post-processed dead-time Coss transitions and loop overshoot: a CHECK on
+    # the recorded ideal run, never an input to it (docs/model-format.md §7c).
+    switching_transitions: SwitchingTransitionSpec | None = None
     machines: tuple[MachineSpec, ...] = ()
     signals: "SignalGraph | None" = None
     # Declared drift envelopes, keyed by parameter name. Empty for every model
@@ -951,6 +958,56 @@ def _parse_harmonics(
     )
 
 
+def _check_switching_transition_bindings(
+    spec: SwitchingTransitionSpec,
+    components_by_id: dict[str, Any],
+    controls: dict[str, Any],
+    outputs: tuple[str, ...],
+) -> None:
+    """Fail closed on a leg whose devices are not a half-bridge leg as declared.
+
+    The producer's sign convention depends on the orientation: ``high`` runs
+    bus+ -> node (p -> n), ``low`` runs node -> bus- (p -> n), and an
+    antiparallel diode is the reverse of its switch.
+    """
+
+    del controls  # windows come from the recorded gate events, not the schedule
+    for leg in spec.legs:
+        name = f"switching_transitions.legs.{leg.id}"
+        high = components_by_id.get(leg.high)
+        low = components_by_id.get(leg.low)
+        for role, component, target in (("high", high, leg.high), ("low", low, leg.low)):
+            if component is None or component.type != "ideal_switch":
+                raise ModelError(f"{name}.{role} {target!r} must reference an ideal_switch")
+            if not getattr(component, "control", None):
+                raise ModelError(f"{name}.{role} {target!r} must be gate-controlled")
+        if high.n != low.p:
+            raise ModelError(
+                f"{name}: high.n ({high.n!r}) must be the switching node low.p "
+                f"({low.p!r}) — high runs bus+ -> node, low runs node -> bus-"
+            )
+        if high.p == low.n:
+            raise ModelError(f"{name}: high.p and low.n must be different rails")
+        for role, diode_id, switch in (
+            ("high_diode", leg.high_diode, high),
+            ("low_diode", leg.low_diode, low),
+        ):
+            diode = components_by_id.get(diode_id)
+            if diode is None or diode.type != "diode":
+                raise ModelError(f"{name}.{role} {diode_id!r} must reference a diode")
+            if (diode.p, diode.n) != (switch.n, switch.p):
+                raise ModelError(
+                    f"{name}.{role} {diode_id!r} must be antiparallel to {switch.id!r} "
+                    f"(p={switch.n!r}, n={switch.p!r})"
+                )
+        for expression in leg.required_outputs():
+            if expression not in outputs:
+                raise ModelError(
+                    f"{name}: {expression!r} must be listed in outputs so the transition "
+                    "is evaluated on recorded, auditable signals"
+                )
+
+
 def load_model(path: str | Path, overrides: dict[str, str] | None = None) -> Model:
     source_path = Path(path).resolve()
     data, raw_bytes = _read_document(source_path)
@@ -968,6 +1025,7 @@ def load_model(path: str | Path, overrides: dict[str, str] | None = None) -> Mod
             "cooling",
             "loss_analysis",
             "core_losses",
+            "switching_transitions",
             "machines",
             "signals",
             "subcircuits",
@@ -1703,6 +1761,14 @@ def load_model(path: str | Path, overrides: dict[str, str] | None = None) -> Mod
                 "analysis.transient.output_step below core_losses.period / 64"
             )
 
+    switching_transitions = parse_switching_transition_section(
+        data.get("switching_transitions"), parameters
+    )
+    if switching_transitions is not None:
+        _check_switching_transition_bindings(
+            switching_transitions, components_by_id, controls, outputs
+        )
+
     return Model(
         schema=schema,
         name=name,
@@ -1719,6 +1785,7 @@ def load_model(path: str | Path, overrides: dict[str, str] | None = None) -> Mod
         couplings=tuple(couplings),
         loss_analysis=loss_analysis,
         core_losses=core_losses,
+        switching_transitions=switching_transitions,
         machines=machines,
         signals=signal_graph,
         parameter_envelopes=parameter_envelopes,

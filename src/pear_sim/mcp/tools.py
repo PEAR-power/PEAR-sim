@@ -441,6 +441,50 @@ def _losses_summary(bundle: Path) -> dict[str, Any] | None:
     }
 
 
+def _switching_transitions_summary(bundle: Path) -> dict[str, Any] | None:
+    """Per leg and direction: ZVS count, worst turn-on voltage, dead-time window.
+
+    Compact on purpose (it rides in every simulate reply); the per-edge detail
+    stays in switching-transitions.json for get_artifact.
+    """
+
+    path = bundle / "switching-transitions.json"
+    if not path.is_file():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    legs = {}
+    for leg in data.get("legs", []):
+        summary = leg.get("summary") or {}
+        legs[leg.get("leg")] = {
+            "regime": leg.get("regime"),
+            "card_source": (leg.get("provenance") or {}).get("source"),
+            "by_direction": {
+                direction: {
+                    key: block.get(key)
+                    for key in (
+                        "edges",
+                        "zvs_edges",
+                        "worst_voltage_at_turn_on_v",
+                        "max_minimum_dead_time_s",
+                        "min_maximum_dead_time_s",
+                    )
+                }
+                for direction, block in (summary.get("by_direction") or {}).items()
+            },
+            "capacitive_turn_on_power_w": summary.get("capacitive_turn_on_power_w"),
+            "max_overshoot": summary.get("max_overshoot"),
+            "not_evaluated": leg.get("not_evaluated") or None,
+        }
+    return {
+        "artifact": "switching-transitions.json",
+        "validation_status": data.get("validation_status"),
+        "status": data.get("status"),
+        "all_zvs": (data.get("summary") or {}).get("all_zvs"),
+        "not_evaluated_windows": (data.get("summary") or {}).get("not_evaluated_windows"),
+        "legs": legs,
+    }
+
+
 def _settling(bundle: Path, model: Any) -> dict[str, Any]:
     """Has the run reached periodic steady state by the end?
 
@@ -654,6 +698,9 @@ def simulate(
     losses = _losses_summary(out)
     if losses is not None:
         result["losses"] = _sig(losses)
+    transitions = _switching_transitions_summary(out)
+    if transitions is not None:
+        result["switching_transitions"] = _sig(transitions)
     harmonics = _harmonics_summary(out)
     if harmonics is not None:
         result["harmonics"] = _sig(harmonics)

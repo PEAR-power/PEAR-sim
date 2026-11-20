@@ -1,0 +1,111 @@
+schema: pear-sim/v0.1
+name: llc_resonant_zvs
+
+# The half-bridge LLC of examples/llc_resonant.yaml with a 300 ns dead time and the
+# post-processed switching-transition check (docs/model-format.md §7c).
+#
+# The commutation path seen from the switching node hb: Cr, Lr, then the coupled
+# pair in cantilever form, L1·(1 − k²) = 1 mH · (1 − 0.95²) = 97.5 µH in series with
+# the reflected winding voltage (M/L2)·v2 = 0.95·v(lsecw). Lumped commutation
+# inductance Lr + 97.5 µH = 197.5 µH. The far terminal's potential, measured from the
+# leg's NEGATIVE rail dcn, is v(cres) + 0.95·v(lsecw) + v(vn) (v(vn) = 200 V lifts
+# ground to dcn). Declared limit: one static inductance holds only while the
+# rectifier conducts (above resonance it does through the dead time); while it
+# idles the path would be Lr + Lm.
+#
+# WARM START: the tank starts with -3 A so the first dead time has a current to
+# freewheel (a zero-current start under dead time livelocks the ideal diodes).
+#
+# CARD: SYNTHETIC (shape typical of a 650 V GaN HEMT, not a datasheet). Verified
+# (closed form, ngspice), NOT validated.
+
+parameters:
+  vhalf: 200 V
+  fsw: 20 kHz
+  lr: 100 uH
+  cr: 1 uF
+  lp: 1 mH
+  lsec: 1 mH
+  k: 95 %
+  cout: 20 uF
+  load: 50 ohm
+
+circuit:
+  ground: gnd
+  components:
+    - {id: vp, type: voltage_source, p: dcp, n: gnd, value: "${vhalf}"}
+    - {id: vn, type: voltage_source, p: gnd, n: dcn, value: "${vhalf}"}
+
+    # Half bridge with atomic complementary switching.
+    - {id: qh, type: ideal_switch, p: dcp, n: hb, control: leg.high, initial: on}
+    - {id: ql, type: ideal_switch, p: hb, n: dcn, control: leg.low, initial: off}
+    - {id: dh, type: diode, p: hb, n: dcp, initial: off}
+    - {id: dl, type: diode, p: dcn, n: hb, initial: off}
+
+    # Resonant tank: Cr blocks DC, Lr sets the resonance with it.
+    - {id: cres, type: capacitor, p: hb, n: tk, value: "${cr}", initial_voltage: 0 V}
+    - {id: lres, type: inductor, p: tk, n: pri, value: "${lr}", initial_current: -3 A}
+
+    # Transformer: magnetizing inductance from the coupled pair (k < 1).
+    - {id: lprim, type: inductor, p: pri, n: gnd, value: "${lp}", initial_current: -3 A}
+    - {id: lsecw, type: inductor, p: sa, n: sb, value: "${lsec}", initial_current: 0 A}
+
+    # Full-bridge rectifier into the output filter.
+    - {id: dr1, type: diode, p: sa, n: op, initial: off}
+    - {id: dr2, type: diode, p: sb, n: op, initial: off}
+    - {id: dr3, type: diode, p: gnd, n: sa, initial: off}
+    - {id: dr4, type: diode, p: gnd, n: sb, initial: off}
+    - {id: cout, type: capacitor, p: op, n: gnd, value: "${cout}", initial_voltage: 150 V}
+    - {id: rload, type: resistor, p: op, n: gnd, value: "${load}"}
+
+  couplings:
+    - {inductors: [lprim, lsecw], coupling: "${k}"}
+
+controls:
+  leg:
+    type: complementary_pwm
+    frequency: "${fsw}"
+    duty: 50 %
+    phase: 0 s
+    dead_time: 300 ns
+
+switching_transitions:
+  coss_cards:
+    gan650_synthetic:
+      voltage_axis_v: [0, 10, 50, 100, 200, 400, 650]
+      coss_f: [1.5e-9, 6.0e-10, 2.0e-10, 1.2e-10, 8.0e-11, 6.5e-11, 5.5e-11]
+      provenance:
+        source: "SYNTHETIC — shape typical of a 650 V GaN HEMT, not a datasheet"
+  legs:
+    half_bridge:
+      high: qh
+      low: ql
+      high_diode: dh
+      low_diode: dl
+      card: gan650_synthetic
+      bus_voltage: {v(vp): 1, v(vn): 1}
+      commutation_inductance: 197.5 uH
+      far_voltage: {v(cres): 1, v(lsecw): 0.95, v(vn): 1}
+
+analysis:
+  transient:
+    start: 0 s
+    stop: 8 ms
+    output_step: 0.5 us
+    solver: radau
+    rtol: 1.0e-8
+    atol: 1.0e-10
+
+outputs:
+  - v(op)
+  - v(hb)
+  - i(lres)
+  - i(lsecw)
+  - v(cres)
+  - v(lsecw)
+  - v(vp)
+  - v(vn)
+  - i(qh)
+  - i(ql)
+  - i(dh)
+  - i(dl)
