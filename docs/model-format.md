@@ -1606,7 +1606,7 @@ The CSV contains the regular `output_step` grid. Times and discrete state change
 
 Each line is a separate event JSON. The event log is used to diagnose PWM, diode commutation and mode changes. A consumer should tolerate new fields being added within the same run schema version.
 
-The current record contains `time`, `kind`, `target`, `previous` and `current`. `kind` currently takes `scheduled_gate`, `natural_commutation` or `switch_manager`.
+The current record contains `time`, `kind`, `target`, `previous` and `current`. `kind` currently takes `scheduled_gate`, `forced_gate`, `natural_commutation` or `switch_manager`. A gate change caused by a `perturbations.forced_gate_windows` entry is recorded as `forced_gate` (one event per control per timestamp, with the true effective `previous`); every other realized gate change is `scheduled_gate`.
 
 ### 11.4. `metrics.json`
 
@@ -1695,7 +1695,10 @@ a presumption.
 
 ### 11.7. Switching and harmonic artifacts
 
-Fixed `pwm`/`complementary_pwm` use `gate-drive.json` v0.1. A
+Fixed `pwm`/`complementary_pwm` use `gate-drive.json` v0.1. Its timeline follows every
+effective gate change, both `scheduled_gate` and `forced_gate` events; each change
+carries `source_event_kind`, and the summary counts `scheduled_gate_event_count`,
+`forced_gate_event_count` and their sum `effective_gate_event_count` separately. A
 `three_phase_spwm` run instead writes `modulation-cycles.jsonl` as the authoritative
 set of command cells and `three-phase-modulation.json` as a bounded projection of the
 phase -> gate -> device map, the fundamental waveform and a worst-pulse zoom. The full

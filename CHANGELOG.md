@@ -7,6 +7,19 @@ break the model format; every break carries a migration note).
 
 ## [Unreleased]
 
+### Fixed
+
+- `gate-drive.json` now follows `forced_gate` events as well as `scheduled_gate` ones.
+  Before, a `perturbations.forced_gate_windows` entry that changed a gate (e.g. a forced
+  turn-off in the middle of a PWM pulse) left the observer tracking the wrong state, and
+  the run failed in `write_result` with `analysis.gate_drive_invalid` (a continuity
+  mismatch or a false complementary overlap). Each timeline change now carries
+  `source_event_kind`; the summary adds `forced_gate_event_count` and
+  `effective_gate_event_count`, and `scheduled_gate_event_count` counts scheduled events
+  only. `source_binding.timeline_source` is now
+  `accepted_initial_mode_and_scheduled_and_forced_gate_events`. Additive within v0.1: no
+  run with a forced gate change could produce the artifact before.
+
 ### Added
 
 - `impulsive_events: conserve` now also covers inductor cuts: a switch opening that
