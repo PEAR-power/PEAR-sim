@@ -60,13 +60,24 @@ def _card(axis=AXIS, coss=COSS, scale=1.0) -> CossCard:
 
 
 def _ngspice(tmp_path: Path, name: str, netlist: str) -> dict[str, float]:
+    # Results go to a FILE (as the oracle adapter's wrdata does): on Windows
+    # (MSYS2 build) ngspice's batch console output does not reach a pipe.
+    names = re.findall(r"^meas tran (\w+)", netlist, flags=re.MULTILINE)
+    out_name = f"{name}.meas"
+    netlist = netlist.replace("\nquit\n", f"\nprint {' '.join(names)} > {out_name}\nquit\n")
     path = tmp_path / f"{name}.cir"
     path.write_text(netlist, encoding="utf-8")
     completed = subprocess.run(
-        [find_ngspice(), "-b", str(path)], capture_output=True, text=True, timeout=120
+        [find_ngspice(), "-b", path.name],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        cwd=tmp_path,
     )
+    out_path = tmp_path / out_name
+    written = out_path.read_text(encoding="utf-8", errors="replace") if out_path.exists() else ""
     values = {}
-    for line in (completed.stdout + completed.stderr).splitlines():
+    for line in written.splitlines():
         match = re.match(r"^\s*(\w+)\s*=\s*([-+0-9.eE]+)", line)
         if match:
             values[match.group(1).lower()] = float(match.group(2))
