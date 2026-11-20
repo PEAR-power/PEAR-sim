@@ -32,8 +32,8 @@
                 },
                 "capacitive_turn_on_power_w": 0.0,
                 "max_overshoot": {
-                  "vpeak_conventional_v": 406.2562505999071,
-                  "vpeak_instant_cut_v": 488.3754742319751
+                  "vpeak_conventional_v": 406.25977279692404,
+                  "vpeak_instant_cut_v": 488.4261830056663
                 }
               },
               "secondary_a": {
@@ -77,8 +77,8 @@
                 },
                 "capacitive_turn_on_power_w": 0.0,
                 "max_overshoot": {
-                  "vpeak_conventional_v": 415.6406264997677,
-                  "vpeak_instant_cut_v": 541.3361790720417
+                  "vpeak_conventional_v": 415.64943199231016,
+                  "vpeak_instant_cut_v": 541.4182779256589
                 }
               },
               "secondary_a": {
@@ -122,8 +122,8 @@
                 },
                 "capacitive_turn_on_power_w": 0.0,
                 "max_overshoot": {
-                  "vpeak_conventional_v": 431.2812529995354,
-                  "vpeak_instant_cut_v": 602.6006304717631
+                  "vpeak_conventional_v": 431.2988639846203,
+                  "vpeak_instant_cut_v": 602.7201112107068
                 }
               },
               "secondary_a": {
@@ -167,8 +167,8 @@
                 },
                 "capacitive_turn_on_power_w": 0.0,
                 "max_overshoot": {
-                  "vpeak_conventional_v": 406.2553697394567,
-                  "vpeak_instant_cut_v": 478.87496263985526
+                  "vpeak_conventional_v": 406.25977279692404,
+                  "vpeak_instant_cut_v": 478.9314262833244
                 }
               },
               "secondary_a": {
@@ -212,8 +212,8 @@
                 },
                 "capacitive_turn_on_power_w": 0.0,
                 "max_overshoot": {
-                  "vpeak_conventional_v": 415.6384243486417,
-                  "vpeak_instant_cut_v": 525.9764786344125
+                  "vpeak_conventional_v": 415.64943199231016,
+                  "vpeak_instant_cut_v": 526.0676373857132
                 }
               },
               "secondary_a": {
@@ -257,8 +257,8 @@
                 },
                 "capacitive_turn_on_power_w": 0.0,
                 "max_overshoot": {
-                  "vpeak_conventional_v": 431.27684869728347,
-                  "vpeak_instant_cut_v": 580.2882701198453
+                  "vpeak_conventional_v": 431.2988639846203,
+                  "vpeak_instant_cut_v": 580.4204551247246
                 }
               },
               "secondary_a": {
@@ -302,8 +302,8 @@
                 },
                 "capacitive_turn_on_power_w": 0.0,
                 "max_overshoot": {
-                  "vpeak_conventional_v": 406.25443535848393,
-                  "vpeak_instant_cut_v": 471.5196114242705
+                  "vpeak_conventional_v": 406.25977279692404,
+                  "vpeak_instant_cut_v": 471.5815826151684
                 }
               },
               "secondary_a": {
@@ -347,8 +347,8 @@
                 },
                 "capacitive_turn_on_power_w": 0.0,
                 "max_overshoot": {
-                  "vpeak_conventional_v": 415.63608839620974,
-                  "vpeak_instant_cut_v": 514.1142984430052
+                  "vpeak_conventional_v": 415.64943199231016,
+                  "vpeak_instant_cut_v": 514.2141357737008
                 }
               },
               "secondary_a": {
@@ -392,8 +392,8 @@
                 },
                 "capacitive_turn_on_power_w": 0.0,
                 "max_overshoot": {
-                  "vpeak_conventional_v": 431.27217679241954,
-                  "vpeak_instant_cut_v": 563.11103716428
+                  "vpeak_conventional_v": 431.2988639846203,
+                  "vpeak_instant_cut_v": 563.2554154166033
                 }
               },
               "secondary_a": {
