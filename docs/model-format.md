@@ -1377,7 +1377,8 @@ model is deliberately NOT part of the artifact. Declared omissions: no TIM/heats
 dynamics, no coupling of devices on a shared heatsink, no
 spreading/orientation/altitude, no temperature dependence of switching energies.
 The current at an edge is read from the output grid: the first sample at/after a
-turn-on, the last sample strictly before a turn-off or recovery. When the device's
+turn-on, the last sample strictly before a turn-off or recovery, using the solver's own
+event/sample coincidence tolerance (`max(1e-15 s, 1e-12 · run span)`) to decide the side. When the device's
 neighbouring edge falls between the event and that sample (a pulse shorter than
 `output_step`), no sample shows the conducting state; such an edge is counted in
 `events_unresolved_by_output_grid`, its energy is not booked (the totals are then a lower

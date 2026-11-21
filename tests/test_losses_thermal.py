@@ -443,3 +443,15 @@ def test_a_pulse_shorter_than_the_output_grid_is_unresolved_not_zero(
     assert not any(fine["events_unresolved_by_output_grid"].values())
     assert fine["events_counted"]["turn_on"] == 3
     assert not any("lower bound" in warning for warning in fine_warnings)
+
+
+def test_an_edge_just_after_a_sample_uses_the_solvers_side_rule(tmp_path: Path) -> None:
+    # Regression: a 1e-6-step "on grid" allowance (1 ps on a 1 us grid) read the
+    # 30 us sample as post-edge for a turn-on at 30 us + 0.5 ps, but the solver
+    # recorded that sample BEFORE the edge (0 A): E_on = 0 with no warning.
+    coarse, _ = _q1_with_forced_on(tmp_path, "1 us", "30.0000005 us", "35.15 us")
+    fine, _ = _q1_with_forced_on(tmp_path, "50 ns", "30.0000005 us", "35.15 us")
+    for switching in (coarse, fine):
+        assert not any(switching["events_unresolved_by_output_grid"].values())
+        assert switching["events_counted"]["turn_on"] == 3
+    assert coarse["totals_j"]["e_on_j"] == pytest.approx(fine["totals_j"]["e_on_j"], rel=0.02)

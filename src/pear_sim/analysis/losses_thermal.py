@@ -23,6 +23,7 @@ from typing import Any
 
 import numpy as np
 
+from pear_sim.core.solver import run_time_tolerance
 from pear_sim.errors import ModelError
 from pear_sim.spec.device_cards import (
     DeviceCard,
@@ -327,11 +328,13 @@ def build_losses_thermal_observation(result: Any) -> dict[str, Any]:
                 and event.target == edge_target
                 and bool(event.previous) != bool(event.current)
             ]
-            # Float-noise allowance for "this event sits exactly on a grid
-            # sample". It must stay far below the grid step: a quarter-step
-            # anchor once read the sample 0.15 us BEFORE an off-grid turn-on as
-            # its post-edge sample and booked E_on = 0 for a conducting pulse.
-            on_grid = 1e-6 * step
+            # Which side of an edge a sample lies on is the SOLVER's rule, not
+            # ours: it records a sample at t post-edge iff t >= t_event - tol.
+            # Any tolerance of our own disagrees with it somewhere — a quarter
+            # step once read the 30 us sample as post-edge for a turn-on at
+            # 30.15 us, and 1e-6 step (1 ps) still did for 30 us + 0.5 ps; both
+            # booked E_on = 0 for a conducting pulse with no warning.
+            on_grid = run_time_tolerance(model.transient.start, model.transient.stop)
             for position, event in enumerate(edges):
                 if component.type == "ideal_switch":
                     turning_on = bool(event.current)
