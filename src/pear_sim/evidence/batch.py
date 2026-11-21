@@ -48,6 +48,7 @@ from pear_sim.evidence.parameter_sweep import (
     _run_point_worker,
     _safe_run_artifact,
 )
+from pear_sim.evidence.metric_fitness import EXTREMA_GRID_FIELD, sampled_bound_unfit_reason
 from pear_sim.core.solver import HybridSimulator
 from pear_sim.spec.model import Model, load_model
 from pear_sim.spec.units import parse_quantity
@@ -124,6 +125,27 @@ class _Quantity:
         if not math.isfinite(float(value)):
             raise BatchError(f"{self.label} is not finite in the run")
         return float(value)
+
+    def unfit_reason(
+        self,
+        value: float,
+        grids: Mapping[str, Any],
+        *,
+        lower: float | None = None,
+        upper: float | None = None,
+    ) -> str | None:
+        """Why ``value`` cannot decide ``lower <= quantity <= upper``, or ``None``.
+
+        Only a sampled extremum of a signal can be unfit (see
+        ``pear_sim.evidence.metric_fitness``). With no bound the question is
+        whether the number can be ranked at all.
+        """
+
+        if self.signal is None:
+            return None
+        return sampled_bound_unfit_reason(
+            str(self.metric), grids.get(self.label), value, lower=lower, upper=upper
+        )
 
     def _read_losses(self, losses: Mapping[str, Any] | None) -> Any:
         if losses is None:
@@ -459,8 +481,13 @@ def _read_run(
     quantities: Sequence[_Quantity],
     *,
     backend_id: str = "reference-python",
+    grids: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, float]]:
-    """Verify one run bundle and read the requested quantities from it."""
+    """Verify one run bundle and read the requested quantities from it.
+
+    ``grids``, when given, receives each signal quantity's ``extrema_grid``
+    record by label, for the fitness check on sampled extrema.
+    """
 
     expected = load_model(model_path, overrides=dict(overrides))
     metrics, run_sha256 = _read_verified_metrics(
@@ -474,6 +501,12 @@ def _read_run(
         )
         losses, _raw = _read_strict_json(losses_path, role="run losses")
     values = {quantity.label: quantity.read(metrics, losses) for quantity in quantities}
+    if grids is not None:
+        for quantity in quantities:
+            if quantity.signal is not None:
+                grids[quantity.label] = metrics.get(quantity.signal, {}).get(
+                    EXTREMA_GRID_FIELD
+                )
     return run_sha256, values
 
 
@@ -540,11 +573,17 @@ def screen_designs(
             "violations": [],
             "error": None,
             "run_sha256": None,
+            "extrema_grid": {},
         }
         try:
             run_dir = outcome.unwrap()
             row["run_sha256"], row["values"] = _read_run(
-                run_dir, model_path, design, quantities, backend_id=backend_id
+                run_dir,
+                model_path,
+                design,
+                quantities,
+                backend_id=backend_id,
+                grids=row["extrema_grid"],
             )
             _prune_screening_run(run_dir)
         except Exception as exc:  # retained per design; the batch continues
@@ -636,13 +675,39 @@ def run_batch(
         backend_id=request.backend_id,
     )
     for row in rows:
+        row["not_comparable"] = []
         if row["status"] == "pass":
+            # A sampled extremum on a grid that does not resolve the switching
+            # period cannot clear a constraint or be ranked: a design is never
+            # feasible, let alone the winner, on a number the grid may have missed.
+            undecided: dict[str, str] = {}
+            for constraint in request.constraints:
+                label = constraint.quantity.label
+                reason = constraint.quantity.unfit_reason(
+                    row["values"][label],
+                    row["extrema_grid"],
+                    lower=constraint.minimum,
+                    upper=constraint.maximum,
+                )
+                if reason is not None:
+                    undecided[label] = reason
+            reason = request.objective.unfit_reason(
+                row["values"][request.objective.label], row["extrema_grid"]
+            )
+            if reason is not None:
+                undecided.setdefault(request.objective.label, reason)
+            row["not_comparable"] = [
+                {"quantity": label, "reason": reason} for label, reason in undecided.items()
+            ]
             row["violations"] = [
                 constraint.quantity.label
                 for constraint in request.constraints
-                if not constraint.holds(row["values"][constraint.quantity.label])
+                if constraint.quantity.label not in undecided
+                and not constraint.holds(row["values"][constraint.quantity.label])
             ]
-        row["feasible"] = row["status"] == "pass" and not row["violations"]
+        row["feasible"] = (
+            row["status"] == "pass" and not row["violations"] and not row["not_comparable"]
+        )
 
     feasible = [row for row in rows if row["feasible"]]
     sign = 1.0 if request.sense == "minimize" else -1.0
@@ -724,14 +789,18 @@ def run_batch(
             ["design_id", "rank", "feasible", "status"]
             + [f"{name} [SI]" for name in request.parameters]
             + labels
-            + ["violations", "error"]
+            + ["violations", "not_comparable", "error"]
         )
         for row in rows:
             writer.writerow(
                 [row["design_id"], row["rank"] or "", row["feasible"], row["status"]]
                 + [repr(row["parameters_si"].get(name, "")) for name in request.parameters]
                 + [repr(row["values"][label]) if label in row["values"] else "" for label in labels]
-                + [";".join(row["violations"]), row["error"] or ""]
+                + [
+                    ";".join(row["violations"]),
+                    ";".join(item["quantity"] for item in row["not_comparable"]),
+                    row["error"] or "",
+                ]
             )
 
     summary = {
@@ -753,6 +822,7 @@ def run_batch(
         "design_count": len(rows),
         "feasible_count": len(feasible),
         "failed_count": len(failed),
+        "not_comparable_count": sum(1 for row in rows if row["not_comparable"]),
         "best_design": feasible[0]["design_id"] if feasible else None,
         "ranking": [
             {

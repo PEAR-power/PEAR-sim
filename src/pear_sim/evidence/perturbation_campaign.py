@@ -17,6 +17,11 @@ that far, in any environment, for any reason. Where a drift figure came from
 travels with it: every axis carries `source` and `note`, either inherited from
 the model's declared envelope or stated in the request.
 
+A criterion on a sampled extremum (``max``, ``min``, ...) is decided only on a
+grid that resolves the switching period or when the grid's one-sided error
+cannot change the verdict (``pear_sim.evidence.metric_fitness``); otherwise the
+point is ``not_comparable``, with no margin, and is not accepted.
+
 Claim boundary, restated in every artifact this module writes:
 
 * corner extremes bound the response only under per-parameter monotonicity; a
@@ -47,6 +52,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import yaml
 
+from pear_sim.evidence.metric_fitness import EXTREMA_GRID_FIELD, sampled_bound_unfit_reason
 from pear_sim.evidence.parallel_points import resolve_jobs, run_ordered
 from pear_sim.spec.model import Model, load_model
 from pear_sim.spec.parameter_envelope import PROVENANCE_SOURCES, ParameterEnvelope
@@ -275,6 +281,40 @@ class _Criterion:
     reference: float | None
     unit: str
     provenance: dict[str, str]
+
+    def bounds(self) -> tuple[float | None, float | None]:
+        """The requirement as ``lower <= value <= upper``."""
+
+        if self.op == "max":
+            return None, self.limit
+        if self.op == "min":
+            return self.limit, None
+        reference = float(self.reference or 0.0)
+        return reference - self.limit, reference + self.limit
+
+    def verdict(
+        self, metrics: Mapping[str, Any], grids: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Status for one point: pass/fail with a margin, or why there is none.
+
+        A sampled extremum on a grid that does not resolve the switching
+        period decides nothing unless its known-sign error cannot change the
+        verdict (``pear_sim.evidence.metric_fitness``); it then gets
+        ``not_comparable`` and no margin.
+        """
+
+        value = metrics.get(f"{self.signal}::{self.field}")
+        if value is None:
+            return {"status": "not_run", "reason": "metric absent"}
+        value = float(value)
+        lower, upper = self.bounds()
+        unfit = sampled_bound_unfit_reason(
+            self.field, grids.get(self.signal), value, lower=lower, upper=upper
+        )
+        if unfit is not None:
+            return {"status": "not_comparable", "value": value, "reason": unfit}
+        status, margin = self.evaluate(value)
+        return {"status": status, "value": value, "margin": margin}
 
     def evaluate(self, value: float) -> tuple[str, float]:
         if self.op == "max":
@@ -550,12 +590,17 @@ def _point_metrics(
     recovery_band: float | None,
     event_onset: float | None,
     forced_windows: Sequence[ForcedGateWindow] = (),
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Point metrics, and each signal's ``extrema_grid`` for the criteria."""
+
     metrics_payload = json.loads((run_dir / "metrics.json").read_text())
     times, signals = _read_waveform(run_dir)
     settled_start = times[len(times) // 2] if times else 0.0
 
     measured: dict[str, Any] = {}
+    grids = {
+        signal: fields.get(EXTREMA_GRID_FIELD) for signal, fields in metrics_payload.items()
+    }
     for signal, fields in metrics_payload.items():
         for field in ("min", "max", "mean_last_half", "min_last_half", "max_last_half"):
             if field in fields:
@@ -604,7 +649,7 @@ def _point_metrics(
 
     # Explicitly NOT an observation of "protection did not trip".
     measured["protection"] = _NOT_MODELLED
-    return measured
+    return measured, grids
 
 
 def _materialize(
@@ -664,6 +709,17 @@ def _mutate_events(
         )
         by_id[event_id] = mutated
     return tuple(by_id[event.id] for event in events)
+
+
+def _acceptance(verdicts: Mapping[str, Mapping[str, Any]]) -> str:
+    """``pass`` only if every criterion passed; a violation outranks an undecided one."""
+
+    statuses = {verdict["status"] for verdict in verdicts.values()}
+    if statuses <= {"pass"}:
+        return "pass"
+    if "fail" in statuses:
+        return "fail"
+    return "not_comparable" if "not_comparable" in statuses else "fail"
 
 
 def _event_onset(model: Model, events: Sequence[PerturbationEvent]) -> float | None:
@@ -795,7 +851,7 @@ def run_campaign(
             row["run"] = str(run_dir.relative_to(destination))
             row["execution_status"] = "pass"
             point_model = load_model(materialized)
-            row["metrics"] = _point_metrics(
+            row["metrics"], grids = _point_metrics(
                 run_dir,
                 nominal_vout=float(nominal_vout) if nominal_vout is not None else None,
                 recovery_band=(
@@ -814,22 +870,11 @@ def run_campaign(
             rows.append(row)
             continue
 
-        verdicts: dict[str, Any] = {}
-        accepted = True
-        for criterion in criteria:
-            key = f"{criterion.signal}::{criterion.field}"
-            value = row["metrics"].get(key)
-            if value is None:
-                verdicts[criterion.id] = {"status": "not_run", "reason": "metric absent"}
-                accepted = False
-                continue
-            status, margin = criterion.evaluate(float(value))
-            verdicts[criterion.id] = {
-                "status": status, "value": float(value), "margin": margin,
-            }
-            accepted = accepted and status == "pass"
+        verdicts = {
+            criterion.id: criterion.verdict(row["metrics"], grids) for criterion in criteria
+        }
         row["criteria"] = verdicts
-        row["acceptance_status"] = "pass" if accepted else "fail"
+        row["acceptance_status"] = _acceptance(verdicts)
         rows.append(row)
 
     boundary = None
@@ -953,6 +998,9 @@ def _boundary_search(
     probes: list[dict[str, Any]] = []
 
     def accepts(value: float, tag: str) -> bool:
+        return probe(value, tag) == "pass"
+
+    def probe(value: float, tag: str) -> str:
         point_dir = probe_dir / tag
         point_dir.mkdir(parents=True, exist_ok=True)
         record: dict[str, Any] = {"value_si": value, "tag": tag}
@@ -964,7 +1012,7 @@ def _boundary_search(
             materialized = _materialize(document, model, spec, point_dir)
             run_dir = _run_point(materialized, point_dir, timeout_s=MAX_POINT_WALL_TIME_S)
             point_model = load_model(materialized)
-            metrics = _point_metrics(
+            metrics, grids = _point_metrics(
                 run_dir,
                 nominal_vout=float(nominal_vout) if nominal_vout is not None else None,
                 recovery_band=float(recovery_band) if recovery_band is not None else None,
@@ -974,26 +1022,27 @@ def _boundary_search(
         except PerturbationError as exc:
             record.update({"status": "fail", "error": str(exc)[:512]})
             probes.append(record)
-            return False
-        verdicts = {}
-        accepted = True
-        for criterion in criteria:
-            value_at = metrics.get(f"{criterion.signal}::{criterion.field}")
-            if value_at is None:
-                verdicts[criterion.id] = "not_run"
-                accepted = False
-                continue
-            status, margin = criterion.evaluate(float(value_at))
-            verdicts[criterion.id] = status
-            accepted = accepted and status == "pass"
-        record.update({"status": "pass" if accepted else "fail", "criteria": verdicts})
+            return "fail"
+        verdicts = {criterion.id: criterion.verdict(metrics, grids) for criterion in criteria}
+        status = _acceptance(verdicts)
+        record.update(
+            {
+                "status": status,
+                "criteria": {name: verdict["status"] for name, verdict in verdicts.items()},
+            }
+        )
         probes.append(record)
-        return accepted
+        return status
 
-    low_ok = accepts(low, "bracket-low")
+    low_status = probe(low, "bracket-low")
+    low_ok = low_status == "pass"
     high_ok = accepts(high, "bracket-high")
-    if not low_ok:
+    if low_status == "not_comparable":
+        # Not "no margin": nothing was shown to fail, the measurement cannot say.
         result_value: float | None = None
+        verdict = "not_comparable_at_bracket_low"
+    elif not low_ok:
+        result_value = None
         verdict = "no_margin_at_bracket_low"
     elif high_ok:
         result_value = high

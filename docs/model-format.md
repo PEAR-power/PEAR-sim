@@ -1743,6 +1743,17 @@ for outputs recognized as structurally continuous in all visited modes. For swit
 signals, such as an ideal switch voltage or a diode current, `peak_to_peak` is
 reported, not "ripple". The unit is `V` for `v(...)` and `A` for `i(...)`.
 
+Every signal record also carries `extrema_grid`, the facts needed to judge those sampled
+extrema: `output_step_s`, `switching_control_count`, `shortest_switching_period_s` (the
+shortest period among the declared PWM controls, `null` without any) and
+`samples_per_shortest_switching_period`. A grid can miss a peak but cannot invent one, so
+a sampled `max`/`peak_to_peak`/`ripple` is a lower bound on the true value and a sampled
+`min` an upper bound. With fewer than 10 samples per shortest switching period,
+`evaluate`, `sweep perturbation` and `batch` use a sampled extremum only where that
+one-sided error cannot change the verdict (a sampled `max` above an upper limit is still
+a violation) and report `not_comparable` otherwise. The floor rules out aliasing against
+the carrier; it is not an accuracy statement about the extremum.
+
 Metrics do not replace the waveform or a separate event analysis. The `last_half`
 window is a general alpha aggregate, not automatic proof that steady state has been
 reached.

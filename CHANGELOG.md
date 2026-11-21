@@ -7,6 +7,37 @@ break the model format; every break carries a migration note).
 
 ## [Unreleased]
 
+### Changed
+
+- **Sampled extrema no longer pass a requirement the output grid could not see.**
+  `min`, `max`, `peak_to_peak` and `ripple` (and their `_last_half` / `sample_` forms)
+  are statistics of the requested output grid. On `examples/buck.yaml` (20 kHz, inductor
+  current peaking at 4.60 A) recorded once per PWM period (`output_step: 50 us`), the
+  grid reads 3.40 A, and `i(l1) max_last_half <= 4.1 A` was accepted by `evaluate`, by
+  `sweep perturbation` (margin +0.70 A) and by `batch` (one feasible design, ranked
+  first). Every signal record in `metrics.json` now carries `extrema_grid`
+  (`output_step_s`, `switching_control_count`, `shortest_switching_period_s`,
+  `samples_per_shortest_switching_period`), and one rule
+  (`pear_sim.evidence.metric_fitness`) is applied on all three paths: with fewer than 10
+  output samples per shortest declared switching period, a sampled extremum decides a
+  bound only when its one-sided error cannot change the verdict (a sampled maximum is a
+  lower bound on the true one, so a value already above an upper limit still fails).
+  Otherwise `evaluate` returns `not_comparable`, the campaign point gets
+  `not_comparable` with no margin (run `acceptance_status: not_comparable`, campaign
+  not `pass`, `boundary_search` verdict `not_comparable_at_bracket_low` when the
+  bracket start cannot be judged), and the batch design is listed under
+  `not_comparable`, is not feasible and is not ranked (`not_comparable_count` in the
+  summary, a `not_comparable` column in `designs.csv`). At `output_step: 1 us` all
+  three paths report the violation. Models without a switching control are unaffected.
+  The floor rules out aliasing against the carrier; it does not make a sampled extremum
+  exact. `sensitivity` does not apply the rule yet.
+
+  **Migration.** Bundles written by 0.1.x have no `extrema_grid`. `report` reads them
+  as before and `evaluate` still decides means, RMS and `final`, but a sampled-extremum
+  criterion that the old value does not already violate is `not_comparable`:
+  re-simulate the model to judge it. A model whose `analysis.transient.output_step` gives
+  fewer than 10 samples per switching period needs a finer step for such criteria.
+
 ### Fixed
 
 - Core loss (iGSE): with `1/period` in a **gap between two Steinmetz ranges** of a

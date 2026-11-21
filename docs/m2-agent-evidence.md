@@ -82,6 +82,17 @@ The v0.1 evaluator accepts only `pear-sim/run/v0.1` bundles produced by the
 criteria must carry their exact recorded aggregation/extrema/ripple method; an unknown
 or missing method is `not_comparable`, never an inferred pass.
 
+Sampled extrema (`min`, `max`, `peak_to_peak`, `ripple`, their `_last_half` and `sample_`
+forms) are statistics of the requested output grid. A sampled maximum, peak-to-peak or
+ripple is a lower bound on the true value and a sampled minimum an upper bound. When the
+signal's `extrema_grid` shows fewer than 10 output samples per shortest switching period,
+or the bundle predates `extrema_grid`, a criterion is decided only if that one-sided error
+cannot change the verdict: `max <= limit` with a sampled value already above the limit is
+`fail`; with a sampled value below it the criterion is `not_comparable`, because the
+waveform may exceed the limit between samples. Re-simulate with a finer
+`analysis.transient.output_step` to get a verdict. The perturbation campaign and the batch
+ranking apply the same rule (`pear_sim.evidence.metric_fitness`).
+
 The evidence records source/run/metrics/expectations hashes, every criterion result,
 and `pass`, `fail`, `not_applicable`, `not_comparable`, or `not_run`. The confidence
 card remains `EXPLORATORY` even when all user criteria pass: user-selected KPI bounds

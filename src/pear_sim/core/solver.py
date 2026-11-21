@@ -189,6 +189,7 @@ class SimulationResult:
         declared_units = (
             {block.id: block.unit for block in graph.blocks} if graph else {}
         )
+        extrema_grid = _extrema_grid(self.model)
         for name, values in self.signals.items():
             tail = values[tail_index:]
             if not len(tail):
@@ -204,6 +205,8 @@ class SimulationResult:
                 result[name] = _non_affine_metrics(
                     name, values, tail, tail_start, declared_units
                 )
+                if extrema_grid is not None:
+                    result[name]["extrema_grid"] = dict(extrema_grid)
                 continue
             full_moments = full_window["signals"][name]
             tail_moments = tail_window["signals"][name]
@@ -266,8 +269,41 @@ class SimulationResult:
                 )
             else:
                 payload["continuity"] = "topology_dependent_or_unproven"
+            if extrema_grid is not None:
+                payload["extrema_grid"] = dict(extrema_grid)
             result[name] = payload
         return result
+
+
+def _extrema_grid(model: Any) -> dict[str, Any] | None:
+    """Facts a reader needs to judge the sampled extrema: grid step vs carrier.
+
+    ``min``/``max``/``peak_to_peak``/``ripple`` are statistics of the requested
+    output grid. Whether that grid can see the switching ripple is decided by
+    the consumer (``pear_sim.evidence.metric_fitness``); this record only states
+    the step and the shortest declared switching period. ``None`` (the field is
+    then absent, which readers treat as unresolved) when the model object does
+    not carry transient settings, e.g. a hand-built result.
+    """
+
+    transient = getattr(model, "transient", None)
+    step = getattr(transient, "output_step", None)
+    if isinstance(step, bool) or not isinstance(step, (int, float)) or not step > 0.0:
+        return None
+    controls = [
+        *getattr(model, "controls", {}).values(),
+        *getattr(model, "sampled_controls", {}).values(),
+    ]
+    periods = [float(control.period) for control in controls]
+    shortest = min(periods) if periods else None
+    return {
+        "output_step_s": float(step),
+        "switching_control_count": len(periods),
+        "shortest_switching_period_s": shortest,
+        "samples_per_shortest_switching_period": (
+            None if shortest is None else shortest / float(step)
+        ),
+    }
 
 
 _MACHINE_METRIC_NOT_COMPUTED = (

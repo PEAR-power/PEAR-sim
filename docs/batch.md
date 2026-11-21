@@ -118,6 +118,13 @@ A design is **feasible** when its run succeeded and every constraint holds (`min
 value <= max`). Feasible designs are ranked by the objective; ties go to the lower
 design id. Designs that fail to run are kept with their error and never ranked.
 
+A constraint or objective on a sampled extremum (`max`, `min`, `peak_to_peak`, ...) needs
+an output grid that resolves the switching period (at least 10 samples per shortest
+period; see `extrema_grid` in `docs/model-format.md`). On a coarser grid a sampled
+extremum only settles a constraint it already violates. Otherwise the design is listed
+under `not_comparable` with the reason, is not feasible and is never ranked; the summary
+counts such designs in `not_comparable_count`.
+
 ## Output
 
 ```
