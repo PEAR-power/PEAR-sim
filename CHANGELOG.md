@@ -24,6 +24,13 @@ break the model format; every break carries a migration note).
   events. Before, a forced turn-off mid-pulse booked no `E_off` while the window's
   release edge still booked an `E_on`, so the switching-loss total came out silently low.
 
+- Mode-sequence extraction (gradient analysis, topology comparison) refuses a cycle that
+  overlaps a `perturbations.forced_gate_windows` entry, naming the window. Before, a
+  forced edge inside the cycle failed with an unclear "cannot classify" error, and a
+  window opened in the previous cycle had its release edge (logged as `scheduled_gate`)
+  read as a PWM edge whose instant depends on the duty — a plausible but wrong
+  sensitivity. Pick a `cycle_index` clear of every window.
+
 ### Added
 
 - `impulsive_events: conserve` now also covers inductor cuts: a switch opening that
