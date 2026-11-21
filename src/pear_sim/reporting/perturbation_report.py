@@ -213,9 +213,7 @@ def _boundary_plot(boundary: Mapping[str, Any]) -> str:
     marks = []
     for index, probe in enumerate(probes):
         x = sx(float(probe["value_si"]))
-        colour = {"pass": "#2a7", "not_comparable": "#999"}.get(
-            str(probe.get("status")), "#d33"
-        )
+        colour = {"pass": "#2a7", "fail": "#d33"}.get(str(probe.get("status")), "#999")
         y = 40 + (index % 3) * 14
         marks.append(
             f'<circle cx="{x:.1f}" cy="{y}" r="4.5" fill="{colour}"/>'
@@ -239,9 +237,9 @@ def _boundary_plot(boundary: Mapping[str, Any]) -> str:
         f'<figure><svg viewBox="0 0 {width} {height}" role="img">{axis}'
         f'{"".join(marks)}</svg><figcaption>Probes on '
         f'<code>{_esc(boundary["parameter"])}</code> (SI). Green passed every '
-        f"criterion, red failed at least one, grey could not be judged from "
-        f"the recorded samples; the dashed line, drawn only between a "
-        f"comparable pass and a comparable fail, is the largest probed value "
+        f"criterion, red failed at least one, grey could not be judged or "
+        f"did not run; the dashed line, drawn only between a "
+        f"measured pass and a measured fail, is the largest probed value "
         f"that still passed.</figcaption></figure>"
     )
 

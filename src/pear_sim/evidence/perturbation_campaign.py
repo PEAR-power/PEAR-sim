@@ -831,7 +831,8 @@ def _acceptance(verdicts: Mapping[str, Mapping[str, Any]]) -> str:
         return "pass"
     if "fail" in statuses:
         return "fail"
-    return "not_comparable" if "not_comparable" in statuses else "fail"
+    # Neither is a measured violation: nothing was shown to fail.
+    return "not_comparable" if "not_comparable" in statuses else "not_run"
 
 
 def _event_onset(model: Model, events: Sequence[PerturbationEvent]) -> float | None:
@@ -1129,9 +1130,12 @@ def _boundary_search(
                 forced_windows=point_model.forced_gate_windows,
             )
         except PerturbationError as exc:
-            record.update({"status": "fail", "error": str(exc)[:512]})
+            # The probe did not run (the model was refused, the worker failed
+            # or timed out). That is not a criterion violation: no KPI was
+            # measured, so it cannot place the KPI boundary.
+            record.update({"status": "error", "error": str(exc)[:512]})
             probes.append(record)
-            return "fail"
+            return "error"
         verdicts = {criterion.id: criterion.verdict(metrics, grids) for criterion in criteria}
         status = _acceptance(verdicts)
         record.update(
@@ -1140,47 +1144,71 @@ def _boundary_search(
                 "criteria": {name: verdict["status"] for name, verdict in verdicts.items()},
             }
         )
+        reasons = [
+            f"{name}: {verdict['reason']}"
+            for name, verdict in verdicts.items()
+            if verdict["status"] not in ("pass", "fail") and verdict.get("reason")
+        ]
+        if reasons:
+            record["reason"] = "; ".join(reasons)[:512]
         probes.append(record)
         return status
 
-    # A number is a KPI boundary only between a comparable pass and a
-    # comparable fail. A probe the measurement cannot judge is neither: taking
-    # it for a failure would report where the output grid stops resolving the
-    # waveform as if it were where the design stops meeting its criteria.
+    def undecided(status: str, where: str) -> str:
+        prefix = "execution_error" if status == "error" else status
+        return f"{prefix}_{where}"
+
+    # A number is a KPI boundary only between a measured pass and a measured
+    # fail. A probe that could not be judged (not_comparable, not_run) or did
+    # not run at all (error) is neither: taking it for a failure would report
+    # where the output grid stops resolving the waveform, or where the model
+    # stops being valid, as if it were where the design stops meeting its
+    # criteria.
     result_value: float | None = None
     largest_pass: float | None = None
     smallest_fail: float | None = None
+    undecided_tag: str | None = None
     low_status = probe(low, "bracket-low")
     high_status = probe(high, "bracket-high")
-    if low_status != "pass":
-        verdict = (
-            "not_comparable_at_bracket_low"
-            if low_status == "not_comparable"
-            else "no_margin_at_bracket_low"
-        )
-        smallest_fail = low if low_status == "fail" else None
+    if low_status == "fail":
+        verdict = "no_margin_at_bracket_low"
+        smallest_fail = low
+    elif low_status != "pass":
+        verdict = undecided(low_status, "at_bracket_low")
+        undecided_tag = "bracket-low"
     elif high_status == "pass":
         result_value = largest_pass = high
         verdict = "criteria_still_pass_at_bracket_high"
     elif high_status != "fail":
         largest_pass = low
-        verdict = "not_comparable_at_bracket_high"
+        verdict = undecided(high_status, "at_bracket_high")
+        undecided_tag = "bracket-high"
     else:
         left, right = low, high
         verdict = "bisected"
         for step in range(iterations):
             middle = 0.5 * (left + right)
-            status = probe(middle, f"bisect-{step:02d}")
+            tag = f"bisect-{step:02d}"
+            status = probe(middle, tag)
             if status == "pass":
                 left = middle
             elif status == "fail":
                 right = middle
             else:
-                verdict = "not_comparable_inside_bracket"
+                verdict = undecided(status, "inside_bracket")
+                undecided_tag = tag
                 break
         largest_pass, smallest_fail = left, right
         if verdict == "bisected":
             result_value = left
+    undecided_reason = next(
+        (
+            item.get("error") or item.get("reason") or item["status"]
+            for item in probes
+            if item["tag"] == undecided_tag
+        ),
+        None,
+    )
 
     return {
         "parameter": parameter,
@@ -1194,8 +1222,10 @@ def _boundary_search(
         "smallest_failing_probe_si": smallest_fail,
         "probe_status_counts": {
             status: sum(1 for item in probes if item.get("status") == status)
-            for status in ("pass", "fail", "not_comparable")
+            for status in ("pass", "fail", "not_comparable", "not_run", "error")
         },
+        "undecided_probe": undecided_tag,
+        "undecided_reason": undecided_reason,
         "max_passing_drift_percent": (
             None
             if result_value is None or quantity.value == 0.0
