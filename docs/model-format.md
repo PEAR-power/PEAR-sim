@@ -1746,9 +1746,12 @@ reported, not "ripple". The unit is `V` for `v(...)` and `A` for `i(...)`.
 Every signal record also carries `extrema_grid`, the facts needed to judge those sampled
 extrema: `output_step_s`, `switching_control_count`, `shortest_switching_period_s` (the
 shortest period among the declared PWM controls, `null` without any) and
-`samples_per_shortest_switching_period`. A grid can miss a peak but cannot invent one, so
+`samples_per_shortest_switching_period`, and the same three facts for periodic sources
+(`periodic_source_count`, `shortest_source_period_s`,
+`samples_per_shortest_source_period`; sine and pulse waveforms). A grid can miss a peak but cannot invent one, so
 a sampled `max`/`peak_to_peak`/`ripple` is a lower bound on the true value and a sampled
-`min` an upper bound. With fewer than 10 samples per shortest switching period,
+`min` an upper bound. With fewer than 10 samples per shortest switching period or per
+shortest periodic-source period,
 `evaluate`, `sweep perturbation` and `batch` use a sampled extremum only where that
 one-sided error cannot change the verdict (a sampled `max` above an upper limit is still
 a violation) and report `not_comparable` otherwise. The floor rules out aliasing against
@@ -1763,7 +1766,10 @@ samples. The three acceptance paths compare the limit with the sampled value tig
 these extremes and report both (`value` and `sampled_value`) when they differ. A
 peak-to-peak or ripple is tightened to the joint span: the highest of samples and edges
 minus the lowest of both. An event exactly at the start of the last-half window counts in
-that window with its state after the switching. `min`,
+that window with its state after the switching; when the window starts inside an interval,
+the signal is observed at that instant too. Each end point reads its sources on its own
+interval's side of the instant, so a source step that coincides with a switching event is
+not paired with the other side's topology. `min`,
 `max` and the other metric fields themselves stay grid statistics. An extremum strictly
 inside an interval between two events (a resonant peak) is seen by neither.
 

@@ -94,7 +94,8 @@ def grid_unresolved_reason(grid: Any) -> str | None:
     """Why this ``extrema_grid`` record does not resolve the waveform, or ``None``.
 
     Fail closed: a record that is absent or malformed is unresolved. A model
-    with no switching control has no carrier to alias against and is resolved.
+    with no switching control and no periodic source declares no period to
+    alias against and is resolved.
     """
 
     if not isinstance(grid, Mapping):
@@ -105,16 +106,26 @@ def grid_unresolved_reason(grid: Any) -> str | None:
     controls = grid.get("switching_control_count")
     if isinstance(controls, bool) or not isinstance(controls, int) or controls < 0:
         return "extrema_grid.switching_control_count is not a non-negative integer"
-    if controls == 0:
-        return None
-    samples = _number(grid.get("samples_per_shortest_switching_period"))
-    if samples is None or samples <= 0.0:
-        return "extrema_grid does not state the samples per switching period"
-    if samples < MIN_SAMPLES_PER_SWITCHING_PERIOD * (1.0 - _RATIO_SLACK):
-        return (
-            f"the output grid has {samples:.6g} sample(s) per shortest switching "
-            f"period; at least {MIN_SAMPLES_PER_SWITCHING_PERIOD} are required"
-        )
+    sources = grid.get("periodic_source_count")
+    if isinstance(sources, bool) or not isinstance(sources, int) or sources < 0:
+        return "extrema_grid.periodic_source_count is not a non-negative integer"
+    # Every declared period must be resolved: the carrier of a switching
+    # control and the period of a sine or pulse source alike. A 1 kHz sine
+    # recorded every 1 ms reads one phase forever.
+    for count, key, what in (
+        (controls, "samples_per_shortest_switching_period", "switching"),
+        (sources, "samples_per_shortest_source_period", "periodic-source"),
+    ):
+        if count == 0:
+            continue
+        samples = _number(grid.get(key))
+        if samples is None or samples <= 0.0:
+            return f"extrema_grid does not state the samples per {what} period"
+        if samples < MIN_SAMPLES_PER_SWITCHING_PERIOD * (1.0 - _RATIO_SLACK):
+            return (
+                f"the output grid has {samples:.6g} sample(s) per shortest {what} "
+                f"period; at least {MIN_SAMPLES_PER_SWITCHING_PERIOD} are required"
+            )
     return None
 
 

@@ -85,7 +85,8 @@ or missing method is `not_comparable`, never an inferred pass.
 Sampled extrema (`min`, `max`, `peak_to_peak`, `ripple`, their `_last_half` and `sample_`
 forms) are statistics of the requested output grid. A sampled maximum, peak-to-peak or
 ripple is a lower bound on the true value and a sampled minimum an upper bound. When the
-signal's `extrema_grid` shows fewer than 10 output samples per shortest switching period,
+signal's `extrema_grid` shows fewer than 10 output samples per shortest switching period
+or per shortest periodic-source period,
 or the bundle predates `extrema_grid`, a criterion is decided only if that one-sided error
 cannot change the verdict: `max <= limit` with a sampled value already above the limit is
 `fail`; with a sampled value below it the criterion is `not_comparable`, because the

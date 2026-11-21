@@ -42,6 +42,9 @@ def _grid(samples: float | None, controls: int = 1) -> dict:
         "switching_control_count": controls,
         "shortest_switching_period_s": None if samples is None else samples * 1e-6,
         "samples_per_shortest_switching_period": samples,
+        "periodic_source_count": 0,
+        "shortest_source_period_s": None,
+        "samples_per_shortest_source_period": None,
     }
 
 
@@ -587,3 +590,145 @@ def test_an_event_at_the_window_start_enters_the_window_after_switching(tmp_path
     (criterion,) = evidence["criteria"]
     # One PWM period in 12 samples of 0.5 us: resolved, and nothing above 0.1 A.
     assert criterion["status"] == "pass"
+
+
+# --- sources: simultaneous steps, periodic sources, the window boundary ---------
+
+_ISLAND = """
+    - {id: cx, type: capacitor, p: aux, n: gnd, value: 1 uF, initial_voltage: 0 V}
+    - {id: rx, type: resistor, p: aux, n: gnd, value: 1 kohm}"""  # the kernel needs one state
+
+
+def _write(tmp_path: Path, name: str, text: str) -> Path:
+    path = tmp_path / f"{name}.yaml"
+    path.write_text(text)
+    return path
+
+
+def _judge(record: dict, metric: str, **bounds) -> str:
+    criterion = {"id": "c", "signal": "x", "metric": metric, "unit": record["unit"],
+                 "blocking": True, **bounds}
+    evidence = evaluate_expectations(
+        {
+            "schema": "pear-sim/expectations/v0.1",
+            "purpose": "probe",
+            "measurement_window": {
+                "kind": "last_half",
+                "start_s": record["window_start_s"],
+                "end_s": record["window_end_s"],
+            },
+            "criteria": [criterion],
+        },
+        {"x": record},
+    )
+    return evidence["criteria"][0]["status"]
+
+
+def test_a_source_step_at_a_switching_instant_does_not_invent_a_current(tmp_path) -> None:
+    """At 0.5 ms the supply steps from 0 to 100 V and, at the same instant, the
+    series switch to the 10 ohm load opens. The load current is 0 A before and
+    after. Reading the new source value in the closing interval's topology
+    recorded 10 A that never flowed."""
+
+    model = _write(
+        tmp_path,
+        "simultaneous",
+        f"""schema: pear-sim/v0.1
+name: simultaneous
+circuit:
+  ground: gnd
+  components:
+    - {{id: vs, type: voltage_source, p: in, n: gnd, waveform: {{type: step, initial: 0 V, final: 100 V, at: 0.5 ms}}}}
+    - {{id: q1, type: ideal_switch, p: in, n: out, control: pwm, initial: on}}
+    - {{id: load, type: resistor, p: out, n: gnd, value: 10 ohm}}{_ISLAND}
+controls:
+  pwm: {{type: pwm, frequency: 1 kHz, duty: 50 %, phase: 0 s}}
+analysis:
+  transient: {{start: 0 s, stop: 0.9 ms, output_step: 10 us, solver: dopri5, rtol: 1.0e-8, atol: 1.0e-10}}
+outputs: [i(load), v(out)]
+""",
+    )
+    metrics = HybridSimulator(load_model(model)).simulate().metrics()
+    record = metrics["i(load)"]
+    assert record["max"] == 0.0 and record["min"] == 0.0
+    edge = record["extrema_grid"]["event_edge"]
+    assert edge["max"] == pytest.approx(0.0, abs=1e-9)
+    assert edge["min"] == pytest.approx(0.0, abs=1e-9)
+    assert metrics["v(out)"]["extrema_grid"]["event_edge"]["max"] == pytest.approx(0.0, abs=1e-9)
+    assert record["window_start_s"] < 0.5e-3  # the instant lies in the last half
+    assert edge["max_last_half"] == pytest.approx(0.0, abs=1e-9)
+    assert _judge(record, "max_last_half", maximum=5.0) == "pass"
+    assert _judge(record, "max_last_half", minimum=5.0) == "fail"
+
+
+def _sine(tmp_path: Path, step: str) -> dict:
+    model = _write(
+        tmp_path,
+        "sine_" + step.replace(" ", ""),
+        f"""schema: pear-sim/v0.1
+name: sine
+circuit:
+  ground: gnd
+  components:
+    - {{id: vs, type: voltage_source, p: out, n: gnd, waveform: {{type: sine, amplitude: 10 V, frequency: 1 kHz}}}}
+    - {{id: load, type: resistor, p: out, n: gnd, value: 10 ohm}}{_ISLAND}
+analysis:
+  transient: {{start: 0 s, stop: 10 ms, output_step: {step}, solver: dopri5, rtol: 1.0e-8, atol: 1.0e-10}}
+outputs: [v(out)]
+""",
+    )
+    return HybridSimulator(load_model(model)).simulate().metrics()["v(out)"]
+
+
+def test_a_periodic_source_sets_a_period_the_grid_must_resolve(tmp_path) -> None:
+    """A 10 V, 1 kHz sine recorded every 1 ms is sampled at one phase and reads
+    0 V. There is no switching control, but the source declares its period."""
+
+    coarse = _sine(tmp_path, "1 ms")
+    grid = coarse["extrema_grid"]
+    assert grid["switching_control_count"] == 0
+    assert grid["periodic_source_count"] == 1
+    assert grid["shortest_source_period_s"] == pytest.approx(1e-3)
+    assert grid["samples_per_shortest_source_period"] == pytest.approx(1.0)
+    assert abs(coarse["max"]) < 1e-9  # what the grid saw
+    assert "periodic-source period" in grid_unresolved_reason(grid)
+    assert _judge(coarse, "max_last_half", maximum=5.0) == "not_comparable"
+
+    fine = _sine(tmp_path, "25 us")
+    assert fine["extrema_grid"]["samples_per_shortest_source_period"] == pytest.approx(40.0)
+    assert fine["max"] == pytest.approx(10.0, rel=1e-6)
+    assert _judge(fine, "max_last_half", maximum=5.0) == "fail"
+    assert _judge(fine, "max_last_half", maximum=10.5) == "pass"
+
+
+@pytest.mark.parametrize("step", ["600 us", "10 us"])
+def test_the_start_of_the_last_half_window_is_observed(tmp_path, step) -> None:
+    """A capacitor discharging from 10 V with a 1 ms time constant: over
+    1 to 2 ms its maximum is the value at 1 ms, 3.679 V. On a 600 us grid the
+    first sample in the window is at 1.2 ms (3.012 V) and the boundary lies
+    inside a solver interval, so nothing was observed there."""
+
+    model = _write(
+        tmp_path,
+        "decay",
+        f"""schema: pear-sim/v0.1
+name: decay
+circuit:
+  ground: gnd
+  components:
+    - {{id: c1, type: capacitor, p: out, n: gnd, value: 1 uF, initial_voltage: 10 V}}
+    - {{id: load, type: resistor, p: out, n: gnd, value: 1 kohm}}
+analysis:
+  transient: {{start: 0 s, stop: 2 ms, output_step: {step}, solver: dopri5, rtol: 1.0e-8, atol: 1.0e-10}}
+outputs: [v(out)]
+""",
+    )
+    record = HybridSimulator(load_model(model)).simulate().metrics()["v(out)"]
+    expected = 10.0 * 2.718281828459045**-1
+    edge = record["extrema_grid"]["event_edge"]
+    assert edge["max_last_half"] == pytest.approx(expected, rel=1e-6)
+    assert edge["min_last_half"] == pytest.approx(10.0 * 2.718281828459045**-2, rel=1e-6)
+    if step == "600 us":
+        assert record["max_last_half"] == pytest.approx(3.012, abs=1e-3)
+    assert _judge(record, "max_last_half", maximum=3.3) == "fail"
+    assert _judge(record, "max_last_half", maximum=3.7) == "pass"

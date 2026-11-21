@@ -304,6 +304,15 @@ def _extrema_grid(model: Any) -> dict[str, Any] | None:
     ]
     periods = [float(control.period) for control in controls]
     shortest = min(periods) if periods else None
+    # A periodic source is a declared timescale too: a 1 kHz sine recorded
+    # every 1 ms samples one phase forever, with no switching control at all.
+    source_periods = [
+        1.0 / float(frequency)
+        for component in getattr(model, "components", ())
+        if (frequency := getattr(getattr(component, "waveform", None), "frequency_hz", None))
+        and float(frequency) > 0.0
+    ]
+    shortest_source = min(source_periods) if source_periods else None
     # `event_edge` (min/max of the signal at the end points of the solver's
     # integration intervals) is added per signal by the caller.
     return {
@@ -312,6 +321,11 @@ def _extrema_grid(model: Any) -> dict[str, Any] | None:
         "shortest_switching_period_s": shortest,
         "samples_per_shortest_switching_period": (
             None if shortest is None else shortest / float(step)
+        ),
+        "periodic_source_count": len(source_periods),
+        "shortest_source_period_s": shortest_source,
+        "samples_per_shortest_source_period": (
+            None if shortest_source is None else shortest_source / float(step)
         ),
     }
 

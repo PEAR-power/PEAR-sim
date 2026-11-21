@@ -56,6 +56,24 @@ break the model format; every break carries a migration note).
   the window start no longer contributes its pre-turn-off current to
   `event_edge.max_last_half`.
 
+  Three more cases the observations got wrong:
+
+  - An interval end point reads its sources on that interval's own side of the instant.
+    With a supply stepping from 0 to 100 V at the instant a series switch to a 10 Ω load
+    opens, the closing interval paired the old topology with the new source value and
+    recorded 10 A that never flowed: `max <= 5 A` failed and `max >= 5 A` passed (campaign
+    margin +5 A, `batch` winner). The edge now reads 0 A.
+  - A periodic source declares a period the grid must resolve, like a switching control.
+    A 10 V, 1 kHz sine recorded every 1 ms samples one phase and reads 0 V; with no PWM
+    control the grid counted as resolved and `max <= 5 V` passed. `extrema_grid` adds
+    `periodic_source_count`, `shortest_source_period_s` and
+    `samples_per_shortest_source_period` (sine and pulse sources), held to the same
+    10-sample floor: `not_comparable` at 1 ms, `fail` with 10 V at 25 µs.
+  - The start of the last-half window is observed when it falls inside a solver
+    interval. A capacitor discharging from 10 V with a 1 ms time constant has its
+    1–2 ms maximum, 3.679 V, exactly at 1 ms; on a 600 µs grid the first sample in the
+    window read 3.012 V and `max_last_half <= 3.3 V` passed. Both grids now fail.
+
   `batch` reads every sampled extremum as that tightened value: `values` in the
   summary, the ranking, `designs.csv` and the finalist check all use it, and
   `sampled_values` keeps the raw grid statistic where the two differ. Minimizing
@@ -77,6 +95,9 @@ break the model format; every break carries a migration note).
   (likewise `_at_bracket_low`, `_inside_bracket`, and `not_run_...` for an absent
   metric), with `undecided_probe` and `undecided_reason`. A campaign point whose only
   shortfall is an absent metric has `acceptance_status: not_run` instead of `fail`.
+  The HTML report follows the JSON: it no longer says that no value in the bracket met
+  the criteria when the search merely stopped at an undecided probe, and it states the
+  probes actually run and the bisection steps actually taken.
 
   **Migration.** Bundles written by 0.1.x have no `extrema_grid`. `report` reads them
   as before and `evaluate` still decides means, RMS and `final`, but a sampled-extremum

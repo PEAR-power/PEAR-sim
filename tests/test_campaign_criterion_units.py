@@ -321,3 +321,18 @@ def test_a_probe_that_did_not_run_is_not_a_criterion_failure(tmp_path) -> None:
     }
     assert boundary["undecided_probe"] == "bracket-high"
     assert "duty" in boundary["undecided_reason"]
+
+
+def test_the_html_report_states_what_the_boundary_search_established(tmp_path) -> None:
+    """Low end passes, high end cannot be judged: the page must not say that
+    nothing in the bracket met the criteria, nor count bisection steps that
+    were never taken."""
+
+    _boundary(tmp_path, "undecided", 1000.0, "200 kHz")
+    html = (tmp_path / "undecided" / "campaign-report.html").read_text()
+    assert "no value in the bracket met every criterion" not in html
+    assert "no boundary was established" in html
+    assert "bracket-high" in html
+    assert "1 probe(s) passed and 0 failed" in html
+    assert "2 probe(s) run (1 pass, 0 fail, 1 undecided), 0 of 3 allowed bisection steps" in html
+    assert "not_comparable_at_bracket_high" in html
