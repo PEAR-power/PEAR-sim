@@ -32,6 +32,15 @@ break the model format; every break carries a migration note).
   The floor rules out aliasing against the carrier; it does not make a sampled extremum
   exact. `sensitivity` does not apply the rule yet.
 
+  `boundary_search` reports a number only between a comparable `pass` and a comparable
+  `fail`. It used to count a probe it could not judge as a failure: searching `fsw`
+  from 20 to 200 kHz against a 1000 A limit, where no probe can fail, returned
+  `bisected` at 98.75 kHz with a +393.75 % margin, which is where the grid stops
+  resolving the period. New verdicts `not_comparable_at_bracket_high` and
+  `not_comparable_inside_bracket` leave `max_passing_value_si` and
+  `max_passing_drift_percent` null; `largest_passing_probe_si`,
+  `smallest_failing_probe_si` and `probe_status_counts` state what was observed.
+
   **Migration.** Bundles written by 0.1.x have no `extrema_grid`. `report` reads them
   as before and `evaluate` still decides means, RMS and `final`, but a sampled-extremum
   criterion that the old value does not already violate is `not_comparable`:
@@ -52,6 +61,9 @@ break the model format; every break carries a migration note).
   unit: mV` — write `limit: "50 mV"`), a `field` other than `min`, `max`,
   `mean_last_half`, `min_last_half`, `max_last_half` or `fsw_measured_hz` (it used to
   give `not_run` at every point), and a `signal` that is not a signal expression.
+  A repeated `criteria[].id` is refused as well: verdicts are keyed by id, so the later
+  criterion replaced the earlier one and `v(out) <= 1 V` plus `v(out) <= 100 V` under one
+  id passed or failed a 40 V output depending on their order.
   Requests with a matching or absent `unit` are unchanged.
 
 ### Fixed

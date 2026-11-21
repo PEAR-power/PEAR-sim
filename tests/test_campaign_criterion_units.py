@@ -146,3 +146,133 @@ def test_a_limit_in_the_measured_unit_still_passes(tmp_path) -> None:
     verdict = summary["runs"][0]["criteria"]["c"]
     assert verdict["status"] == "pass"
     assert verdict["margin"] == pytest.approx(10.0, abs=1e-3)
+
+
+# --- one id, one criterion ----------------------------------------------------
+
+
+@pytest.mark.parametrize("limits", [(1, 100), (100, 1)])
+def test_a_repeated_criterion_id_is_refused_whatever_the_order(tmp_path, limits) -> None:
+    """Verdicts are keyed by id. With ``v(out) <= 1 V`` and ``v(out) <= 100 V``
+    under one id the later one used to replace the earlier, so a 40 V output
+    passed in one order and failed in the other."""
+
+    request = tmp_path / "request.json"
+    request.write_text(
+        json.dumps(
+            {
+                "schema": REQUEST_SCHEMA,
+                "label": "duplicate",
+                "axes": [
+                    {
+                        "id": "vin", "kind": "parameter_values", "parameter": "vin",
+                        "values": ["100 V"], "source": "assumption", "note": "nominal",
+                    }
+                ],
+                "criteria": [_criterion(id="vout", limit=limit) for limit in limits],
+            }
+        )
+    )
+    with pytest.raises(PerturbationError, match="id 'vout' is used more than once"):
+        run_campaign(BUCK, request, tmp_path / "out", jobs=1)
+    assert not (tmp_path / "out").exists()  # refused before any run
+
+
+def test_a_default_id_cannot_collide_with_an_explicit_one() -> None:
+    entries = [_criterion(id="c1", limit=1), _criterion(id=None, limit=100)]
+    with pytest.raises(PerturbationError, match="id 'c1' is used more than once"):
+        _parse_criteria(entries, load_model(BUCK))
+
+
+# --- boundary search ----------------------------------------------------------
+
+
+def _boundary(tmp_path: Path, name: str, limit_a: float, to: str) -> dict:
+    request = tmp_path / f"{name}.json"
+    request.write_text(
+        json.dumps(
+            {
+                "schema": REQUEST_SCHEMA,
+                "label": name,
+                "axes": [
+                    {
+                        "id": "vin", "kind": "parameter_values", "parameter": "vin",
+                        "values": ["100 V"], "source": "assumption", "note": "nominal",
+                    }
+                ],
+                "criteria": [
+                    {
+                        "id": "ipk", "signal": "i(l1)", "field": "max", "op": "max",
+                        "limit": limit_a, "unit": "A",
+                        "source": "assumption", "note": "placeholder",
+                    }
+                ],
+                "boundary_search": {
+                    "parameter": "fsw", "from": "20 kHz", "to": to, "iterations": 3,
+                    "source": "assumption", "note": "placeholder bracket",
+                },
+            }
+        )
+    )
+    summary = json.loads(run_campaign(BUCK, request, tmp_path / name, jobs=1).summary.read_text())
+    return summary["boundary_search"]
+
+
+def test_the_boundary_search_does_not_report_where_the_grid_stops_resolving(tmp_path) -> None:
+    """fsw from 20 to 200 kHz at a 1 us grid, limit 1000 A: no probe can fail,
+    and above 100 kHz the grid has under 10 samples per period. The search
+    used to count those undecided probes as failures and report a bisected
+    limit near 100 kHz with a +394 % margin. There is no KPI boundary here."""
+
+    boundary = _boundary(tmp_path, "undecided", 1000.0, "200 kHz")
+    statuses = {probe["tag"]: probe["status"] for probe in boundary["probes"]}
+    assert statuses == {"bracket-low": "pass", "bracket-high": "not_comparable"}
+    assert boundary["verdict"] == "not_comparable_at_bracket_high"
+    assert boundary["max_passing_value_si"] is None
+    assert boundary["max_passing_drift_percent"] is None
+    assert boundary["largest_passing_probe_si"] == pytest.approx(20e3)
+    assert boundary["smallest_failing_probe_si"] is None
+    assert boundary["probe_status_counts"] == {"pass": 1, "fail": 0, "not_comparable": 1}
+
+
+def test_a_boundary_between_a_comparable_pass_and_fail_is_still_bisected(tmp_path) -> None:
+    """The inductor peak rises as fsw falls: 4.44 A at 60 kHz, 4.60 A at 20 kHz."""
+
+    request = tmp_path / "down.json"
+    request.write_text(
+        json.dumps(
+            {
+                "schema": REQUEST_SCHEMA,
+                "label": "down",
+                "axes": [
+                    {
+                        "id": "vin", "kind": "parameter_values", "parameter": "vin",
+                        "values": ["100 V"], "source": "assumption", "note": "nominal",
+                    }
+                ],
+                "criteria": [
+                    {
+                        "id": "ipk", "signal": "i(l1)", "field": "max_last_half", "op": "max",
+                        "limit": 4.5, "unit": "A",
+                        "source": "assumption", "note": "placeholder",
+                    }
+                ],
+                "boundary_search": {
+                    "parameter": "fsw", "from": "60 kHz", "to": "20 kHz", "iterations": 3,
+                    "source": "assumption", "note": "placeholder bracket",
+                },
+            }
+        )
+    )
+    summary = json.loads(run_campaign(BUCK, request, tmp_path / "down", jobs=1).summary.read_text())
+    boundary = summary["boundary_search"]
+    assert boundary["verdict"] == "bisected"
+    assert boundary["probe_status_counts"]["not_comparable"] == 0
+    assert boundary["probe_status_counts"]["pass"] >= 1
+    assert boundary["probe_status_counts"]["fail"] >= 1
+    assert (
+        boundary["smallest_failing_probe_si"]
+        < boundary["max_passing_value_si"]
+        == boundary["largest_passing_probe_si"]
+    )
+    assert 30e3 < boundary["max_passing_value_si"] <= 40e3
