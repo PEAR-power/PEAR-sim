@@ -38,6 +38,22 @@ break the model format; every break carries a migration note).
   re-simulate the model to judge it. A model whose `analysis.transient.output_step` gives
   fewer than 10 samples per switching period needs a finer step for such criteria.
 
+- **Campaign criteria take their dimension from the measured signal**
+  (`pear-sim sweep perturbation`). `unit` was a display label beside a bare number, so
+  `signal: v(out), field: mean_last_half, op: max, limit: 50, unit: A` passed with
+  margin +10 against a 40 V output. The unit now follows from `signal` and `field`
+  (`fsw_measured_hz` is hertz). `limit` and `reference` are a number in that SI unit or
+  a unit-bearing string of the same dimension (`"50 mV"`); `limit: "50 mV"` and
+  `limit: 0.05, unit: V` give the same criterion and the same margin. The summary
+  always records the SI unit.
+
+  **Migration.** These requests are now refused before any run: a `unit` of another
+  dimension (`v(out)` in `A`), a scaled `unit` beside a bare number (`limit: 50,
+  unit: mV` — write `limit: "50 mV"`), a `field` other than `min`, `max`,
+  `mean_last_half`, `min_last_half`, `max_last_half` or `fsw_measured_hz` (it used to
+  give `not_run` at every point), and a `signal` that is not a signal expression.
+  Requests with a matching or absent `unit` are unchanged.
+
 ### Fixed
 
 - Core loss (iGSE): with `1/period` in a **gap between two Steinmetz ranges** of a

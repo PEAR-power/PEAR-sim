@@ -17,10 +17,15 @@ that far, in any environment, for any reason. Where a drift figure came from
 travels with it: every axis carries `source` and `note`, either inherited from
 the model's declared envelope or stated in the request.
 
-A criterion on a sampled extremum (``max``, ``min``, ...) is decided only on a
-grid that resolves the switching period or when the grid's one-sided error
-cannot change the verdict (``pear_sim.evidence.metric_fitness``); otherwise the
-point is ``not_comparable``, with no margin, and is not accepted.
+Criteria take their dimension from what is measured. ``signal`` plus ``field``
+fix the unit (``v(out)`` is volts); ``limit`` and ``reference`` are either a
+plain number in that SI unit or a unit-bearing string of the same dimension
+(``"50 mV"``). ``unit`` is optional and must agree: ``v(out) <= 50 A`` is a
+request error, and so is the ambiguous ``limit: 50, unit: mV``. A criterion on
+a sampled extremum (``max``, ``min``, ...) is decided only on a grid that
+resolves the switching period or when the grid's one-sided error cannot change
+the verdict (``pear_sim.evidence.metric_fitness``); otherwise the point is
+``not_comparable``, with no margin, and is not accepted.
 
 Claim boundary, restated in every artifact this module writes:
 
@@ -52,9 +57,12 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import yaml
 
+from pear_sim.errors import ModelError
 from pear_sim.evidence.metric_fitness import EXTREMA_GRID_FIELD, sampled_bound_unfit_reason
 from pear_sim.evidence.parallel_points import resolve_jobs, run_ordered
 from pear_sim.spec.model import Model, load_model
+from pear_sim.spec.signals import unit_for
+from pear_sim.spec.units import UnitError, parse_quantity, unit_scale_and_dimension
 from pear_sim.spec.parameter_envelope import PROVENANCE_SOURCES, ParameterEnvelope
 from pear_sim.spec.perturbation import (
     PerturbationError,
@@ -64,7 +72,6 @@ from pear_sim.spec.perturbation import (
     apply_perturbation_to_document,
     parse_perturbation_request,
 )
-from pear_sim.spec.units import parse_quantity
 
 
 __all__ = [
@@ -340,7 +347,83 @@ class _Criterion:
         return payload
 
 
-def _parse_criteria(raw: Any) -> tuple[_Criterion, ...]:
+_SIGNAL_FIELDS = ("min", "max", "mean_last_half", "min_last_half", "max_last_half")
+_FSW_FIELD = "fsw_measured_hz"
+
+
+def _measured_unit(signal: str, field: str, model: Model, *, name: str) -> str:
+    """Unit of ``signal::field`` as the producer measures it.
+
+    The dimension of a criterion comes from WHAT IS MEASURED, never from the
+    request's own ``unit`` label: a label the producer does not check lets
+    ``v(out) <= 50 A`` pass against 40 V.
+    """
+
+    if field == _FSW_FIELD:
+        return "Hz"
+    if field not in _SIGNAL_FIELDS:
+        raise PerturbationError(
+            f"{name}.field must be one of {', '.join(_SIGNAL_FIELDS)} or "
+            f"{_FSW_FIELD} (got {field!r})"
+        )
+    graph = getattr(model, "signals", None)
+    declared = {block.id: block.unit for block in graph.blocks} if graph else {}
+    try:
+        return unit_for(signal, declared)
+    except ModelError as exc:
+        raise PerturbationError(f"{name}.signal: {exc}") from exc
+
+
+def _criterion_value(raw: Any, measured_unit: str, *, name: str) -> float:
+    """An SI number, or a unit-bearing string of the measured dimension."""
+
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+        raise PerturbationError(
+            f"{name} must be a number in {measured_unit!r} or a string with a unit"
+        )
+    if isinstance(raw, str):
+        known = unit_scale_and_dimension(measured_unit)
+        if known is None:
+            raise PerturbationError(
+                f"{name}: a unit-bearing string is not supported for a quantity "
+                f"measured in {measured_unit!r}; give a plain number in that unit"
+            )
+        try:
+            value = float(parse_quantity(raw, known[1], name=name).value)
+        except UnitError as exc:
+            raise PerturbationError(str(exc)) from exc
+    else:
+        value = float(raw)
+    if not math.isfinite(value):
+        raise PerturbationError(f"{name} must be finite")
+    return value
+
+
+def _check_declared_unit(
+    declared: Any, measured_unit: str, *, subject: str, bare_number: bool, name: str
+) -> None:
+    if declared is None or declared == "":
+        return
+    if not isinstance(declared, str):
+        raise PerturbationError(f"{name} must be a string")
+    if declared.strip() == measured_unit:
+        return
+    given = unit_scale_and_dimension(declared)
+    known = unit_scale_and_dimension(measured_unit)
+    if given is None or known is None or given[1] != known[1]:
+        raise PerturbationError(
+            f"{name} {declared!r} does not match {subject}, which is measured in "
+            f"{measured_unit!r}"
+        )
+    if given[0] != known[0] and bare_number:
+        raise PerturbationError(
+            f"{name} {declared!r} with a bare number is ambiguous (is the number in "
+            f"{declared} or in {measured_unit}?); write the value with its unit, "
+            f"e.g. \"50 {declared}\", or give an SI number with unit {measured_unit!r}"
+        )
+
+
+def _parse_criteria(raw: Any, model: Model) -> tuple[_Criterion, ...]:
     if not isinstance(raw, list) or not 1 <= len(raw) <= 16:
         raise PerturbationError("criteria must list 1..16 entries")
     criteria = []
@@ -358,21 +441,35 @@ def _parse_criteria(raw: Any) -> tuple[_Criterion, ...]:
             raise PerturbationError(
                 f"{name}.op must be max, min or abs_deviation_max (got {op!r})"
             )
-        limit = entry.get("limit")
-        if isinstance(limit, bool) or not isinstance(limit, (int, float)):
-            raise PerturbationError(f"{name}.limit must be a number in SI units")
-        reference = entry.get("reference")
-        if op == "abs_deviation_max" and not isinstance(reference, (int, float)):
+        signal, field = str(entry.get("signal")), str(entry.get("field"))
+        measured_unit = _measured_unit(signal, field, model, name=name)
+        raw_limit, raw_reference = entry.get("limit"), entry.get("reference")
+        limit = _criterion_value(raw_limit, measured_unit, name=f"{name}.limit")
+        if op == "abs_deviation_max" and raw_reference is None:
             raise PerturbationError(f"{name}.reference is required for abs_deviation_max")
+        reference = (
+            None
+            if raw_reference is None
+            else _criterion_value(raw_reference, measured_unit, name=f"{name}.reference")
+        )
+        _check_declared_unit(
+            entry.get("unit"),
+            measured_unit,
+            subject=f"{signal} {field}",
+            bare_number=not isinstance(raw_limit, str)
+            or (raw_reference is not None and not isinstance(raw_reference, str)),
+            name=f"{name}.unit",
+        )
         criteria.append(
             _Criterion(
                 id=str(entry.get("id") or f"c{index}"),
-                signal=str(entry.get("signal")),
-                field=str(entry.get("field")),
+                signal=signal,
+                field=field,
                 op=str(op),
-                limit=float(limit),
-                reference=float(reference) if isinstance(reference, (int, float)) else None,
-                unit=str(entry.get("unit") or ""),
+                limit=limit,
+                reference=reference,
+                # Always the unit the limit is stored in: the measured SI unit.
+                unit=measured_unit,
                 provenance=_provenance(entry, name=name),
             )
         )
@@ -783,7 +880,7 @@ def run_campaign(
             f"{MAX_CAMPAIGN_RUNS}-run cap"
         )
 
-    criteria = _parse_criteria(payload.get("criteria"))
+    criteria = _parse_criteria(payload.get("criteria"), model)
     nominal = payload.get("nominal") or {}
     nominal_vout = nominal.get("vout_v")
     recovery_band = nominal.get("recovery_band_percent")
