@@ -308,7 +308,14 @@ def build_losses_thermal_observation(result: Any) -> dict[str, Any]:
             control_id = component.control
             for event in result.events:
                 if component.type == "ideal_switch":
-                    if event.kind != "scheduled_gate" or event.target != control_id:
+                    # Every EFFECTIVE gate change switches the device: the solver
+                    # records a change inside a forced_gate_windows entry as
+                    # ``forced_gate``, not ``scheduled_gate``. Skipping it books
+                    # the window's release edge but not its forced edge.
+                    if (
+                        event.kind not in {"scheduled_gate", "forced_gate"}
+                        or event.target != control_id
+                    ):
                         continue
                     turning_on = bool(event.current) and not bool(event.previous)
                     field = "e_on_j" if turning_on else "e_off_j"

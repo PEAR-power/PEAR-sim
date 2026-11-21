@@ -352,3 +352,40 @@ def test_foster_response_can_start_from_a_steady_state() -> None:
     assert cold[0] == pytest.approx(40.0)
     assert np.max(np.abs(steady - (40.0 + 25.0 * 1.0))) < 1e-9
     assert stored == pytest.approx(sum(s.time_constant_s * 25.0 for s in stages), rel=1e-12)
+
+
+def test_forced_gate_edges_are_counted_as_switching_events(tmp_path: Path) -> None:
+    # Regression: only scheduled_gate events were counted, so a forced turn-off
+    # mid-pulse booked no E_off while the scheduled recovery at the window end
+    # still booked an E_on — an asymmetric, silently low switching-loss total.
+    def shorten(document):
+        document["analysis"]["transient"]["stop"] = "200 us"
+
+    def shorten_and_force(document):
+        shorten(document)
+        document["perturbations"] = {
+            "forced_gate_windows": [
+                {"control": "pwm", "from": "5 us", "to": "6 us", "level": "off"}
+            ]
+        }
+
+    def q1_switching(mutate, name):
+        path = _mutated(tmp_path / name, mutate)
+        result = HybridSimulator(load_model(path)).simulate()
+        kinds = [event.kind for event in result.events]
+        observation = build_losses_thermal_observation(result)
+        q1 = next(d for d in observation["devices"] if d["component_id"] == "q1")
+        return q1["switching"], kinds
+
+    (tmp_path / "base").mkdir()
+    (tmp_path / "forced").mkdir()
+    base, base_kinds = q1_switching(shorten, "base")
+    forced, forced_kinds = q1_switching(shorten_and_force, "forced")
+    assert "forced_gate" not in base_kinds
+    assert forced_kinds.count("forced_gate") == 1
+    assert forced["events_counted"]["turn_off"] == base["events_counted"]["turn_off"] + 1
+    assert forced["events_counted"]["turn_on"] == base["events_counted"]["turn_on"] + 1
+    # The extra turn-off interrupts ~10 A at 100 V: 1.1 mJ * 100/300 on top.
+    assert forced["totals_j"]["e_off_j"] - base["totals_j"]["e_off_j"] == pytest.approx(
+        1.1e-3 * 100.0 / 300.0, rel=0.1
+    )

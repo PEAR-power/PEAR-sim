@@ -20,6 +20,10 @@ break the model format; every break carries a migration note).
   `accepted_initial_mode_and_scheduled_and_forced_gate_events`. Additive within v0.1: no
   run with a forced gate change could produce the artifact before.
 
+- Loss analysis (`losses-thermal.json`) now counts `forced_gate` edges as switching
+  events. Before, a forced turn-off mid-pulse booked no `E_off` while the window's
+  release edge still booked an `E_on`, so the switching-loss total came out silently low.
+
 ### Added
 
 - `impulsive_events: conserve` now also covers inductor cuts: a switch opening that
