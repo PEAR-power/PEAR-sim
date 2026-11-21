@@ -341,8 +341,31 @@ def _boundary_section(summary: Mapping[str, Any]) -> str:
     if not boundary:
         return ""
     percent = boundary.get("max_passing_drift_percent")
+    probes = boundary.get("probes") or []
+    counts = {
+        status: sum(1 for probe in probes if probe.get("status") == status)
+        for status in ("pass", "fail")
+    }
+    other = len(probes) - counts["pass"] - counts["fail"]
+    bisections = sum(1 for probe in probes if str(probe.get("tag", "")).startswith("bisect-"))
+    verdict = str(boundary.get("verdict"))
+    if boundary.get("max_passing_value_si") is not None:
+        pass
+    elif verdict == "no_margin_at_bracket_low":
+        undetermined = "the start of the bracket already fails a declared criterion"
+    else:
+        # Not "nothing passed": the search stopped at a probe that could not
+        # be judged or did not run, so no boundary was established.
+        reason = boundary.get("undecided_reason")
+        undetermined = (
+            "no boundary was established: probe "
+            f'<code>{_esc(boundary.get("undecided_probe") or "—")}</code> could not be '
+            "judged or did not run"
+            + (f" ({_esc(reason)})" if reason else "")
+            + f'; {counts["pass"]} probe(s) passed and {counts["fail"]} failed'
+        )
     headline = (
-        "no value in the bracket met every criterion"
+        undetermined
         if boundary.get("max_passing_value_si") is None
         else (
             f'<strong>{_esc(boundary["parameter"])} tolerates up to '
@@ -353,8 +376,10 @@ def _boundary_section(summary: Mapping[str, Any]) -> str:
     )
     return (
         "<h2>Tolerable-drift boundary</h2>"
-        f"<p>{headline}. Verdict: <code>{_esc(boundary['verdict'])}</code>, "
-        f"{_esc(boundary['iterations'])} bisection steps.</p>"
+        f"<p>{headline}. Verdict: <code>{_esc(boundary['verdict'])}</code>; "
+        f"{len(probes)} probe(s) run ({counts['pass']} pass, {counts['fail']} fail, "
+        f"{other} undecided), {bisections} of {_esc(boundary['iterations'])} "
+        "allowed bisection steps taken.</p>"
         f'<div class="claim"><strong>Assumption:</strong> '
         f"{_esc(boundary['assumption'])}</div>"
         f"{_boundary_plot(boundary)}"
