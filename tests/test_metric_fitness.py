@@ -22,6 +22,7 @@ from pear_sim.evidence.expectations import evaluate_expectations
 from pear_sim.evidence.metric_fitness import (
     MIN_SAMPLES_PER_SWITCHING_PERIOD,
     grid_unresolved_reason,
+    fitness_context,
     judge_sampled_bound,
     sampled_bound_unfit_reason,
 )
@@ -432,3 +433,157 @@ def test_a_conduction_pulse_between_two_samples_is_not_read_as_zero(tmp_path, st
     (criterion,) = evidence["criteria"]
     assert criterion["status"] == "fail"
     assert criterion["measured"]["value"] > 0.1
+
+
+# --- joint extremes, ranking, and the window boundary --------------------------
+
+
+def test_peak_to_peak_spans_the_joint_extremes_of_samples_and_edges() -> None:
+    """Maximum +1.000 V seen at an event edge, minimum -0.9921 V seen in a
+    sample: the waveform spans at least 1.9921 V. Neither the sampled span
+    (1.9842 V) nor the edge span alone says so."""
+
+    record = {
+        "min": -0.9921, "max": 0.9921, "min_last_half": -0.9921, "max_last_half": 0.9921,
+        "extrema_grid": dict(
+            FINE,
+            event_edge={"min": -0.5, "max": 1.0, "min_last_half": -0.5, "max_last_half": 1.0},
+        ),
+    }
+    context = fitness_context(record)
+    for metric in ("peak_to_peak", "peak_to_peak_last_half", "ripple", "ripple_last_half"):
+        judged = judge_sampled_bound(metric, context, 1.9842, upper=1.989)
+        assert judged.value == pytest.approx(1.9921)
+        assert judged.unfit_reason is None  # and 1.9921 > 1.989 is a violation
+    evidence = evaluate_expectations(
+        {
+            "schema": "pear-sim/expectations/v0.1",
+            "purpose": "ripple limit",
+            "measurement_window": {"kind": "last_half", "start_s": 1.0, "end_s": 2.0},
+            "criteria": [
+                {"id": "pp", "signal": "v(x)", "metric": "peak_to_peak_last_half",
+                 "unit": "V", "maximum": 1.989, "blocking": True}
+            ],
+        },
+        {"v(x)": {**record, "unit": "V", "peak_to_peak_last_half": 1.9842,
+                  "extrema_method": "requested_output_grid_samples",
+                  "window_start_s": 1.0, "window_end_s": 2.0}},
+    )
+    (criterion,) = evidence["criteria"]
+    assert criterion["status"] == "fail"
+    assert criterion["measured"]["value"] == pytest.approx(1.9921)
+    assert criterion["measured"]["sampled_value"] == pytest.approx(1.9842)
+
+
+def test_a_legacy_record_has_no_fitness_context() -> None:
+    assert fitness_context({"min": 0.0, "max": 1.0}) is None
+    assert fitness_context(None) is None
+
+
+def test_a_batch_ranks_and_verifies_on_the_tightened_objective(tmp_path) -> None:
+    """Minimize max i(q1) over vin = 120 V and 80 V with the 4 % pulse between
+    samples: both sample as 0 A. Ranked on the samples they tie and the lower
+    id (120 V, 3.52 A) wins. On the event edges 80 V (3.44 A) is better."""
+
+    request = tmp_path / "batch.json"
+    request.write_text(
+        json.dumps(
+            {
+                "schema": "pear-sim/batch-request/v0.1",
+                "designs": {"method": "list", "rows": [{"vin": "120 V"}, {"vin": "80 V"}]},
+                "objective": {"minimize": {"signal": "i(q1)", "metric": "max"}},
+                "finalists": 1,
+            }
+        )
+    )
+    artifacts = run_batch(_pulse_buck(tmp_path, "5 us"), request, tmp_path / "batch", jobs=2)
+    summary = json.loads(artifacts.summary.read_text())
+    assert summary["status"] == "pass"
+    assert summary["best_design"] == "d0002"
+    first, second = summary["ranking"]
+    assert (first["design_id"], second["design_id"]) == ("d0002", "d0001")
+    assert first["parameters_si"] == {"vin": 80.0}
+    assert first["values"]["i(q1).max"] == pytest.approx(3.44, abs=0.01)
+    assert second["values"]["i(q1).max"] == pytest.approx(3.52, abs=0.01)
+    assert first["sampled_values"] == second["sampled_values"] == {"i(q1).max": 0.0}
+    (finalist,) = summary["finalists"]
+    assert finalist["design_id"] == "d0002" and finalist["status"] == "pass"
+    assert finalist["mismatches"] == []
+    rows = (tmp_path / "batch" / "designs.csv").read_text().splitlines()
+    assert "3.4397" in rows[2] and "3.5197" in rows[1]
+
+
+def test_a_batch_constraint_on_peak_to_peak_uses_the_joint_span(tmp_path) -> None:
+    """The switch voltage of the pulse buck spans more on its event edges than
+    in its samples; a limit between the two spans must be a violation."""
+
+    model = _pulse_buck(tmp_path, "5 us")
+    metrics = HybridSimulator(load_model(model)).simulate().metrics()["i(q1)"]
+    sampled = metrics["peak_to_peak_last_half"]
+    edge = metrics["extrema_grid"]["event_edge"]
+    joint = max(metrics["max_last_half"], edge["max_last_half"]) - min(
+        metrics["min_last_half"], edge["min_last_half"]
+    )
+    assert joint > sampled
+    request = tmp_path / "batch.json"
+    request.write_text(
+        json.dumps(
+            {
+                "schema": "pear-sim/batch-request/v0.1",
+                "designs": {"method": "list", "rows": [{"vin": "100 V"}]},
+                "objective": {"minimize": {"signal": "i(l1)", "metric": "mean_last_half"}},
+                "constraints": [
+                    {"signal": "i(q1)", "metric": "peak_to_peak_last_half",
+                     "max": 0.5 * (sampled + joint)}
+                ],
+                "finalists": 1,
+            }
+        )
+    )
+    summary = json.loads(
+        run_batch(model, request, tmp_path / "batch", jobs=1).summary.read_text()
+    )
+    (design,) = summary["designs"]
+    assert design["violations"] == ["i(q1).peak_to_peak_last_half"]
+    assert not design["feasible"] and summary["best_design"] is None
+    assert design["values"]["i(q1).peak_to_peak_last_half"] == pytest.approx(joint)
+    assert design["sampled_values"]["i(q1).peak_to_peak_last_half"] == pytest.approx(sampled)
+
+
+def test_an_event_at_the_window_start_enters_the_window_after_switching(tmp_path) -> None:
+    """0 to 6 us with the switch on from 1 us to 3 us: turn-off lands exactly
+    on the last-half boundary. In the last half the switch never conducts
+    (every sample, the mean and the RMS are 0 A), so its last-half edge
+    maximum is 0 A too; the 3.48 A just before turn-off belongs to the first half."""
+
+    text = (
+        BUCK.read_text()
+        .replace("duty: 40 %", "duty: 4 %")
+        .replace("phase: 0 s", "phase: 1 us")
+        .replace("stop: 2 ms", "stop: 6 us")
+        .replace("output_step: 1 us", "output_step: 0.5 us")
+    )
+    assert "stop: 6 us" in text
+    path = tmp_path / "window.yaml"
+    path.write_text(text)
+    record = HybridSimulator(load_model(path)).simulate().metrics()["i(q1)"]
+    assert record["window_start_s"] == pytest.approx(3e-6)
+    assert record["max_last_half"] == 0.0 and record["rms_last_half"] == 0.0
+    edge = record["extrema_grid"]["event_edge"]
+    assert edge["max_last_half"] == pytest.approx(0.0, abs=1e-12)
+    assert edge["max"] == pytest.approx(3.48, abs=0.02)  # still in the full window
+    evidence = evaluate_expectations(
+        {
+            "schema": "pear-sim/expectations/v0.1",
+            "purpose": "off-state current",
+            "measurement_window": {"kind": "last_half", "start_s": 3e-6, "end_s": 6e-6},
+            "criteria": [
+                {"id": "off", "signal": "i(q1)", "metric": "max_last_half", "unit": "A",
+                 "maximum": 0.1, "blocking": True}
+            ],
+        },
+        {"i(q1)": record},
+    )
+    (criterion,) = evidence["criteria"]
+    # One PWM period in 12 samples of 0.5 us: resolved, and nothing above 0.1 A.
+    assert criterion["status"] == "pass"

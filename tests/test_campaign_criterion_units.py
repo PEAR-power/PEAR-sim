@@ -232,7 +232,11 @@ def test_the_boundary_search_does_not_report_where_the_grid_stops_resolving(tmp_
     assert boundary["max_passing_drift_percent"] is None
     assert boundary["largest_passing_probe_si"] == pytest.approx(20e3)
     assert boundary["smallest_failing_probe_si"] is None
-    assert boundary["probe_status_counts"] == {"pass": 1, "fail": 0, "not_comparable": 1}
+    assert boundary["probe_status_counts"] == {
+        "pass": 1, "fail": 0, "not_comparable": 1, "not_run": 0, "error": 0,
+    }
+    assert boundary["undecided_probe"] == "bracket-high"
+    assert "switching period" in boundary["undecided_reason"]
 
 
 def test_a_boundary_between_a_comparable_pass_and_fail_is_still_bisected(tmp_path) -> None:
@@ -276,3 +280,44 @@ def test_a_boundary_between_a_comparable_pass_and_fail_is_still_bisected(tmp_pat
         == boundary["largest_passing_probe_si"]
     )
     assert 30e3 < boundary["max_passing_value_si"] <= 40e3
+
+
+def test_a_probe_that_did_not_run_is_not_a_criterion_failure(tmp_path) -> None:
+    """Duty searched from 40 % to 120 % against a 10 kV mean-output limit no
+    run can reach. Above 100 % the model is refused, so those probes measure
+    nothing. They used to count as failures and give a bisected +150 % margin."""
+
+    request = tmp_path / "duty.json"
+    request.write_text(
+        json.dumps(
+            {
+                "schema": REQUEST_SCHEMA,
+                "label": "duty",
+                "axes": [
+                    {
+                        "id": "vin", "kind": "parameter_values", "parameter": "vin",
+                        "values": ["100 V"], "source": "assumption", "note": "nominal",
+                    }
+                ],
+                "criteria": [_criterion(limit=10000, unit="V")],
+                "boundary_search": {
+                    "parameter": "duty", "from": "40 %", "to": "120 %", "iterations": 4,
+                    "source": "assumption", "note": "bracket runs past the valid range",
+                },
+            }
+        )
+    )
+    summary = json.loads(run_campaign(BUCK, request, tmp_path / "duty", jobs=1).summary.read_text())
+    boundary = summary["boundary_search"]
+    statuses = {probe["tag"]: probe["status"] for probe in boundary["probes"]}
+    assert statuses == {"bracket-low": "pass", "bracket-high": "error"}
+    assert boundary["verdict"] == "execution_error_at_bracket_high"
+    assert boundary["max_passing_value_si"] is None
+    assert boundary["max_passing_drift_percent"] is None
+    assert boundary["smallest_failing_probe_si"] is None
+    assert boundary["largest_passing_probe_si"] == pytest.approx(0.4)
+    assert boundary["probe_status_counts"] == {
+        "pass": 1, "fail": 0, "not_comparable": 0, "not_run": 0, "error": 1,
+    }
+    assert boundary["undecided_probe"] == "bracket-high"
+    assert "duty" in boundary["undecided_reason"]

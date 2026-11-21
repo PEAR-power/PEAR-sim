@@ -49,8 +49,8 @@ from pear_sim.evidence.parameter_sweep import (
     _safe_run_artifact,
 )
 from pear_sim.evidence.metric_fitness import (
-    EXTREMA_GRID_FIELD,
     SampledBound,
+    fitness_context,
     judge_sampled_bound,
 )
 from pear_sim.core.solver import HybridSimulator
@@ -486,11 +486,16 @@ def _read_run(
     *,
     backend_id: str = "reference-python",
     grids: dict[str, Any] | None = None,
+    sampled: dict[str, float] | None = None,
 ) -> tuple[str, dict[str, float]]:
     """Verify one run bundle and read the requested quantities from it.
 
-    ``grids``, when given, receives each signal quantity's ``extrema_grid``
-    record by label, for the fitness check on sampled extrema.
+    A sampled extremum is returned TIGHTENED by the signal's event-edge
+    extremes (``pear_sim.evidence.metric_fitness``): that is the number the
+    constraints, the ranking and the finalist check all use, so a design
+    cannot win on a peak the output grid stepped over. ``sampled``, when
+    given, receives the raw grid statistic for every quantity it differs
+    for; ``grids`` receives each signal quantity's fitness context by label.
     """
 
     expected = load_model(model_path, overrides=dict(overrides))
@@ -505,12 +510,18 @@ def _read_run(
         )
         losses, _raw = _read_strict_json(losses_path, role="run losses")
     values = {quantity.label: quantity.read(metrics, losses) for quantity in quantities}
-    if grids is not None:
-        for quantity in quantities:
-            if quantity.signal is not None:
-                grids[quantity.label] = metrics.get(quantity.signal, {}).get(
-                    EXTREMA_GRID_FIELD
-                )
+    for quantity in quantities:
+        if quantity.signal is None:
+            continue
+        context = fitness_context(metrics.get(quantity.signal))
+        raw = values[quantity.label]
+        bound = judge_sampled_bound(str(quantity.metric), context, raw).value
+        if bound != raw:
+            values[quantity.label] = bound
+            if sampled is not None:
+                sampled[quantity.label] = raw
+        if grids is not None:
+            grids[quantity.label] = context
     return run_sha256, values
 
 
@@ -578,6 +589,8 @@ def screen_designs(
             "error": None,
             "run_sha256": None,
             "extrema_grid": {},
+            # Raw grid statistic of every value that event edges tightened.
+            "sampled_values": {},
         }
         try:
             run_dir = outcome.unwrap()
@@ -588,6 +601,7 @@ def screen_designs(
                 quantities,
                 backend_id=backend_id,
                 grids=row["extrema_grid"],
+                sampled=row["sampled_values"],
             )
             _prune_screening_run(run_dir)
         except Exception as exc:  # retained per design; the batch continues
@@ -755,12 +769,14 @@ def run_batch(
         }
         try:
             run_dir = outcome.unwrap()
+            full_sampled: dict[str, float] = {}
             _sha, values = _read_run(
                 run_dir,
                 retained_model,
                 row["parameters_si"],
                 quantities,
                 backend_id=request.backend_id,
+                sampled=full_sampled,
             )
             record["run"] = (run_dir / "run.json").relative_to(destination).as_posix()
             # Lean and full runs must agree exactly; a lean shortcut that
@@ -769,6 +785,15 @@ def run_batch(
                 {"quantity": label, "screening": row["values"][label], "full": value}
                 for label, value in values.items()
                 if value != row["values"][label]
+            ] + [
+                # The raw grid statistic behind a tightened value must agree too.
+                {
+                    "quantity": f"{label} (sampled)",
+                    "screening": row["sampled_values"].get(label),
+                    "full": full_sampled.get(label),
+                }
+                for label in sorted(set(full_sampled) | set(row["sampled_values"]))
+                if full_sampled.get(label) != row["sampled_values"].get(label)
             ]
             if record["mismatches"]:
                 record["status"] = "screening_mismatch"
@@ -834,6 +859,7 @@ def run_batch(
                 "design_id": row["design_id"],
                 "parameters_si": row["parameters_si"],
                 "values": row["values"],
+                "sampled_values": row["sampled_values"],
             }
             for row in feasible[:20]
         ],

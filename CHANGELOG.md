@@ -47,6 +47,21 @@ break the model format; every break carries a migration note).
   differ; the metric fields stay grid statistics. An extremum strictly inside an
   interval between two events is still seen only by the samples.
 
+  A peak-to-peak or ripple is tightened to the span of all observations: the highest of
+  samples and event edges minus the lowest of both. With the maximum seen at an edge
+  (+1.000 V) and the minimum in a sample (−0.9921 V) the waveform spans at least
+  1.9921 V, and a 1.989 V limit is violated although the sampled span is 1.9842 V.
+  An event exactly at the start of the last-half window enters that window with its
+  state after the switching, like the sample recorded there: a switch that turns off at
+  the window start no longer contributes its pre-turn-off current to
+  `event_edge.max_last_half`.
+
+  `batch` reads every sampled extremum as that tightened value: `values` in the
+  summary, the ranking, `designs.csv` and the finalist check all use it, and
+  `sampled_values` keeps the raw grid statistic where the two differ. Minimizing
+  `max i(q1)` over `vin` = 120 V and 80 V with the pulse between samples used to tie at
+  0 A and pick 120 V by id; it now ranks 80 V (3.44 A) ahead of 120 V (3.52 A).
+
   `boundary_search` reports a number only between a comparable `pass` and a comparable
   `fail`. It used to count a probe it could not judge as a failure: searching `fsw`
   from 20 to 200 kHz against a 1000 A limit, where no probe can fail, returned
@@ -55,6 +70,13 @@ break the model format; every break carries a migration note).
   `not_comparable_inside_bracket` leave `max_passing_value_si` and
   `max_passing_drift_percent` null; `largest_passing_probe_si`,
   `smallest_failing_probe_si` and `probe_status_counts` state what was observed.
+  A probe that did not run (model refused, worker failed or timed out) has status
+  `error`, not `fail`: searching `duty` from 40 % to 120 % against a limit no run can
+  reach returned `bisected` with a +150 % margin because the probes above 100 % were
+  refused by the PWM validator. The verdict is now `execution_error_at_bracket_high`
+  (likewise `_at_bracket_low`, `_inside_bracket`, and `not_run_...` for an absent
+  metric), with `undecided_probe` and `undecided_reason`. A campaign point whose only
+  shortfall is an absent metric has `acceptance_status: not_run` instead of `fail`.
 
   **Migration.** Bundles written by 0.1.x have no `extrema_grid`. `report` reads them
   as before and `evaluate` still decides means, RMS and `final`, but a sampled-extremum

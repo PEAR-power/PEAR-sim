@@ -1760,7 +1760,10 @@ on both sides of every event. A grid can step over a whole conduction interval (
 switch pulse between samples 5 µs apart reads 0 A at 10 samples per period); its end
 points are on the waveform, so they bound the true extremum from the same side as the
 samples. The three acceptance paths compare the limit with the sampled value tightened by
-these extremes and report both (`value` and `sampled_value`) when they differ. `min`,
+these extremes and report both (`value` and `sampled_value`) when they differ. A
+peak-to-peak or ripple is tightened to the joint span: the highest of samples and edges
+minus the lowest of both. An event exactly at the start of the last-half window counts in
+that window with its state after the switching. `min`,
 `max` and the other metric fields themselves stay grid statistics. An extremum strictly
 inside an interval between two events (a resonant peak) is seen by neither.
 
