@@ -1104,9 +1104,6 @@ def _boundary_search(
     probe_dir.mkdir(parents=True, exist_ok=True)
     probes: list[dict[str, Any]] = []
 
-    def accepts(value: float, tag: str) -> bool:
-        return probe(value, tag) == "pass"
-
     def probe(value: float, tag: str) -> str:
         point_dir = probe_dir / tag
         point_dir.mkdir(parents=True, exist_ok=True)
@@ -1141,29 +1138,44 @@ def _boundary_search(
         probes.append(record)
         return status
 
+    # A number is a KPI boundary only between a comparable pass and a
+    # comparable fail. A probe the measurement cannot judge is neither: taking
+    # it for a failure would report where the output grid stops resolving the
+    # waveform as if it were where the design stops meeting its criteria.
+    result_value: float | None = None
+    largest_pass: float | None = None
+    smallest_fail: float | None = None
     low_status = probe(low, "bracket-low")
-    low_ok = low_status == "pass"
-    high_ok = accepts(high, "bracket-high")
-    if low_status == "not_comparable":
-        # Not "no margin": nothing was shown to fail, the measurement cannot say.
-        result_value: float | None = None
-        verdict = "not_comparable_at_bracket_low"
-    elif not low_ok:
-        result_value = None
-        verdict = "no_margin_at_bracket_low"
-    elif high_ok:
-        result_value = high
+    high_status = probe(high, "bracket-high")
+    if low_status != "pass":
+        verdict = (
+            "not_comparable_at_bracket_low"
+            if low_status == "not_comparable"
+            else "no_margin_at_bracket_low"
+        )
+        smallest_fail = low if low_status == "fail" else None
+    elif high_status == "pass":
+        result_value = largest_pass = high
         verdict = "criteria_still_pass_at_bracket_high"
+    elif high_status != "fail":
+        largest_pass = low
+        verdict = "not_comparable_at_bracket_high"
     else:
         left, right = low, high
+        verdict = "bisected"
         for step in range(iterations):
             middle = 0.5 * (left + right)
-            if accepts(middle, f"bisect-{step:02d}"):
+            status = probe(middle, f"bisect-{step:02d}")
+            if status == "pass":
                 left = middle
-            else:
+            elif status == "fail":
                 right = middle
-        result_value = left
-        verdict = "bisected"
+            else:
+                verdict = "not_comparable_inside_bracket"
+                break
+        largest_pass, smallest_fail = left, right
+        if verdict == "bisected":
+            result_value = left
 
     return {
         "parameter": parameter,
@@ -1173,6 +1185,12 @@ def _boundary_search(
         "iterations": iterations,
         "verdict": verdict,
         "max_passing_value_si": result_value,
+        "largest_passing_probe_si": largest_pass,
+        "smallest_failing_probe_si": smallest_fail,
+        "probe_status_counts": {
+            status: sum(1 for item in probes if item.get("status") == status)
+            for status in ("pass", "fail", "not_comparable")
+        },
         "max_passing_drift_percent": (
             None
             if result_value is None or quantity.value == 0.0
