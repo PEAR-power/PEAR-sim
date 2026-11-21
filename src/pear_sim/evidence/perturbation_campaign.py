@@ -473,6 +473,16 @@ def _parse_criteria(raw: Any, model: Model) -> tuple[_Criterion, ...]:
                 provenance=_provenance(entry, name=name),
             )
         )
+    # Verdicts are keyed by id: with a repeated id the later criterion would
+    # silently replace the earlier one, and the order would decide acceptance.
+    seen: set[str] = set()
+    for criterion in criteria:
+        if criterion.id in seen:
+            raise PerturbationError(
+                f"criteria: id {criterion.id!r} is used more than once; every "
+                "criterion needs its own id (an omitted id defaults to c<index>)"
+            )
+        seen.add(criterion.id)
     return tuple(criteria)
 
 
