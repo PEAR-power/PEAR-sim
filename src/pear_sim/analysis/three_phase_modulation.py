@@ -609,7 +609,7 @@ def _block_projection(
     *,
     run_start: float,
     run_stop: float,
-    edge_counts: Counter[str],
+    edge_counts: dict[str, Any],
 ) -> dict[str, Any]:
     config = block["config"]
     fundamental_period = 1.0 / config["fundamental_frequency_hz"]
@@ -651,13 +651,23 @@ def _block_projection(
         range(len(rows)), key=lambda index: (pulse_values[index], rows[index]["sample_s"])
     )
     zoom = rows[zoom_index]
-    gate_counts = {gate_id: int(edge_counts[gate_id]) for gate_id in block["gate_output_ids"]}
+    def by_output(counter: Counter[str]) -> dict[str, int]:
+        return {gate_id: int(counter[gate_id]) for gate_id in block["gate_output_ids"]}
+
+    gate_counts = by_output(edge_counts["scheduled"])
+    forced_counts = by_output(edge_counts["forced"])
     return {
         **block,
         "summary": {
             "source_cycle_count": len(rows),
             "scheduled_gate_edge_count": sum(gate_counts.values()),
             "scheduled_gate_edges_by_output": gate_counts,
+            "forced_gate_edge_count": sum(forced_counts.values()),
+            "forced_gate_edges_by_output": forced_counts,
+            "window_release_edge_count": sum(by_output(edge_counts["releases"]).values()),
+            "suppressed_command_edge_count": sum(
+                by_output(edge_counts["suppressed"]).values()
+            ),
             "minimum_duty": min(all_duties),
             "maximum_duty": max(all_duties),
             "minimum_reference": min(all_references),
@@ -699,6 +709,104 @@ def _block_projection(
     }
 
 
+# Every EFFECTIVE gate change is one of these two kinds.  Inside a
+# perturbations.forced_gate_windows entry the solver logs a change as
+# ``forced_gate`` (with the true effective ``previous``); the release edge at the
+# window end is logged as ``scheduled_gate`` although no command produced it, and
+# a command edge the window masks produces no event at all.  Comparing only
+# ``scheduled_gate`` events with the command record therefore miscounts the
+# moment a window touches an SPWM output.
+_EFFECTIVE_GATE_EVENT_KINDS = ("scheduled_gate", "forced_gate")
+
+
+def _spwm_forced_windows(
+    result: Any, gate_ids: set[str], *, run_start: float, run_stop: float
+) -> list[Any]:
+    """Declared forced windows on SPWM outputs, refusing ones we cannot reconcile."""
+
+    windows = [
+        window
+        for window in getattr(result.model, "forced_gate_windows", ()) or ()
+        if window.control_id in gate_ids
+    ]
+    for window in windows:
+        from_s = _finite(window.from_s, name=f"forced window on {window.control_id}.from_s")
+        _finite(window.to_s, name=f"forced window on {window.control_id}.to_s")
+        if from_s <= run_start:
+            # The result records the forced (effective) initial level only; the
+            # unforced command level at transient.start is not in it, so the first
+            # edge after the window could not be checked against anything.
+            raise ThreePhaseModulationError(
+                f"Forced gate window on {window.control_id!r} "
+                f"[{window.from_s:.17g}, {window.to_s:.17g}) s is open at "
+                f"transient.start ({run_start:.17g} s); the unforced SPWM level there is "
+                "not recorded, so realized edges cannot be reconciled with the commands. "
+                "Start the window after transient.start."
+            )
+    return windows
+
+
+def _expected_effective_edges(
+    expected_commands: list[tuple[float, str, bool]],
+    windows: list[Any],
+    initial_states: dict[str, bool],
+    *,
+    run_start: float,
+    run_stop: float,
+) -> tuple[list[tuple[float, str, bool, str]], Counter[str], Counter[str]]:
+    """Replay command edges through the declared override mask.
+
+    Returns the expected effective edges ``(time, target, current, kind)``, the
+    command edges a window masked (no effective change), and the window-release
+    edges (a ``scheduled_gate`` change at a window end with no command behind it).
+    """
+
+    commands_by_gate: dict[str, list[tuple[float, bool]]] = {gate: [] for gate in initial_states}
+    for time, target, value in expected_commands:
+        commands_by_gate[target].append((time, value))
+    windows_by_gate: dict[str, list[Any]] = {gate: [] for gate in initial_states}
+    for window in windows:
+        windows_by_gate[window.control_id].append(window)
+
+    expected: list[tuple[float, str, bool, str]] = []
+    suppressed: Counter[str] = Counter()
+    releases: Counter[str] = Counter()
+    for gate, commands in commands_by_gate.items():
+        gate_windows = windows_by_gate[gate]
+        if not gate_windows:
+            expected.extend((time, gate, value, "scheduled_gate") for time, value in commands)
+            continue
+        # Window bounds are integration restarts only strictly inside the run,
+        # exactly as the solver schedules them.
+        boundaries = {
+            bound
+            for window in gate_windows
+            for bound in (window.from_s, window.to_s)
+            if run_start < bound < run_stop
+        }
+        commands_at: dict[float, list[bool]] = {}
+        for time, value in commands:
+            commands_at.setdefault(time, []).append(value)
+        natural = initial_states[gate]
+        effective = natural
+        for time in sorted(set(commands_at) | boundaries):
+            commanded = commands_at.get(time, [])
+            for value in commanded:
+                natural = value
+            active = [window for window in gate_windows if window.contains(time)]
+            value = active[0].level if active else natural
+            if value == effective:
+                suppressed[gate] += len(commanded)
+                continue
+            kind = "forced_gate" if active else "scheduled_gate"
+            if kind == "scheduled_gate" and not commanded:
+                releases[gate] += 1
+            expected.append((time, gate, value, kind))
+            effective = value
+    expected.sort(key=lambda edge: (edge[0], edge[2], edge[1]))
+    return expected, suppressed, releases
+
+
 def _validated_realized_gate_events(
     result: Any,
     blocks: list[dict[str, Any]],
@@ -706,8 +814,9 @@ def _validated_realized_gate_events(
     *,
     run_start: float,
     run_stop: float,
-) -> Counter[str]:
-    """Bind every stored SPWM command edge to the realized scheduled-event log."""
+) -> dict[str, Any]:
+    """Bind every stored SPWM command edge, through the declared forced windows,
+    to the realized ``scheduled_gate``/``forced_gate`` event log."""
 
     phase_gates = {
         (block["block_id"], row["phase"]): (
@@ -718,7 +827,8 @@ def _validated_realized_gate_events(
         for row in block["bridge"]["phases"]
     }
     gate_ids = {gate_id for high_low in phase_gates.values() for gate_id in high_low}
-    expected: list[tuple[float, str, bool]] = []
+    windows = _spwm_forced_windows(result, gate_ids, run_start=run_start, run_stop=run_stop)
+    commands: list[tuple[float, str, bool]] = []
     for cycle in cycles:
         block_id = cycle["block_id"]
         for phase in _PHASES:
@@ -730,25 +840,20 @@ def _validated_realized_gate_events(
                 (pulse["end_s"], high_id, False),
                 (pulse["low_turn_on_s"], low_id, True),
             )
-            expected.extend(
+            commands.extend(
                 candidate for candidate in candidates if run_start < candidate[0] <= run_stop
             )
-    expected.sort(key=lambda edge: (edge[0], edge[2], edge[1]))
+    commands.sort(key=lambda edge: (edge[0], edge[2], edge[1]))
 
     events = getattr(result, "events", None)
     if not isinstance(events, list):
         raise ThreePhaseModulationError("Simulation result events must be a list")
-    actual = [
+    logged = [
         event
         for event in events
-        if getattr(event, "kind", None) == "scheduled_gate"
+        if getattr(event, "kind", None) in _EFFECTIVE_GATE_EVENT_KINDS
         and getattr(event, "target", None) in gate_ids
     ]
-    if len(actual) != len(expected):
-        raise ThreePhaseModulationError(
-            "Realized scheduled SPWM event count disagrees with deterministic "
-            f"commands: got {len(actual)}, expected {len(expected)}"
-        )
 
     intervals = getattr(result, "mode_intervals", None)
     if not isinstance(intervals, list) or not intervals:
@@ -772,37 +877,77 @@ def _validated_realized_gate_events(
             )
         replay[gate_id] = value
 
-    counts: Counter[str] = Counter()
+    expected, suppressed, releases = _expected_effective_edges(
+        commands, windows, dict(replay), run_start=run_start, run_stop=run_stop
+    )
+    if len(logged) != len(expected):
+        window_note = (
+            f" and {len(windows)} declared forced window(s) on SPWM outputs "
+            f"({', '.join(sorted({window.control_id for window in windows}))})"
+            if windows
+            else ""
+        )
+        raise ThreePhaseModulationError(
+            "Realized SPWM gate event count disagrees with deterministic "
+            f"commands{window_note}: got {len(logged)}, expected {len(expected)}"
+        )
+
+    previous_time = -math.inf
+    for event_index, event in enumerate(logged):
+        time = _finite(getattr(event, "time", None), name=f"SPWM gate event {event_index}.time")
+        if time < previous_time:
+            raise ThreePhaseModulationError("Realized SPWM gate events are not time-monotonic")
+        previous_time = time
+    # Same key as the expected list.  The solver logs simultaneous edges in its own
+    # control order; only the order within one bit-identical instant is normalized.
+    actual = sorted(
+        logged,
+        key=lambda event: (event.time, event.current is True, str(event.target)),
+    )
+
+    counts: dict[str, Counter[str]] = {kind: Counter() for kind in _EFFECTIVE_GATE_EVENT_KINDS}
     for event_index, (event, expected_edge) in enumerate(zip(actual, expected, strict=True)):
-        expected_time, expected_target, expected_current = expected_edge
+        expected_time, expected_target, expected_current, expected_kind = expected_edge
         actual_time = _finite(
             getattr(event, "time", None),
-            name=f"scheduled SPWM event {event_index}.time",
+            name=f"SPWM gate event {event_index}.time",
         )
         actual_target = getattr(event, "target", None)
         actual_current = getattr(event, "current", None)
         actual_previous = getattr(event, "previous", None)
         if actual_target != expected_target or actual_current is not expected_current:
             raise ThreePhaseModulationError(
-                f"Scheduled SPWM event {event_index} target/state disagrees with "
+                f"SPWM gate event {event_index} target/state disagrees with "
                 "the deterministic command record"
             )
         _require_float_match(
             actual_time,
             expected_time,
-            name=f"scheduled SPWM event {event_index}.time",
+            name=f"SPWM gate event {event_index}.time",
         )
+        if event.kind != expected_kind:
+            raise ThreePhaseModulationError(
+                f"SPWM gate event {event_index} on {expected_target!r} kind disagrees "
+                f"with the declared forced windows: got {event.kind!r}, "
+                f"expected {expected_kind!r}"
+            )
         if not isinstance(actual_previous, bool) or actual_previous is not replay[expected_target]:
             raise ThreePhaseModulationError(
-                f"Scheduled SPWM event {event_index} previous state disagrees with gate replay"
+                f"SPWM gate event {event_index} previous state disagrees with gate replay"
             )
         if actual_previous is actual_current:
             raise ThreePhaseModulationError(
-                f"Scheduled SPWM event {event_index} is not a boolean transition"
+                f"SPWM gate event {event_index} is not a boolean transition"
             )
         replay[expected_target] = actual_current
-        counts[expected_target] += 1
-    return counts
+        counts[expected_kind][expected_target] += 1
+    return {
+        "scheduled": counts["scheduled_gate"],
+        "forced": counts["forced_gate"],
+        "suppressed": suppressed,
+        "releases": releases,
+        "windows": windows,
+    }
 
 
 def build_three_phase_modulation_observation(
@@ -876,8 +1021,8 @@ def build_three_phase_modulation_observation(
             "validation_claim": False,
             "hardware_sign_off_allowed": False,
             "statement": (
-                "Recorded sampled-SPWM commands, realized scheduling counters, and "
-                "explicit ideal-switch bindings only; this artifact does not establish "
+                "Recorded sampled-SPWM commands, realized scheduled and forced gate "
+                "counters, and explicit ideal-switch bindings only; this artifact does not establish "
                 "physical driver timing, device behavior, or inverter validation."
             ),
         },
@@ -890,15 +1035,24 @@ def build_three_phase_modulation_observation(
                 "expanded_control_metadata_and_explicit_ideal_switch_control_p_n_fields"
             ),
             "command_projection_source": "validated_result_modulation_cycles",
+            "realized_edge_reconciliation": (
+                "commands_through_declared_forced_gate_windows_vs_scheduled_and_forced_gate_events"
+            ),
         },
         "run_window": {"start_s": run_start, "stop_s": run_stop},
+        # Declared perturbations.forced_gate_windows on this artifact's outputs; a
+        # forced window changes the realization, never the command record.
+        "forced_gate_windows": [window.as_dict() for window in edge_counts["windows"]],
         "blocks": projected_blocks,
         "summary": {
             "block_count": len(projected_blocks),
             "phase_count": 3 * len(projected_blocks),
             "gate_output_count": 6 * len(projected_blocks),
             "source_cycle_count": len(cycles),
-            "scheduled_gate_edge_count": sum(edge_counts.values()),
+            "scheduled_gate_edge_count": sum(edge_counts["scheduled"].values()),
+            "forced_gate_edge_count": sum(edge_counts["forced"].values()),
+            "window_release_edge_count": sum(edge_counts["releases"].values()),
+            "suppressed_command_edge_count": sum(edge_counts["suppressed"].values()),
             "observed_overlap_count": 0,
             "acceptance_status": "not_evaluated",
         },

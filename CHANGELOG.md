@@ -7,6 +7,29 @@ break the model format; every break carries a migration note).
 
 ## [Unreleased]
 
+### Fixed
+
+- `three-phase-modulation.json` now reconciles realized SPWM gate edges against the
+  command record **through** the declared `perturbations.forced_gate_windows`. Before,
+  it compared `scheduled_gate` events only with the nominal schedule, so a window that
+  forced an SPWM output (e.g. `bridge.a.high` off for 1 µs mid-pulse) let the solver
+  finish and then failed `write_result` with a count mismatch (`got 53, expected 52`
+  on a 200 µs run):
+  the forced edge was invisible and the window's release edge, logged as
+  `scheduled_gate`, had no command behind it. Each expected edge now carries its kind
+  (`forced_gate` inside a window, `scheduled_gate` outside) and is checked for time,
+  state, kind and continuity. The summaries add `forced_gate_edge_count`,
+  `forced_gate_edges_by_output` (per block), `window_release_edge_count` and
+  `suppressed_command_edge_count` (command edges a window masked);
+  `scheduled_gate_edge_count` still counts `scheduled_gate` events, release edges
+  included. The artifact lists the windows on its outputs under `forced_gate_windows`
+  and names the method in `source_binding.realized_edge_reconciliation`. A window open
+  at `transient.start` on an SPWM output is refused by name: the unforced initial level
+  is not recorded, so nothing honest could be compared. The command record
+  (`modulation-cycles.jsonl`) is unchanged — a window changes the realization, never
+  the command. Additive within v0.1: no run with a forced SPWM edge could produce the
+  artifact before.
+
 ### Added
 
 - Optional model section `switching_transitions` (docs/model-format.md §7c): a

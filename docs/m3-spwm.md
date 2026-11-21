@@ -99,6 +99,12 @@ An SPWM run keeps commanded and realized switching evidence separate:
 - `events.jsonl` is the authoritative realized gate and natural-commutation log;
 - `three-phase-modulation.json` binds the six gate IDs to devices and phases and
   provides bounded command/fundamental and worst-pulse projections for review;
+- a `perturbations.forced_gate_windows` entry on an SPWM output changes the
+  realization, not the command record: `three-phase-modulation.json` replays the
+  commands through the declared windows and checks every realized `scheduled_gate`
+  and `forced_gate` event against that replay, reporting forced edges, window-release
+  edges and masked (suppressed) command edges separately. A window open at
+  `transient.start` on an SPWM output is refused;
 - `harmonics.json` contains producer-computed Fourier observations;
 - the schematic and offline report display the explicit mapping, sequence, carrier
   ratio, modulation index, dead time, harmonic window, bandwidth, and source files.
