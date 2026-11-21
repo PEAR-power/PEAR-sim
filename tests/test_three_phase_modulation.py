@@ -392,10 +392,74 @@ def test_forced_gate_event_disagreeing_with_the_window_fails_closed(tmp_path: Pa
         build_three_phase_modulation_observation(replace(result, events=events))
 
 
-def test_forced_window_open_at_run_start_is_refused_by_name(tmp_path: Path) -> None:
-    # The unforced initial level of an SPWM output is not in the result, so a window
-    # covering transient.start leaves nothing honest to compare the first edge with.
-    windows = [{"control": "bridge.a.low", "from": "0 s", "to": "5 us", "level": "off"}]
-    result = HybridSimulator(load_model(_short_spwm_model(tmp_path, windows))).simulate()
-    with pytest.raises(ThreePhaseModulationError, match=r"bridge\.a\.low.*0.*transient\.start"):
-        build_three_phase_modulation_observation(result)
+@pytest.mark.parametrize(
+    "control,changes_level",
+    [("bridge.a.high", False), ("bridge.a.low", True)],
+)
+def test_forced_window_open_at_run_start_is_reconciled(
+    tmp_path: Path, control: str, changes_level: bool
+) -> None:
+    # Regression (review of #46): a window starting at transient.start was refused,
+    # although the solver derives the unforced initial SPWM level from the schedule
+    # before applying the mask. bridge.a.high is off until 11.7 us anyway (no change);
+    # bridge.a.low is on, so the window holds it off and its end is a release edge.
+    windows = [{"control": control, "from": "0 s", "to": "5 us", "level": "off"}]
+    run_dir = write_result(
+        HybridSimulator(load_model(_short_spwm_model(tmp_path, windows))).simulate(),
+        tmp_path / "run",
+    )
+    summary = _read_json(run_dir / "three-phase-modulation.json")["summary"]
+    assert summary["forced_gate_edge_count"] == 0
+    assert summary["window_release_edge_count"] == (1 if changes_level else 0)
+    assert summary["suppressed_command_edge_count"] == 0
+
+
+def test_window_release_at_transient_stop_is_kept_when_another_gate_switches_there(
+    tmp_path: Path,
+) -> None:
+    # Regression (review of #46): with stop exactly on bridge.b.high's scheduled
+    # turn-off, the solver re-evaluates every forced window at stop and logs
+    # bridge.a.high's release there too; the replay skipped it ("got 9, expected 8").
+    plain = HybridSimulator(load_model(_short_spwm_model(tmp_path / "probe", None))).simulate()
+    stop = plain.modulation_cycles[0]["command_pulses"]["b"]["end_s"]
+    windows = [
+        {"control": "bridge.a.high", "from": "20 us", "to": f"{stop!r} s", "level": "off"}
+    ]
+    model_path = _short_spwm_model(tmp_path, windows)
+    import yaml
+
+    data = yaml.safe_load(model_path.read_text(encoding="utf-8"))
+    data["analysis"]["transient"]["stop"] = f"{stop!r} s"
+    model_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    result = HybridSimulator(load_model(model_path)).simulate()
+    assert result.model.transient.stop == stop
+    at_stop = sorted(
+        (event.target, event.kind, event.current)
+        for event in result.events
+        if event.time == stop and event.kind in ("scheduled_gate", "forced_gate")
+    )
+    assert at_stop == [
+        ("bridge.a.high", "scheduled_gate", True),
+        ("bridge.b.high", "scheduled_gate", False),
+    ]
+
+    run_dir = write_result(result, tmp_path / "run")
+    summary = _read_json(run_dir / "three-phase-modulation.json")["summary"]
+    assert summary["forced_gate_edge_count"] == 1
+    assert summary["window_release_edge_count"] == 1
+
+
+def test_report_card_shows_every_realized_gate_edge(tmp_path: Path) -> None:
+    # Regression (review of #46): "Realized gate edges" showed scheduled_gate events
+    # only, understating the realization by the forced edges.
+    windows = [{"control": "bridge.a.high", "from": "20 us", "to": "21 us", "level": "off"}]
+    run_dir = write_result(
+        HybridSimulator(load_model(_short_spwm_model(tmp_path, windows))).simulate(),
+        tmp_path / "run",
+    )
+    total = len(_gate_events(run_dir))
+    summary = _read_json(run_dir / "three-phase-modulation.json")["summary"]
+    assert summary["effective_gate_edge_count"] == total
+    assert total == summary["scheduled_gate_edge_count"] + summary["forced_gate_edge_count"]
+    html = generate_report(run_dir, tmp_path / "report").report_html.read_text("utf-8")
+    assert f"<small>Realized gate edges</small><strong>{total}</strong>" in html

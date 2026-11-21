@@ -1730,7 +1730,7 @@ def _three_phase_modulation_section(
       <div class="card"><small>Blocks</small><strong>{_escape(_display_value(summary.get("block_count")))}</strong></div>
       <div class="card"><small>Phases / gates</small><strong>{_escape(_display_value(summary.get("phase_count")))} / {_escape(_display_value(summary.get("gate_output_count")))}</strong></div>
       <div class="card"><small>Full command rows</small><strong>{_escape(_display_value(source.get("row_count")))}</strong><br><code>{_escape(_display_value(source.get("source")))}</code></div>
-      <div class="card"><small>Realized gate edges</small><strong>{_escape(_display_value(summary.get("scheduled_gate_edge_count")))}</strong><br><code>events.jsonl authoritative</code></div>
+      <div class="card"><small>Realized gate edges</small><strong>{_escape(_display_value(summary.get("effective_gate_edge_count")))}</strong><br><code>events.jsonl authoritative</code></div>
       <div class="card"><small>Forced gate edges</small><strong>{_escape(_display_value(summary.get("forced_gate_edge_count")))}</strong><br><code>perturbations.forced_gate_windows</code></div>
       <div class="card"><small>Overlap</small><strong>{_escape(_display_value(summary.get("observed_overlap_count")))}</strong></div>
       <div class="card"><small>Acceptance</small><strong>{_escape(_display_value(summary.get("acceptance_status")))}</strong></div>

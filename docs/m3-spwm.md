@@ -103,8 +103,7 @@ An SPWM run keeps commanded and realized switching evidence separate:
   realization, not the command record: `three-phase-modulation.json` replays the
   commands through the declared windows and checks every realized `scheduled_gate`
   and `forced_gate` event against that replay, reporting forced edges, window-release
-  edges and masked (suppressed) command edges separately. A window open at
-  `transient.start` on an SPWM output is refused;
+  edges and masked (suppressed) command edges separately;
 - `harmonics.json` contains producer-computed Fourier observations;
 - the schematic and offline report display the explicit mapping, sequence, carrier
   ratio, modulation index, dead time, harmonic window, bandwidth, and source files.

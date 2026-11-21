@@ -18,14 +18,18 @@ break the model format; every break carries a migration note).
   the forced edge was invisible and the window's release edge, logged as
   `scheduled_gate`, had no command behind it. Each expected edge now carries its kind
   (`forced_gate` inside a window, `scheduled_gate` outside) and is checked for time,
-  state, kind and continuity. The summaries add `forced_gate_edge_count`,
+  state, kind and continuity. The replay uses the solver's own rules: the unforced
+  initial level comes from the schedule at `transient.start` (so a window already open
+  there is reconciled, and the recorded initial state must equal the masked level), and
+  windows are re-evaluated at `transient.stop` exactly when some gate has a scheduled
+  edge there (so a release landing on `stop` is expected). The summaries add
+  `effective_gate_edge_count` (scheduled + forced — the report's "Realized gate edges"
+  card now shows it), `forced_gate_edge_count`,
   `forced_gate_edges_by_output` (per block), `window_release_edge_count` and
   `suppressed_command_edge_count` (command edges a window masked);
   `scheduled_gate_edge_count` still counts `scheduled_gate` events, release edges
   included. The artifact lists the windows on its outputs under `forced_gate_windows`
-  and names the method in `source_binding.realized_edge_reconciliation`. A window open
-  at `transient.start` on an SPWM output is refused by name: the unforced initial level
-  is not recorded, so nothing honest could be compared. The command record
+  and names the method in `source_binding.realized_edge_reconciliation`. The command record
   (`modulation-cycles.jsonl`) is unchanged — a window changes the realization, never
   the command. Additive within v0.1: no run with a forced SPWM edge could produce the
   artifact before.

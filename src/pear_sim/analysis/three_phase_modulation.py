@@ -16,6 +16,7 @@ from collections.abc import Mapping
 import math
 from typing import Any
 
+from pear_sim.core.scheduling import _build_gate_schedule, _initial_gate_values
 from pear_sim.run.contracts import model_hashes
 
 
@@ -664,6 +665,7 @@ def _block_projection(
             "scheduled_gate_edges_by_output": gate_counts,
             "forced_gate_edge_count": sum(forced_counts.values()),
             "forced_gate_edges_by_output": forced_counts,
+            "effective_gate_edge_count": sum(gate_counts.values()) + sum(forced_counts.values()),
             "window_release_edge_count": sum(by_output(edge_counts["releases"]).values()),
             "suppressed_command_edge_count": sum(
                 by_output(edge_counts["suppressed"]).values()
@@ -719,10 +721,8 @@ def _block_projection(
 _EFFECTIVE_GATE_EVENT_KINDS = ("scheduled_gate", "forced_gate")
 
 
-def _spwm_forced_windows(
-    result: Any, gate_ids: set[str], *, run_start: float, run_stop: float
-) -> list[Any]:
-    """Declared forced windows on SPWM outputs, refusing ones we cannot reconcile."""
+def _spwm_forced_windows(result: Any, gate_ids: set[str]) -> list[Any]:
+    """Declared forced windows on SPWM outputs."""
 
     windows = [
         window
@@ -730,29 +730,31 @@ def _spwm_forced_windows(
         if window.control_id in gate_ids
     ]
     for window in windows:
-        from_s = _finite(window.from_s, name=f"forced window on {window.control_id}.from_s")
+        _finite(window.from_s, name=f"forced window on {window.control_id}.from_s")
         _finite(window.to_s, name=f"forced window on {window.control_id}.to_s")
-        if from_s <= run_start:
-            # The result records the forced (effective) initial level only; the
-            # unforced command level at transient.start is not in it, so the first
-            # edge after the window could not be checked against anything.
-            raise ThreePhaseModulationError(
-                f"Forced gate window on {window.control_id!r} "
-                f"[{window.from_s:.17g}, {window.to_s:.17g}) s is open at "
-                f"transient.start ({run_start:.17g} s); the unforced SPWM level there is "
-                "not recorded, so realized edges cannot be reconciled with the commands. "
-                "Start the window after transient.start."
-            )
     return windows
+
+
+def _solver_reevaluates_windows_at_stop(model: Any, run_start: float, run_stop: float) -> bool:
+    """Mirror of the solver's stop rule: forced windows are re-evaluated at
+    ``transient.stop`` only when a scheduled edge of ANY gate lands exactly there
+    (``scheduled_at_target`` in ``HybridSimulator.simulate``); window bounds
+    themselves are restart instants only strictly inside the run.  Uses the same
+    schedule builder as the solver instead of re-deriving it."""
+
+    schedule = _build_gate_schedule(model.controls, run_start, run_stop)
+    return any(edge[0] == run_stop for edge in schedule.edges)
 
 
 def _expected_effective_edges(
     expected_commands: list[tuple[float, str, bool]],
     windows: list[Any],
-    initial_states: dict[str, bool],
+    natural_initial: dict[str, bool],
+    effective_initial: dict[str, bool],
     *,
     run_start: float,
     run_stop: float,
+    reevaluate_at_stop: bool,
 ) -> tuple[list[tuple[float, str, bool, str]], Counter[str], Counter[str]]:
     """Replay command edges through the declared override mask.
 
@@ -761,10 +763,12 @@ def _expected_effective_edges(
     edges (a ``scheduled_gate`` change at a window end with no command behind it).
     """
 
-    commands_by_gate: dict[str, list[tuple[float, bool]]] = {gate: [] for gate in initial_states}
+    commands_by_gate: dict[str, list[tuple[float, bool]]] = {
+        gate: [] for gate in effective_initial
+    }
     for time, target, value in expected_commands:
         commands_by_gate[target].append((time, value))
-    windows_by_gate: dict[str, list[Any]] = {gate: [] for gate in initial_states}
+    windows_by_gate: dict[str, list[Any]] = {gate: [] for gate in effective_initial}
     for window in windows:
         windows_by_gate[window.control_id].append(window)
 
@@ -784,11 +788,13 @@ def _expected_effective_edges(
             for bound in (window.from_s, window.to_s)
             if run_start < bound < run_stop
         }
+        if reevaluate_at_stop:
+            boundaries.add(run_stop)
         commands_at: dict[float, list[bool]] = {}
         for time, value in commands:
             commands_at.setdefault(time, []).append(value)
-        natural = initial_states[gate]
-        effective = natural
+        natural = natural_initial[gate]
+        effective = effective_initial[gate]
         for time in sorted(set(commands_at) | boundaries):
             commanded = commands_at.get(time, [])
             for value in commanded:
@@ -827,7 +833,7 @@ def _validated_realized_gate_events(
         for row in block["bridge"]["phases"]
     }
     gate_ids = {gate_id for high_low in phase_gates.values() for gate_id in high_low}
-    windows = _spwm_forced_windows(result, gate_ids, run_start=run_start, run_stop=run_stop)
+    windows = _spwm_forced_windows(result, gate_ids)
     commands: list[tuple[float, str, bool]] = []
     for cycle in cycles:
         block_id = cycle["block_id"]
@@ -877,8 +883,38 @@ def _validated_realized_gate_events(
             )
         replay[gate_id] = value
 
+    # The solver seeds its unforced shadow from the schedule at transient.start
+    # and applies the mask on top; the first mode interval records only the
+    # masked (effective) level.  Recompute the unforced level with the solver's
+    # own rule and require that masking it reproduces the recorded state.
+    natural_initial = {
+        gate_id: value
+        for gate_id, value in _initial_gate_values(result.model.controls, run_start).items()
+        if gate_id in gate_ids
+    }
+    for gate_id in sorted(gate_ids):
+        if gate_id not in natural_initial:
+            raise ThreePhaseModulationError(
+                f"Schedule gives no initial level for SPWM output {gate_id!r}"
+            )
+        active = [window for window in windows if window.control_id == gate_id
+                  and window.contains(run_start)]
+        masked = active[0].level if active else natural_initial[gate_id]
+        if masked is not replay[gate_id]:
+            raise ThreePhaseModulationError(
+                f"Initial state of {gate_id!r} disagrees with the schedule"
+                + (" under its forced window" if active else "")
+                + f": recorded {replay[gate_id]}, expected {masked}"
+            )
     expected, suppressed, releases = _expected_effective_edges(
-        commands, windows, dict(replay), run_start=run_start, run_stop=run_stop
+        commands,
+        windows,
+        natural_initial,
+        dict(replay),
+        run_start=run_start,
+        run_stop=run_stop,
+        reevaluate_at_stop=bool(windows)
+        and _solver_reevaluates_windows_at_stop(result.model, run_start, run_stop),
     )
     if len(logged) != len(expected):
         window_note = (
@@ -1051,6 +1087,8 @@ def build_three_phase_modulation_observation(
             "source_cycle_count": len(cycles),
             "scheduled_gate_edge_count": sum(edge_counts["scheduled"].values()),
             "forced_gate_edge_count": sum(edge_counts["forced"].values()),
+            "effective_gate_edge_count": sum(edge_counts["scheduled"].values())
+            + sum(edge_counts["forced"].values()),
             "window_release_edge_count": sum(edge_counts["releases"].values()),
             "suppressed_command_edge_count": sum(edge_counts["suppressed"].values()),
             "observed_overlap_count": 0,
