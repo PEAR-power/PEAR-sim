@@ -9,6 +9,16 @@ break the model format; every break carries a migration note).
 
 ### Fixed
 
+- Core loss (iGSE): with `1/period` in a **gap between two Steinmetz ranges** of a
+  material card, the last range was used whatever its distance, and the flag reported
+  the distance to that far range. With ranges 25–99 kHz and 200–1000 kHz and a 100 kHz
+  waveform on `examples/buck_core_losses_n87.yaml`, the 200–1000 kHz coefficients were
+  used with `signed_distance_hz = -900000`. The range whose edge is nearest is now used
+  (the lower one on an exact tie), here 25–99 kHz with `signed_distance_hz = +1000`, so
+  the estimate equals the one from a card whose lower range covers 100 kHz.
+  `signed_distance_hz` is always measured to an edge of the range that was used.
+  Estimates with `1/period` inside a range, or outside all of them, are unchanged.
+
 - `fsw_measured_hz` in perturbation-campaign summaries (`pear-sim sweep perturbation`)
   is now the switching frequency, not the pooled rate of gate rises. Before, it counted
   rising edges of **all** gates together and counted `forced_gate` rises and the

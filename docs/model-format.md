@@ -1471,8 +1471,10 @@ Equations and conventions:
   form, so a sinusoid reproduces the Steinmetz equation exactly. The integral runs over
   the recorded samples as a piecewise-linear B(t); at least 64 samples per period are
   required (`analysis.transient.output_step`).
-- The Steinmetz range is the one containing `1/period`; outside every range the
-  nearest one is used and flagged `FREQUENCY_OUTSIDE_RANGES` with the signed distance.
+- The Steinmetz range is the one containing `1/period`. Outside every range, including
+  in a gap between two ranges, the range whose edge is nearest is used (the lower one on
+  an exact tie) and flagged `FREQUENCY_OUTSIDE_RANGES`; `signed_distance_hz` is
+  `1/period` minus that edge of the range that was used.
 
 The `core-losses.json` artifact holds, per inductor: `status` (`estimated` or
 `not_estimated` with a `reason`), the material card and geometry used, the flux

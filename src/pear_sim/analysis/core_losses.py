@@ -135,15 +135,27 @@ def igse_volumetric_loss(
 
 
 def _select_range(card: CoreMaterialCard, frequency_hz: float) -> tuple[SteinmetzRange, float]:
-    """Range containing f, else the nearest one plus the signed distance (Hz)."""
+    """Range containing f, else the one whose edge is nearest, plus the signed distance.
 
+    The distance is ``f - edge`` to the nearest edge OF THE RETURNED RANGE
+    (negative below it, positive above it), so the number and the coefficients
+    describe the same decision. A card may leave a gap between ranges: inside
+    one, the nearer side wins, and the lower range on an exact tie.
+    """
+
+    best: tuple[SteinmetzRange, float] | None = None
     for item in card.ranges:
         if item.frequency_min_hz <= frequency_hz <= item.frequency_max_hz:
             return item, 0.0
-    first, last = card.ranges[0], card.ranges[-1]
-    if frequency_hz < first.frequency_min_hz:
-        return first, frequency_hz - first.frequency_min_hz
-    return last, frequency_hz - last.frequency_max_hz
+        distance = (
+            frequency_hz - item.frequency_min_hz
+            if frequency_hz < item.frequency_min_hz
+            else frequency_hz - item.frequency_max_hz
+        )
+        if best is None or abs(distance) < abs(best[1]):
+            best = (item, distance)
+    assert best is not None  # a card always carries at least one range
+    return best
 
 
 def _one_period(time: np.ndarray, values: np.ndarray, period: float) -> tuple[np.ndarray, np.ndarray]:
