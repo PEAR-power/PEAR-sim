@@ -1369,7 +1369,8 @@ and additive (models without them are byte-identical in the contracts).
 The `losses-thermal.json` artifact in the bundle contains, per device: conduction
 energy and mean power (trapezoid over the output grid), switching-energy sums with
 event counters (hard diode commutation via `switch_manager` and soft via
-`natural_commutation` counted the same way), per-table extrapolation COUNTERS, static
+`natural_commutation` counted the same way; gate edges from both `scheduled_gate` and
+`forced_gate` events), per-table extrapolation COUNTERS, static
 case temperature, a Tj waveform from the exact Foster recursion (energy-balance audit
 with independent recomputation; the junction-to-case stages start at their steady
 rise for the run-mean power, the same assumption the static case temperature makes,
@@ -1378,6 +1379,13 @@ count (ASTM E1049) over ΔTj — the count is a FACT about the waveform; a lifet
 model is deliberately NOT part of the artifact. Declared omissions: no TIM/heatsink
 dynamics, no coupling of devices on a shared heatsink, no
 spreading/orientation/altitude, no temperature dependence of switching energies.
+The current at an edge is read from the output grid: the first sample at/after a
+turn-on, the last sample strictly before a turn-off or recovery, using the solver's own
+event/sample coincidence tolerance (`max(1e-15 s, 1e-12 · run span)`) to decide the side. When the device's
+neighbouring edge falls between the event and that sample (a pulse shorter than
+`output_step`), no sample shows the conducting state; such an edge is counted in
+`events_unresolved_by_output_grid`, its energy is not booked (the totals are then a lower
+bound) and a warning says so. Reduce `output_step` to resolve it.
 Example: `examples/buck_with_loss_cards.yaml`.
 
 **`loss_analysis.tj_mode`** (optional, default `declared`):
@@ -1716,7 +1724,7 @@ The CSV contains the regular `output_step` grid. Times and discrete state change
 
 Each line is a separate event JSON. The event log is used to diagnose PWM, diode commutation and mode changes. A consumer should tolerate new fields being added within the same run schema version.
 
-The current record contains `time`, `kind`, `target`, `previous` and `current`. `kind` currently takes `scheduled_gate`, `natural_commutation` or `switch_manager`.
+The current record contains `time`, `kind`, `target`, `previous` and `current`. `kind` currently takes `scheduled_gate`, `forced_gate`, `natural_commutation` or `switch_manager`. A gate change caused by a `perturbations.forced_gate_windows` entry is recorded as `forced_gate` (one event per control per timestamp, with the true effective `previous`); every other realized gate change is `scheduled_gate`.
 
 ### 11.4. `metrics.json`
 
@@ -1805,7 +1813,10 @@ a presumption.
 
 ### 11.7. Switching and harmonic artifacts
 
-Fixed `pwm`/`complementary_pwm` use `gate-drive.json` v0.1. A
+Fixed `pwm`/`complementary_pwm` use `gate-drive.json` v0.1. Its timeline follows every
+effective gate change, both `scheduled_gate` and `forced_gate` events; each change
+carries `source_event_kind`, and the summary counts `scheduled_gate_event_count`,
+`forced_gate_event_count` and their sum `effective_gate_event_count` separately. A
 `three_phase_spwm` run instead writes `modulation-cycles.jsonl` as the authoritative
 set of command cells and `three-phase-modulation.json` as a bounded projection of the
 phase -> gate -> device map, the fundamental waveform and a worst-pulse zoom. The full

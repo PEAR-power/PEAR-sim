@@ -182,6 +182,29 @@ def extract_mode_sequence(
         )
     window_start = start + index * period_s
     window_end = window_start + period_s
+    # A forced gate window is a one-off override, not part of the periodic
+    # schedule: its edges are fixed instants that do not move with the design
+    # vector, and the release edge at its end is logged as ``scheduled_gate``.
+    # Reading such a cycle would classify that release as a PWM edge (a
+    # plausible but wrong sensitivity), so a touched cycle is refused.
+    # Half-open on both sides, like the cycle [start, end) and the window
+    # [from, to): a window opening exactly at the cycle's end only meets its
+    # right boundary, which classify() reads as PERIOD_END, and one closing
+    # exactly at the cycle's start releases the gate onto the cycle's first
+    # mode. Neither changes a mode inside the cycle.
+    for window in result.model.forced_gate_windows:
+        if (
+            window.from_s < window_end - merge_tolerance_s
+            and window.to_s > window_start + merge_tolerance_s
+        ):
+            raise ModeSequenceError(
+                f"cycle {index} [{window_start!r}, {window_end!r}] s overlaps "
+                f"perturbations.forced_gate_windows entry on control "
+                f"{window.control_id!r} [{window.from_s!r}, {window.to_s!r}) s; "
+                "a forced override is not part of the periodic schedule, so its "
+                "edges have no sensitivity to the design vector. Pick a "
+                "cycle_index clear of every window."
+            )
 
     # Clip the interval list to the window, merging consecutive fragments that
     # share a signature (a zero-duration stabilisation step splits an interval

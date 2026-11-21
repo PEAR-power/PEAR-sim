@@ -29,6 +29,7 @@ def _write_example_variant(
     *,
     dead_time: str | None = None,
     add_parallel_gate_load: bool = False,
+    perturbations: str | None = None,
 ) -> Path:
     source = EXAMPLE.read_text(encoding="utf-8")
     source = source.replace("stop: 500 us", "stop: 100 us", 1)
@@ -45,6 +46,8 @@ def _write_example_variant(
             + "    - {id: aux_load, type: resistor, p: aux, n: gnd, value: 100 ohm}\n",
             1,
         )
+    if perturbations is not None:
+        source = source.rstrip("\n") + "\n\n" + perturbations
     path = tmp_path / "synchronous-buck-variant.yaml"
     path.write_text(source, encoding="utf-8")
     return path
@@ -170,6 +173,64 @@ def test_zero_dead_time_swap_is_one_atomic_off_before_on_transaction(
         ("leg.high", True, False, "turn_off"),
         ("leg.low", False, True, "turn_on"),
     ]
+
+
+def test_forced_turn_off_mid_pulse_is_an_effective_gate_edge(tmp_path: Path) -> None:
+    # Regression: the observer used to read scheduled_gate events only, so a forced
+    # turn-off inside a high pulse left it believing leg.high was still on and the
+    # run failed in write_result (continuity mismatch / false complementary overlap).
+    model_path = _write_example_variant(
+        tmp_path,
+        perturbations=(
+            "perturbations:\n"
+            "  forced_gate_windows:\n"
+            '    - {control: leg.high, from: 10.0 us, to: 10.1 us, level: "off"}\n'
+        ),
+    )
+    result = HybridSimulator(load_model(model_path)).simulate()
+    run_dir = write_result(result, tmp_path / "forced-off-run")
+    gate_drive = _read_json(run_dir / "gate-drive.json")
+
+    timeline = gate_drive["logical_controls"][0]["timeline"]
+    edges = [
+        (
+            change["gate_output_id"],
+            change["previous"],
+            change["current"],
+            change["source_event_kind"],
+        )
+        for transaction in timeline["transactions"]
+        if 9.9e-6 < transaction["time_s"] < 10.2e-6
+        for change in transaction["changes"]
+    ]
+    assert edges == [
+        ("leg.high", True, False, "forced_gate"),
+        ("leg.high", False, True, "scheduled_gate"),
+    ]
+    assert "overlap" not in timeline["observed_state_segment_counts"]
+    assert gate_drive["summary"]["rendered_overlap_segment_count"] == 0
+    assert gate_drive["source_binding"]["timeline_source"] == (
+        "accepted_initial_mode_and_scheduled_and_forced_gate_events"
+    )
+
+    events = [json.loads(line) for line in (run_dir / "events.jsonl").read_text().splitlines()]
+    kinds = [event["kind"] for event in events]
+    summary = gate_drive["summary"]
+    assert summary["forced_gate_event_count"] == kinds.count("forced_gate") == 1
+    assert summary["scheduled_gate_event_count"] == kinds.count("scheduled_gate")
+    assert summary["effective_gate_event_count"] == (
+        summary["scheduled_gate_event_count"] + summary["forced_gate_event_count"]
+    )
+
+
+def test_unforced_run_reports_zero_forced_gate_events(
+    complementary_result: SimulationResult,
+) -> None:
+    from pear_sim.analysis.gate_drive import build_gate_drive_observation
+
+    summary = build_gate_drive_observation(complementary_result)["summary"]
+    assert summary["forced_gate_event_count"] == 0
+    assert summary["effective_gate_event_count"] == summary["scheduled_gate_event_count"]
 
 
 def test_report_renders_static_escaped_gate_drive_section_deterministically(

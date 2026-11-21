@@ -50,7 +50,9 @@ controls additionally records `gate-drive.json`, including:
 - control-to-output and output-to-device mappings;
 - declared command parameters and intrinsic interlock policy;
 - initial and final gate states;
-- exact-time atomic transition groups and resulting states;
+- exact-time atomic transition groups and resulting states, built from every effective
+  gate change (`scheduled_gate` and `forced_gate` events, each tagged with
+  `source_event_kind`);
 - per-control retained/full-run transaction counts, selection and truncation metadata,
   with `events.jsonl` explicitly retained as the authoritative full-run record;
 - observed interlock violations.

@@ -361,7 +361,15 @@ def _initial_gate_states(result: SimulationResult) -> dict[str, bool]:
     return states
 
 
-def _scheduled_transactions(
+# Every EFFECTIVE gate change is one of these two kinds.  The solver records a
+# change inside a perturbations.forced_gate_windows entry as ``forced_gate`` (with
+# the true effective ``previous``), never as ``scheduled_gate``; reading only
+# ``scheduled_gate`` would desynchronize the tracked state from the circuit the
+# moment a window overrides a pulse.
+_EFFECTIVE_GATE_EVENT_KINDS = frozenset({"scheduled_gate", "forced_gate"})
+
+
+def _effective_gate_transactions(
     result: SimulationResult,
     outputs_by_id: dict[str, dict[str, Any]],
     initial_states: dict[str, bool],
@@ -371,22 +379,22 @@ def _scheduled_transactions(
     scheduled: list[tuple[int, Any]] = []
     previous_time = -math.inf
     for event_index, event in enumerate(result.events):
-        if event.kind != "scheduled_gate":
+        if event.kind not in _EFFECTIVE_GATE_EVENT_KINDS:
             continue
         time = _finite_number(event.time, name=f"event {event_index} time")
         if time < previous_time:
-            raise GateDriveError("Scheduled gate events are not time-monotonic")
+            raise GateDriveError("Gate events are not time-monotonic")
         if not start <= time <= stop:
-            raise GateDriveError(f"Scheduled gate event {event_index} is outside the run window")
+            raise GateDriveError(f"Gate event {event_index} is outside the run window")
         previous_time = time
         if event.target not in outputs_by_id:
             raise GateDriveError(
-                f"Scheduled gate event {event_index} targets unknown output {event.target!r}"
+                f"Gate event {event_index} targets unknown output {event.target!r}"
             )
         if not isinstance(event.previous, bool) or not isinstance(event.current, bool):
-            raise GateDriveError(f"Scheduled gate event {event_index} has non-boolean state")
+            raise GateDriveError(f"Gate event {event_index} has non-boolean state")
         if event.previous == event.current:
-            raise GateDriveError(f"Scheduled gate event {event_index} records no transition")
+            raise GateDriveError(f"Gate event {event_index} records no transition")
         scheduled.append((event_index, event))
 
     grouped: list[list[tuple[int, Any]]] = []
@@ -431,6 +439,7 @@ def _scheduled_transactions(
             changes.append(
                 {
                     "source_event_index": event_index,
+                    "source_event_kind": event.kind,
                     "gate_output_id": event.target,
                     "logical_control_id": output["logical_control_id"],
                     "role": output["role"],
@@ -603,7 +612,8 @@ def _timeline(
 def build_gate_drive_observation(result: SimulationResult) -> dict[str, Any]:
     """Build a deterministic gate map and bounded timeline from one accepted result.
 
-    Exact-equal scheduled-event timestamps form one atomic transaction, matching the
+    Exact-equal effective gate-event timestamps (``scheduled_gate`` and
+    ``forced_gate``) form one atomic transaction, matching the
     solver's apply-all-edges-before-stabilization semantics.  The returned timelines
     cover at most one command period per logical block; ``events.jsonl`` remains the
     complete event record.
@@ -616,7 +626,7 @@ def build_gate_drive_observation(result: SimulationResult) -> dict[str, Any]:
     outputs, outputs_by_id = _gate_outputs(result.model)
     logical_controls = _logical_controls(outputs)
     initial_states = _initial_gate_states(result)
-    transactions, final_states = _scheduled_transactions(
+    transactions, final_states = _effective_gate_transactions(
         result,
         outputs_by_id,
         initial_states,
@@ -642,6 +652,14 @@ def build_gate_drive_observation(result: SimulationResult) -> dict[str, Any]:
             ],
         )
 
+    edge_kind_counts: Counter[str] = Counter(
+        {kind: 0 for kind in _EFFECTIVE_GATE_EVENT_KINDS}
+    )
+    edge_kind_counts.update(
+        change["source_event_kind"]
+        for transaction in transactions
+        for change in transaction["changes"]
+    )
     hashes = model_hashes(result.model)
     rendered_overlap_segments = sum(
         control["timeline"]["observed_state_segment_counts"].get("overlap", 0)
@@ -659,8 +677,8 @@ def build_gate_drive_observation(result: SimulationResult) -> dict[str, Any]:
             "validation_claim": False,
             "hardware_sign_off_allowed": False,
             "statement": (
-                "Recorded gate scheduling and explicit model bindings only; this artifact "
-                "does not establish driver timing, device behavior, or hardware safety."
+                "Recorded effective gate changes (scheduled and forced) and explicit "
+                "model bindings only; this artifact does not establish driver timing, device behavior, or hardware safety."
             ),
         },
         "source_binding": {
@@ -668,7 +686,7 @@ def build_gate_drive_observation(result: SimulationResult) -> dict[str, Any]:
             "request_sha256": hashes["request_sha256"],
             "raw_event_artifact": "events.jsonl",
             "mapping_source": "resolved_model_explicit_ideal_switch_control_references",
-            "timeline_source": "accepted_initial_mode_and_scheduled_gate_events",
+            "timeline_source": "accepted_initial_mode_and_scheduled_and_forced_gate_events",
             "transaction_policy": (
                 "bit_identical_event_times_are_atomic_before_topology_stabilization"
             ),
@@ -688,9 +706,9 @@ def build_gate_drive_observation(result: SimulationResult) -> dict[str, Any]:
             "logical_control_count": len(logical_controls),
             "gate_output_count": len(outputs),
             "controlled_device_count": sum(len(output["device_ids"]) for output in outputs),
-            "scheduled_gate_event_count": sum(
-                len(transaction["changes"]) for transaction in transactions
-            ),
+            "scheduled_gate_event_count": edge_kind_counts["scheduled_gate"],
+            "forced_gate_event_count": edge_kind_counts["forced_gate"],
+            "effective_gate_event_count": sum(edge_kind_counts.values()),
             "atomic_transaction_count": len(transactions),
             "rendered_timeline_count": len(logical_controls),
             "rendered_overlap_segment_count": rendered_overlap_segments,
