@@ -1822,6 +1822,14 @@ set of command cells and `three-phase-modulation.json` as a bounded projection o
 phase -> gate -> device map, the fundamental waveform and a worst-pulse zoom. The full
 source of realized changes remains `events.jsonl`; the report does not equate the
 command with its realization.
+A forced gate window (§perturbations) on an SPWM output is reconciled, not ignored:
+the realized `scheduled_gate`/`forced_gate` events must match the commands replayed
+through the declared windows, and the summary reports `forced_gate_edge_count`,
+`window_release_edge_count`, `suppressed_command_edge_count` and
+`effective_gate_edge_count` (scheduled + forced) next to `scheduled_gate_edge_count`.
+The replay follows the solver: the unforced initial level comes from the schedule at
+`transient.start`, and windows are re-evaluated at `transient.stop` only when a
+scheduled edge of some gate lands exactly there.
 
 If the request contains `analysis.harmonics`, the producer writes `harmonics.json` with
 the full coefficient series from 0 to `max_harmonic`, peak/RMS amplitudes, phases,

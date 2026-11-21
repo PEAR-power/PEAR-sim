@@ -286,3 +286,180 @@ def test_report_bounds_modulation_projection_rows(
     monkeypatch.setattr(report_module, "MAX_THREE_PHASE_MODULATION_PROJECTION_ROWS", 1)
     with pytest.raises(ReportError, match="projection-row limit"):
         generate_report(run_dir, tmp_path / "report")
+
+
+def _short_spwm_model(tmp_path: Path, windows: list[dict[str, str]] | None) -> Path:
+    """The SPWM example cut to 200 us (about four carrier cells), optionally forced."""
+
+    import yaml
+
+    data = yaml.safe_load(EXAMPLE.read_text(encoding="utf-8"))
+    del data["analysis"]["harmonics"]
+    data["analysis"]["transient"]["stop"] = "200 us"
+    if windows is not None:
+        data["perturbations"] = {"forced_gate_windows": windows}
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    path = tmp_path / "spwm-short.yaml"
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def _gate_events(run_dir: Path) -> list[dict[str, object]]:
+    lines = (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    return [
+        event
+        for event in map(json.loads, lines)
+        if event["kind"] in ("scheduled_gate", "forced_gate")
+    ]
+
+
+def test_forced_turn_off_mid_pulse_is_reconciled_not_a_count_mismatch(tmp_path: Path) -> None:
+    # Regression: the reconciliation read scheduled_gate events only and compared them
+    # with the nominal command record, so a forced turn-off of bridge.a.high inside its
+    # 11.7..36.4 us pulse failed write_result with "got 53, expected 52" (the window's
+    # release edge is logged as scheduled_gate; the forced edge was invisible).
+    windows = [{"control": "bridge.a.high", "from": "20 us", "to": "21 us", "level": "off"}]
+    unforced = write_result(
+        HybridSimulator(load_model(_short_spwm_model(tmp_path / "u", None))).simulate(),
+        tmp_path / "unforced",
+    )
+    run_dir = write_result(
+        HybridSimulator(load_model(_short_spwm_model(tmp_path / "f", windows))).simulate(),
+        tmp_path / "forced",
+    )
+
+    observation = _read_json(run_dir / "three-phase-modulation.json")
+    baseline = _read_json(unforced / "three-phase-modulation.json")
+    summary = observation["summary"]
+    block = observation["blocks"][0]["summary"]
+
+    events = _gate_events(run_dir)
+    forced = [event for event in events if event["kind"] == "forced_gate"]
+    assert [(e["target"], e["previous"], e["current"]) for e in forced] == [
+        ("bridge.a.high", True, False)
+    ]
+    assert summary["forced_gate_edge_count"] == 1
+    assert block["forced_gate_edges_by_output"]["bridge.a.high"] == 1
+    # The release edge at 21 us is a scheduled_gate event that no command produced.
+    assert summary["scheduled_gate_edge_count"] == (
+        baseline["summary"]["scheduled_gate_edge_count"] + 1
+    )
+    assert summary["window_release_edge_count"] == 1
+    assert summary["suppressed_command_edge_count"] == 0
+    assert summary["scheduled_gate_edge_count"] == sum(
+        1 for event in events if event["kind"] == "scheduled_gate"
+    )
+    assert observation["forced_gate_windows"] == [
+        {
+            "control": "bridge.a.high",
+            "from_s": pytest.approx(20e-6),
+            "to_s": pytest.approx(21e-6),
+            "level": "off",
+        }
+    ]
+    assert baseline["summary"]["forced_gate_edge_count"] == 0
+    assert baseline["forced_gate_windows"] == []
+
+
+def test_forced_window_swallowing_a_command_edge_counts_it_as_suppressed(
+    tmp_path: Path,
+) -> None:
+    # bridge.a.high is commanded off at 36.4 us; a 30..40 us "off" window turns it off
+    # early (forced edge), the commanded edge then changes nothing (suppressed), and
+    # the release at 40 us changes nothing either, because the command is off by then.
+    windows = [{"control": "bridge.a.high", "from": "30 us", "to": "40 us", "level": "off"}]
+    run_dir = write_result(
+        HybridSimulator(load_model(_short_spwm_model(tmp_path, windows))).simulate(),
+        tmp_path / "run",
+    )
+    summary = _read_json(run_dir / "three-phase-modulation.json")["summary"]
+    assert summary["forced_gate_edge_count"] == 1
+    assert summary["suppressed_command_edge_count"] == 1
+    assert summary["window_release_edge_count"] == 0
+
+
+def test_forced_gate_event_disagreeing_with_the_window_fails_closed(tmp_path: Path) -> None:
+    windows = [{"control": "bridge.a.high", "from": "20 us", "to": "21 us", "level": "off"}]
+    result = HybridSimulator(load_model(_short_spwm_model(tmp_path, windows))).simulate()
+    events = list(result.events)
+    index = next(i for i, event in enumerate(events) if event.kind == "forced_gate")
+    events[index] = replace(events[index], time=events[index].time + 1.0e-9)
+    with pytest.raises(ThreePhaseModulationError, match="time disagrees"):
+        build_three_phase_modulation_observation(replace(result, events=events))
+    events = list(result.events)
+    events[index] = replace(events[index], kind="scheduled_gate")
+    with pytest.raises(ThreePhaseModulationError, match="kind disagrees"):
+        build_three_phase_modulation_observation(replace(result, events=events))
+
+
+@pytest.mark.parametrize(
+    "control,changes_level",
+    [("bridge.a.high", False), ("bridge.a.low", True)],
+)
+def test_forced_window_open_at_run_start_is_reconciled(
+    tmp_path: Path, control: str, changes_level: bool
+) -> None:
+    # Regression (review of #46): a window starting at transient.start was refused,
+    # although the solver derives the unforced initial SPWM level from the schedule
+    # before applying the mask. bridge.a.high is off until 11.7 us anyway (no change);
+    # bridge.a.low is on, so the window holds it off and its end is a release edge.
+    windows = [{"control": control, "from": "0 s", "to": "5 us", "level": "off"}]
+    run_dir = write_result(
+        HybridSimulator(load_model(_short_spwm_model(tmp_path, windows))).simulate(),
+        tmp_path / "run",
+    )
+    summary = _read_json(run_dir / "three-phase-modulation.json")["summary"]
+    assert summary["forced_gate_edge_count"] == 0
+    assert summary["window_release_edge_count"] == (1 if changes_level else 0)
+    assert summary["suppressed_command_edge_count"] == 0
+
+
+def test_window_release_at_transient_stop_is_kept_when_another_gate_switches_there(
+    tmp_path: Path,
+) -> None:
+    # Regression (review of #46): with stop exactly on bridge.b.high's scheduled
+    # turn-off, the solver re-evaluates every forced window at stop and logs
+    # bridge.a.high's release there too; the replay skipped it ("got 9, expected 8").
+    plain = HybridSimulator(load_model(_short_spwm_model(tmp_path / "probe", None))).simulate()
+    stop = plain.modulation_cycles[0]["command_pulses"]["b"]["end_s"]
+    windows = [
+        {"control": "bridge.a.high", "from": "20 us", "to": f"{stop!r} s", "level": "off"}
+    ]
+    model_path = _short_spwm_model(tmp_path, windows)
+    import yaml
+
+    data = yaml.safe_load(model_path.read_text(encoding="utf-8"))
+    data["analysis"]["transient"]["stop"] = f"{stop!r} s"
+    model_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    result = HybridSimulator(load_model(model_path)).simulate()
+    assert result.model.transient.stop == stop
+    at_stop = sorted(
+        (event.target, event.kind, event.current)
+        for event in result.events
+        if event.time == stop and event.kind in ("scheduled_gate", "forced_gate")
+    )
+    assert at_stop == [
+        ("bridge.a.high", "scheduled_gate", True),
+        ("bridge.b.high", "scheduled_gate", False),
+    ]
+
+    run_dir = write_result(result, tmp_path / "run")
+    summary = _read_json(run_dir / "three-phase-modulation.json")["summary"]
+    assert summary["forced_gate_edge_count"] == 1
+    assert summary["window_release_edge_count"] == 1
+
+
+def test_report_card_shows_every_realized_gate_edge(tmp_path: Path) -> None:
+    # Regression (review of #46): "Realized gate edges" showed scheduled_gate events
+    # only, understating the realization by the forced edges.
+    windows = [{"control": "bridge.a.high", "from": "20 us", "to": "21 us", "level": "off"}]
+    run_dir = write_result(
+        HybridSimulator(load_model(_short_spwm_model(tmp_path, windows))).simulate(),
+        tmp_path / "run",
+    )
+    total = len(_gate_events(run_dir))
+    summary = _read_json(run_dir / "three-phase-modulation.json")["summary"]
+    assert summary["effective_gate_edge_count"] == total
+    assert total == summary["scheduled_gate_edge_count"] + summary["forced_gate_edge_count"]
+    html = generate_report(run_dir, tmp_path / "report").report_html.read_text("utf-8")
+    assert f"<small>Realized gate edges</small><strong>{total}</strong>" in html

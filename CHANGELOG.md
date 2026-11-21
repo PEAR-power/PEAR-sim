@@ -9,6 +9,31 @@ break the model format; every break carries a migration note).
 
 ### Fixed
 
+- `three-phase-modulation.json` now reconciles realized SPWM gate edges against the
+  command record **through** the declared `perturbations.forced_gate_windows`. Before,
+  it compared `scheduled_gate` events only with the nominal schedule, so a window that
+  forced an SPWM output (e.g. `bridge.a.high` off for 1 µs mid-pulse) let the solver
+  finish and then failed `write_result` with a count mismatch (`got 53, expected 52`
+  on a 200 µs run):
+  the forced edge was invisible and the window's release edge, logged as
+  `scheduled_gate`, had no command behind it. Each expected edge now carries its kind
+  (`forced_gate` inside a window, `scheduled_gate` outside) and is checked for time,
+  state, kind and continuity. The replay uses the solver's own rules: the unforced
+  initial level comes from the schedule at `transient.start` (so a window already open
+  there is reconciled, and the recorded initial state must equal the masked level), and
+  windows are re-evaluated at `transient.stop` exactly when some gate has a scheduled
+  edge there (so a release landing on `stop` is expected). The summaries add
+  `effective_gate_edge_count` (scheduled + forced — the report's "Realized gate edges"
+  card now shows it), `forced_gate_edge_count`,
+  `forced_gate_edges_by_output` (per block), `window_release_edge_count` and
+  `suppressed_command_edge_count` (command edges a window masked);
+  `scheduled_gate_edge_count` still counts `scheduled_gate` events, release edges
+  included. The artifact lists the windows on its outputs under `forced_gate_windows`
+  and names the method in `source_binding.realized_edge_reconciliation`. The command record
+  (`modulation-cycles.jsonl`) is unchanged — a window changes the realization, never
+  the command. Additive within v0.1: no run with a forced SPWM edge could produce the
+  artifact before.
+
 - `gate-drive.json` now follows `forced_gate` events as well as `scheduled_gate` ones.
   Before, a `perturbations.forced_gate_windows` entry that changed a gate (e.g. a forced
   turn-off in the middle of a PWM pulse) left the observer tracking the wrong state, and
