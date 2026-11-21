@@ -53,6 +53,7 @@ from pear_sim.spec.parameter_envelope import PROVENANCE_SOURCES, ParameterEnvelo
 from pear_sim.spec.perturbation import (
     PerturbationError,
     PerturbationEvent,
+    ForcedGateWindow,
     PerturbationSpec,
     apply_perturbation_to_document,
     parse_perturbation_request,
@@ -402,32 +403,144 @@ def _read_waveform(run_dir: Path) -> tuple[list[float], dict[str, list[float]]]:
     return times, signals
 
 
-def _measured_switching_frequency(run_dir: Path, window_start: float) -> float | None:
-    """Rising gate edges per second over the settled window, from events.jsonl."""
+@dataclass(frozen=True)
+class _SwitchingFrequency:
+    """Outcome of :func:`_measured_switching_frequency`.
+
+    ``value_hz`` is ``None`` exactly when ``reason`` says why; a number is never
+    returned without the bounds that make it checkable.
+    """
+
+    value_hz: float | None
+    lo_hz: float | None
+    hi_hz: float | None
+    per_gate_hz: dict[str, float]
+    reason: str | None
+
+
+def _in_window(time: float, windows: Sequence[ForcedGateWindow]) -> bool:
+    # Closed on both ends: the release edge is logged exactly at ``to_s``
+    # (the window end is an integration breakpoint) and has no command behind it.
+    return any(window.from_s <= time <= window.to_s for window in windows)
+
+
+def _measured_switching_frequency(
+    run_dir: Path,
+    window_start: float,
+    forced_windows: Sequence[ForcedGateWindow],
+) -> _SwitchingFrequency:
+    """Switching frequency over the settled window, per gate, from events.jsonl.
+
+    Only ``scheduled_gate`` rises count, per gate target, and only those outside
+    every declared forced window on that gate: a ``forced_gate`` edge and the
+    release rise at a window's end are realizations of the override, not
+    command edges. Rises are never pooled across gates — a complementary pair
+    rises twice per period. A rise-to-rise interval that spans a forced window
+    is dropped (the window may have masked command edges inside it), which
+    splits a gate's rises into separate clean runs.
+
+    Estimate per gate: ``n / span`` with ``n`` clean intervals over a total
+    clean ``span``. Under the assumption of one rise per carrier period, each
+    rise sitting anywhere inside its period, each run's span is ``n_k*T + d_k``
+    with ``|d_k| < T``, so the true frequency lies in
+    ``((n - c) / span, (n + c) / span)`` for ``c`` clean runs. Gates whose
+    intervals do not intersect switch at different frequencies and no single
+    number is reported. The assumption (no skipped pulse, no extra pulse) is
+    NOT checked here.
+    """
 
     path = run_dir / "events.jsonl"
     if not path.exists():
-        return None
-    rises: list[float] = []
-    last_time: float | None = None
+        return _SwitchingFrequency(None, None, None, {}, "events.jsonl absent")
+    windows_by_gate: dict[str, list[ForcedGateWindow]] = {}
+    for window in forced_windows:
+        windows_by_gate.setdefault(window.control_id, []).append(window)
+
+    rises: dict[str, list[float]] = {}
     for line in path.read_text().splitlines():
         if not line.strip():
             continue
         event = json.loads(line)
-        time = float(event.get("time", 0.0))
-        last_time = time if last_time is None else max(last_time, time)
-        if (
-            event.get("kind") in ("scheduled_gate", "forced_gate")
-            and event.get("current") is True
-            and time >= window_start
-        ):
-            rises.append(time)
-    if len(rises) < 2:
-        return None
-    span = rises[-1] - rises[0]
-    if span <= 0.0:
-        return None
-    return (len(rises) - 1) / span
+        if event.get("kind") not in ("scheduled_gate", "forced_gate"):
+            continue
+        target = str(event.get("target"))
+        rises.setdefault(target, [])
+        if event.get("kind") != "scheduled_gate" or event.get("current") is not True:
+            continue
+        time = float(event["time"])
+        if time < window_start or _in_window(time, windows_by_gate.get(target, ())):
+            continue
+        rises[target].append(time)
+    if not rises:
+        return _SwitchingFrequency(None, None, None, {}, "no gate events in this run")
+
+    per_gate: dict[str, float] = {}
+    bounds: dict[str, tuple[float, float]] = {}
+    for target in sorted(rises):
+        times = sorted(rises[target])
+        windows = windows_by_gate.get(target, ())
+        intervals = 0
+        span = 0.0
+        runs = 0
+        run_open = False
+        previous: float | None = None
+        for time in times:
+            if previous is not None and not any(
+                previous < window.to_s and time > window.from_s for window in windows
+            ):
+                if not run_open:
+                    runs += 1
+                intervals += 1
+                span += time - previous
+                run_open = True
+            else:
+                run_open = False
+            previous = time
+        if intervals == 0 or span <= 0.0:
+            continue
+        per_gate[target] = intervals / span
+        bounds[target] = ((intervals - runs) / span, (intervals + runs) / span)
+
+    unmeasured = sorted(set(rises) - set(per_gate))
+    if per_gate and unmeasured:
+        # A gate with no clean interval gives no evidence that it shares the
+        # others' frequency; publishing theirs as "the" frequency would hide it.
+        return _SwitchingFrequency(
+            None, None, None, per_gate,
+            "no clean command interval in the settled window on gate(s) "
+            + ", ".join(unmeasured)
+            + "; a shared switching frequency is not established",
+        )
+    if not per_gate:
+        return _SwitchingFrequency(
+            None, None, None, {},
+            "no gate has two command rises without a forced window between them "
+            "in the settled window",
+        )
+    lo = max(low for low, _ in bounds.values())
+    hi = min(high for _, high in bounds.values())
+    if lo >= hi:
+        return _SwitchingFrequency(
+            None, None, None, per_gate,
+            "per-gate frequencies disagree beyond their resolution bounds; "
+            "the gates do not share one switching frequency",
+        )
+    values = sorted(per_gate.values())
+    middle = len(values) // 2
+    median = (
+        values[middle] if len(values) % 2 else 0.5 * (values[middle - 1] + values[middle])
+    )
+    # Open interval: the per-run phase offset is strictly under one period.
+    if not lo < median < hi:
+        # Overlapping bounds do not put the median inside them: a gate with few
+        # clean intervals has wide bounds but still pulls the median. Publishing
+        # a number its own bounds rule out would be a wrong number.
+        return _SwitchingFrequency(
+            None, None, None, per_gate,
+            "the median of the per-gate estimates lies outside the frequency "
+            "interval shared by all gates",
+        )
+    return _SwitchingFrequency(median, lo, hi, per_gate, None)
 
 
 def _point_metrics(
@@ -436,6 +549,7 @@ def _point_metrics(
     nominal_vout: float | None,
     recovery_band: float | None,
     event_onset: float | None,
+    forced_windows: Sequence[ForcedGateWindow] = (),
 ) -> dict[str, Any]:
     metrics_payload = json.loads((run_dir / "metrics.json").read_text())
     times, signals = _read_waveform(run_dir)
@@ -478,9 +592,15 @@ def _point_metrics(
                     event_onset if event_onset is not None else window[0][0]
                 )
 
-    frequency = _measured_switching_frequency(run_dir, settled_start)
-    if frequency is not None:
-        measured["fsw_measured_hz"] = frequency
+    frequency = _measured_switching_frequency(run_dir, settled_start, forced_windows)
+    for gate, value in frequency.per_gate_hz.items():
+        measured[f"{gate}::fsw_measured_hz"] = value
+    if frequency.value_hz is not None:
+        measured["fsw_measured_hz"] = frequency.value_hz
+        measured["fsw_measured_lo_hz"] = frequency.lo_hz
+        measured["fsw_measured_hi_hz"] = frequency.hi_hz
+    else:
+        measured["fsw_measured_status"] = frequency.reason
 
     # Explicitly NOT an observation of "protection did not trip".
     measured["protection"] = _NOT_MODELLED
@@ -674,13 +794,15 @@ def run_campaign(
             run_dir = next(simulations).unwrap()
             row["run"] = str(run_dir.relative_to(destination))
             row["execution_status"] = "pass"
+            point_model = load_model(materialized)
             row["metrics"] = _point_metrics(
                 run_dir,
                 nominal_vout=float(nominal_vout) if nominal_vout is not None else None,
                 recovery_band=(
                     float(recovery_band) if recovery_band is not None else None
                 ),
-                event_onset=_event_onset(load_model(materialized), point_events),
+                event_onset=_event_onset(point_model, point_events),
+                forced_windows=point_model.forced_gate_windows,
             )
         except PerturbationError as exc:
             failures += 1
@@ -841,11 +963,13 @@ def _boundary_search(
             )
             materialized = _materialize(document, model, spec, point_dir)
             run_dir = _run_point(materialized, point_dir, timeout_s=MAX_POINT_WALL_TIME_S)
+            point_model = load_model(materialized)
             metrics = _point_metrics(
                 run_dir,
                 nominal_vout=float(nominal_vout) if nominal_vout is not None else None,
                 recovery_band=float(recovery_band) if recovery_band is not None else None,
-                event_onset=_event_onset(load_model(materialized), events),
+                event_onset=_event_onset(point_model, events),
+                forced_windows=point_model.forced_gate_windows,
             )
         except PerturbationError as exc:
             record.update({"status": "fail", "error": str(exc)[:512]})

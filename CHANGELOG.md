@@ -9,6 +9,29 @@ break the model format; every break carries a migration note).
 
 ### Fixed
 
+- `fsw_measured_hz` in perturbation-campaign summaries (`pear-sim sweep perturbation`)
+  is now the switching frequency, not the pooled rate of gate rises. Before, it counted
+  rising edges of **all** gates together and counted `forced_gate` rises and the
+  release rise at a forced window's end as switching edges. On
+  `examples/synchronous_buck_complementary.yaml` (20 kHz) with a forced-off window on
+  `leg.high` in the settled half it reported 45.5 kHz for 1 µs and 10 µs windows,
+  40.9 kHz for 60 µs and 31.8 kHz for 120 µs; it now reports 20 kHz for all four.
+  The estimate is taken per gate from `scheduled_gate` rises only, excluding every
+  rise inside a declared window on that gate (`from <= t <= to`, so the release edge
+  is excluded) and every rise-to-rise interval that spans one (the window may have
+  masked command edges). New metric keys: `<gate>::fsw_measured_hz` per gate (usable
+  in criteria as `signal: <gate>`, `field: fsw_measured_hz`), and
+  `fsw_measured_lo_hz` / `fsw_measured_hi_hz`, the interval that must hold the true
+  frequency if every gate rises once per carrier period (`(n ± c)/span` for `n` clean
+  intervals in `c` clean runs). `fsw_measured_hz` is the median of the per-gate
+  estimates and is reported only when every gate with events is measurable, all
+  per-gate intervals intersect and the median lies strictly inside that shared
+  (open) interval; otherwise
+  (or when nothing is measurable) it is absent and `fsw_measured_status` says why.
+  Checked on six examples (SPWM, SVPWM, DAB, LLC, H-bridge, closed-loop buck): none
+  is rejected, and SPWM gives 21000.0003 Hz for a 21 kHz carrier where the per-gate
+  spread is ±0.05 %. Skipped or extra pulses are not detected.
+
 - `three-phase-modulation.json` now reconciles realized SPWM gate edges against the
   command record **through** the declared `perturbations.forced_gate_windows`. Before,
   it compared `scheduled_gate` events only with the nominal schedule, so a window that
