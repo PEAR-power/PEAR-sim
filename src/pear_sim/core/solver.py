@@ -1000,9 +1000,19 @@ class HybridSimulator:
             name: [math.inf, -math.inf, math.inf, -math.inf] for name in kernel_outputs
         }
 
-        def observe_edge(time: float, edge_state: np.ndarray, edge_mode: CompiledMode) -> None:
+        def observe_edge(
+            time: float, edge_state: np.ndarray, edge_mode: CompiledMode, *, closing: bool
+        ) -> None:
             algebraic = edge_mode.algebraic(edge_state, time)
-            in_tail = time >= last_half_start
+            # An event exactly at the window start belongs to the window with
+            # its state AFTER the switching, like the sample recorded there:
+            # the end of the interval that closes at that instant is the last
+            # point before the window, not a point in it.
+            in_tail = (
+                time > last_half_start + self.time_tolerance
+                if closing
+                else time >= last_half_start - self.time_tolerance
+            )
             for name in kernel_outputs:
                 value = float(edge_mode.output(name, edge_state, time, algebraic))
                 bounds = edge_extrema[name]
@@ -1126,8 +1136,12 @@ class HybridSimulator:
                 # Both sides of every event: the start of this interval in its
                 # mode and its end in the same mode. A conduction interval the
                 # output grid steps over entirely is still seen here.
-                observe_edge(interval_start, np.asarray(solution.y[:, 0], dtype=float), mode)
-                observe_edge(interval_end, np.asarray(solution.y[:, -1], dtype=float), mode)
+                observe_edge(
+                    interval_start, np.asarray(solution.y[:, 0], dtype=float), mode, closing=False
+                )
+                observe_edge(
+                    interval_end, np.asarray(solution.y[:, -1], dtype=float), mode, closing=True
+                )
                 # The published `state_extrema` observation covers the last-half
                 # window only; per-interval extrema outside it exist solely for
                 # the `mode_intervals` audit trail. A lean run therefore searches
