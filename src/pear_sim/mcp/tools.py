@@ -430,6 +430,9 @@ def _losses_summary(bundle: Path) -> dict[str, Any] | None:
                 "conduction_mean_power_w": conduction.get("mean_power_w"),
                 "switching_energy_totals_j": switching.get("totals_j"),
                 "switching_events": switching.get("events_counted"),
+                "switching_events_unresolved_by_output_grid": switching.get(
+                    "events_unresolved_by_output_grid"
+                ),
                 "tj_max_c": thermal.get("tj_max_c"),
                 "tj_validity_violated": thermal.get("validity_violated"),
             }
@@ -438,6 +441,7 @@ def _losses_summary(bundle: Path) -> dict[str, Any] | None:
         "total_mean_power_w": data.get("total_mean_power_w"),
         "devices": devices,
         "claim": data.get("claim"),
+        "warnings": data.get("warnings"),
     }
 
 

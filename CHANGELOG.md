@@ -24,6 +24,15 @@ break the model format; every break carries a migration note).
   events. Before, a forced turn-off mid-pulse booked no `E_off` while the window's
   release edge still booked an `E_on`, so the switching-loss total came out silently low.
 
+- Loss analysis read the current of an edge that falls between output samples from the
+  wrong side: the post-edge sample was anchored a quarter step early, so a turn-on at
+  30.15 us read the 30 us sample (device still off) and booked `E_on = 0` on a 1 us grid
+  but 0.29 mJ on a 50 ns grid. The anchor is now a float-noise allowance (1e-6 step).
+  An edge whose pulse is shorter than the output grid — no sample shows the device
+  conducting — is counted in the new `switching.events_unresolved_by_output_grid`, its
+  energy is not booked and a warning marks the totals as a lower bound. The MCP loss
+  summary now carries that counter and the artifact's warnings.
+
 - Mode-sequence extraction (gradient analysis, topology comparison) refuses a cycle that
   overlaps a `perturbations.forced_gate_windows` entry, naming the window (half-open on
   both sides: a window opening exactly at the cycle's end or closing exactly at its start

@@ -389,3 +389,57 @@ def test_forced_gate_edges_are_counted_as_switching_events(tmp_path: Path) -> No
     assert forced["totals_j"]["e_off_j"] - base["totals_j"]["e_off_j"] == pytest.approx(
         1.1e-3 * 100.0 / 300.0, rel=0.1
     )
+
+
+def _q1_with_forced_on(tmp_path: Path, output_step: str, start: str, stop: str):
+    def mutate(document):
+        document["analysis"]["transient"]["stop"] = "100 us"
+        document["analysis"]["transient"]["output_step"] = output_step
+        document["perturbations"] = {
+            "forced_gate_windows": [
+                {"control": "pwm", "from": start, "to": stop, "level": "on"}
+            ]
+        }
+
+    folder = tmp_path / f"{output_step}-{start}-{stop}".replace(" ", "")
+    folder.mkdir()
+    result = HybridSimulator(load_model(_mutated(folder, mutate))).simulate()
+    observation = build_losses_thermal_observation(result)
+    q1 = next(d for d in observation["devices"] if d["component_id"] == "q1")
+    return q1["switching"], observation["warnings"]
+
+
+def test_off_grid_edge_energy_does_not_depend_on_the_output_grid(tmp_path: Path) -> None:
+    # Regression: the post-edge sample was anchored a quarter step early, so a
+    # forced turn-on at 30.15 us read the 30 us sample (device still off) and
+    # booked E_on = 0 on a 1 us grid but 0.29 mJ on a 50 ns grid.
+    coarse, _ = _q1_with_forced_on(tmp_path, "1 us", "30.15 us", "35.15 us")
+    fine, _ = _q1_with_forced_on(tmp_path, "50 ns", "30.15 us", "35.15 us")
+    for switching in (coarse, fine):
+        assert switching["events_counted"] == {
+            "turn_on": 3,
+            "turn_off": 3,
+            "reverse_recovery": 0,
+        }
+        assert not any(switching["events_unresolved_by_output_grid"].values())
+    for field in ("e_on_j", "e_off_j"):
+        assert coarse["totals_j"][field] == pytest.approx(fine["totals_j"][field], rel=0.02)
+
+
+def test_a_pulse_shorter_than_the_output_grid_is_unresolved_not_zero(
+    tmp_path: Path,
+) -> None:
+    # 0.5 us forced pulse between the 30 us and 31 us samples: no sample sees
+    # the device on, so neither edge may be booked as a number.
+    coarse, warnings = _q1_with_forced_on(tmp_path, "1 us", "30.15 us", "30.65 us")
+    assert coarse["events_unresolved_by_output_grid"] == {
+        "turn_on": 1,
+        "turn_off": 1,
+        "reverse_recovery": 0,
+    }
+    assert coarse["events_counted"]["turn_on"] == 2
+    assert any("lower bound" in warning and "q1" in warning for warning in warnings)
+    fine, fine_warnings = _q1_with_forced_on(tmp_path, "50 ns", "30.15 us", "30.65 us")
+    assert not any(fine["events_unresolved_by_output_grid"].values())
+    assert fine["events_counted"]["turn_on"] == 3
+    assert not any("lower bound" in warning for warning in fine_warnings)
