@@ -384,3 +384,32 @@ def test_a_median_outside_the_shared_bounds_is_withheld(tmp_path):
     assert "outside" in result.reason
     assert result.per_gate_hz["long"] == pytest.approx(100.0, rel=1e-9)
     assert result.per_gate_hz["short"] == pytest.approx(200.0, rel=1e-9)
+
+
+def test_an_unmeasurable_gate_withholds_the_shared_frequency(tmp_path):
+    from pear_sim.evidence.perturbation_campaign import _measured_switching_frequency
+
+    events = [_rise(k * 1e-5, "fast") for k in range(20)]
+    events.append(_rise(5e-5, "slow"))  # one settled rise: no interval
+    events.sort(key=lambda r: r["time"])
+
+    result = _measured_switching_frequency(_events_run(tmp_path, events), 0.0, ())
+
+    assert result.value_hz is None
+    assert "slow" in result.reason
+    assert result.per_gate_hz == {"fast": pytest.approx(1e5, rel=1e-9)}
+
+
+def test_a_median_on_an_open_bound_is_withheld(tmp_path):
+    from pear_sim.evidence.perturbation_campaign import _measured_switching_frequency
+
+    # "a": 4 intervals over 1 s -> 4 Hz, bounds (3, 5).
+    # "b": 1 interval over 1/6 s -> 6 Hz, bounds (0, 12). Median 5 Hz sits on
+    # the open upper bound of "a", which rules it out.
+    events = [_rise(k * 0.25, "a") for k in range(5)]
+    events += [_rise(0.1, "b"), _rise(0.1 + 1.0 / 6.0, "b")]
+    events.sort(key=lambda r: r["time"])
+
+    result = _measured_switching_frequency(_events_run(tmp_path, events), 0.0, ())
+
+    assert result.value_hz is None

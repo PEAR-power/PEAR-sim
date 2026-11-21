@@ -24,8 +24,9 @@ break the model format; every break carries a migration note).
   `fsw_measured_lo_hz` / `fsw_measured_hi_hz`, the interval that must hold the true
   frequency if every gate rises once per carrier period (`(n ± c)/span` for `n` clean
   intervals in `c` clean runs). `fsw_measured_hz` is the median of the per-gate
-  estimates and is reported only when all per-gate intervals intersect and the
-  median lies inside that shared interval; otherwise
+  estimates and is reported only when every gate with events is measurable, all
+  per-gate intervals intersect and the median lies strictly inside that shared
+  (open) interval; otherwise
   (or when nothing is measurable) it is absent and `fsw_measured_status` says why.
   Checked on six examples (SPWM, SVPWM, DAB, LLC, H-bridge, closed-loop buck): none
   is rejected, and SPWM gives 21000.0003 Hz for a 21 kHz carrier where the per-gate

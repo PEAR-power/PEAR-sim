@@ -501,6 +501,16 @@ def _measured_switching_frequency(
         per_gate[target] = intervals / span
         bounds[target] = ((intervals - runs) / span, (intervals + runs) / span)
 
+    unmeasured = sorted(set(rises) - set(per_gate))
+    if per_gate and unmeasured:
+        # A gate with no clean interval gives no evidence that it shares the
+        # others' frequency; publishing theirs as "the" frequency would hide it.
+        return _SwitchingFrequency(
+            None, None, None, per_gate,
+            "no clean command interval in the settled window on gate(s) "
+            + ", ".join(unmeasured)
+            + "; a shared switching frequency is not established",
+        )
     if not per_gate:
         return _SwitchingFrequency(
             None, None, None, {},
@@ -520,7 +530,8 @@ def _measured_switching_frequency(
     median = (
         values[middle] if len(values) % 2 else 0.5 * (values[middle - 1] + values[middle])
     )
-    if not lo <= median <= hi:
+    # Open interval: the per-run phase offset is strictly under one period.
+    if not lo < median < hi:
         # Overlapping bounds do not put the median inside them: a gate with few
         # clean intervals has wide bounds but still pulls the median. Publishing
         # a number its own bounds rule out would be a wrong number.
