@@ -187,9 +187,16 @@ def extract_mode_sequence(
     # vector, and the release edge at its end is logged as ``scheduled_gate``.
     # Reading such a cycle would classify that release as a PWM edge (a
     # plausible but wrong sensitivity), so a touched cycle is refused.
-    # Closed bounds: an edge exactly on the cycle boundary still shapes it.
+    # Half-open on both sides, like the cycle [start, end) and the window
+    # [from, to): a window opening exactly at the cycle's end only meets its
+    # right boundary, which classify() reads as PERIOD_END, and one closing
+    # exactly at the cycle's start releases the gate onto the cycle's first
+    # mode. Neither changes a mode inside the cycle.
     for window in result.model.forced_gate_windows:
-        if window.from_s <= window_end and window.to_s >= window_start:
+        if (
+            window.from_s < window_end - merge_tolerance_s
+            and window.to_s > window_start + merge_tolerance_s
+        ):
             raise ModeSequenceError(
                 f"cycle {index} [{window_start!r}, {window_end!r}] s overlaps "
                 f"perturbations.forced_gate_windows entry on control "

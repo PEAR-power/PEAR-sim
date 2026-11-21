@@ -140,6 +140,32 @@ def test_a_cycle_clear_of_forced_gate_windows_still_extracts(tmp_path: Path) -> 
     assert [step.exit_condition.kind for step in clean.steps][-1] is ExitKind.PERIOD_END
 
 
+@pytest.mark.parametrize(
+    "start,stop,clean_index,touched_index",
+    [
+        # opens exactly at the end of cycle 0: cycle 0 is untouched
+        ("50 us", "55 us", 0, 1),
+        # closes exactly at the start of cycle 1: cycle 1 is untouched
+        ("45 us", "50 us", 1, 0),
+    ],
+)
+def test_a_window_on_the_cycle_boundary_does_not_touch_the_neighbour(
+    tmp_path: Path, start: str, stop: str, clean_index: int, touched_index: int
+) -> None:
+    model = load_model(_buck_with_forced_window(tmp_path, start, stop))
+    result = HybridSimulator(model).simulate()
+    baseline = HybridSimulator(load_model(EXAMPLES / "buck.yaml")).simulate()
+    clean = extract_mode_sequence(result, period_s=1.0 / 20e3, cycle_index=clean_index)
+    reference = extract_mode_sequence(
+        baseline, period_s=1.0 / 20e3, cycle_index=clean_index
+    )
+    assert [(s.signature, s.exit_condition.kind) for s in clean.steps] == [
+        (s.signature, s.exit_condition.kind) for s in reference.steps
+    ]
+    with pytest.raises(ModeSequenceError, match="forced_gate_windows"):
+        extract_mode_sequence(result, period_s=1.0 / 20e3, cycle_index=touched_index)
+
+
 def test_provenance_is_the_bundle_writers_run_identity(buck_run) -> None:
     """Acceptance: the sequence carries the run's sha256 — same recipe as run.json."""
 

@@ -25,7 +25,9 @@ break the model format; every break carries a migration note).
   release edge still booked an `E_on`, so the switching-loss total came out silently low.
 
 - Mode-sequence extraction (gradient analysis, topology comparison) refuses a cycle that
-  overlaps a `perturbations.forced_gate_windows` entry, naming the window. Before, a
+  overlaps a `perturbations.forced_gate_windows` entry, naming the window (half-open on
+  both sides: a window opening exactly at the cycle's end or closing exactly at its start
+  does not touch it). Before, a
   forced edge inside the cycle failed with an unclear "cannot classify" error, and a
   window opened in the previous cycle had its release edge (logged as `scheduled_gate`)
   read as a PWM edge whose instant depends on the duty — a plausible but wrong
