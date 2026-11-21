@@ -1149,6 +1149,16 @@ class HybridSimulator:
                 observe_edge(
                     interval_end, np.asarray(solution.y[:, -1], dtype=float), mode, closing=True
                 )
+                if interval_start < last_half_start < interval_end:
+                    # The last-half window opens inside this interval. A decay
+                    # has its window maximum exactly there, where no interval
+                    # ends and the output grid need not have a sample.
+                    observe_edge(
+                        last_half_start,
+                        np.asarray(solution.sol(last_half_start), dtype=float),
+                        mode,
+                        closing=False,
+                    )
                 # The published `state_extrema` observation covers the last-half
                 # window only; per-interval extrema outside it exist solely for
                 # the `mode_intervals` audit trail. A lean run therefore searches
