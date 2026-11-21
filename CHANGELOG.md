@@ -9,6 +9,15 @@ break the model format; every break carries a migration note).
 
 ### Fixed
 
+- Perturbation campaign `fsw_measured_hz` no longer pools the rising edges of every
+  gate. A complementary pair counted both `leg.high` and `leg.low`, so the 20 kHz
+  `synchronous_buck_complementary.yaml` reported ~40.9 kHz, and a forced-window
+  release in the settled half added one more edge to the `(n − 1) / span` estimate.
+  Each gate now gets its own frequency from the median spacing of its rising edges
+  (`scheduled_gate` and `forced_gate`), published as `fsw_measured_hz_by_gate`;
+  `fsw_measured_hz` is given only when all gates agree within 1 % and is omitted when
+  they switch at different rates. The value was informational only — no acceptance
+  criterion reads it, so campaign verdicts are unchanged.
 - `three-phase-modulation.json` now reconciles realized SPWM gate edges against the
   command record **through** the declared `perturbations.forced_gate_windows`. Before,
   it compared `scheduled_gate` events only with the nominal schedule, so a window that

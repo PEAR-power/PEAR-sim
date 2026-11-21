@@ -40,6 +40,7 @@ import json
 import math
 import os
 import shutil
+import statistics
 import subprocess
 import sys
 from pathlib import Path
@@ -402,32 +403,54 @@ def _read_waveform(run_dir: Path) -> tuple[list[float], dict[str, list[float]]]:
     return times, signals
 
 
-def _measured_switching_frequency(run_dir: Path, window_start: float) -> float | None:
-    """Rising gate edges per second over the settled window, from events.jsonl."""
+# Per-gate frequencies that differ by more than this have no common "fsw".
+_FSW_AGREEMENT_REL = 0.01
+
+
+def _switching_frequency_by_gate(
+    run_dir: Path, window_start: float
+) -> tuple[float | None, dict[str, float]]:
+    """Switching frequency of each gate over the settled window, from events.jsonl.
+
+    One period per gate: the median spacing of that gate's rising edges
+    (``scheduled_gate`` and ``forced_gate``). Rising edges of different gates are
+    never pooled — a complementary pair would otherwise read twice the carrier —
+    and the median keeps a single forced release from moving the estimate.
+
+    The scalar is returned only when every gate agrees within
+    ``_FSW_AGREEMENT_REL``; gates switching at different rates have no single
+    frequency, so it is ``None`` rather than an average of unlike things.
+    """
 
     path = run_dir / "events.jsonl"
     if not path.exists():
-        return None
-    rises: list[float] = []
-    last_time: float | None = None
+        return None, {}
+    rises: dict[str, list[float]] = {}
     for line in path.read_text().splitlines():
         if not line.strip():
             continue
         event = json.loads(line)
         time = float(event.get("time", 0.0))
-        last_time = time if last_time is None else max(last_time, time)
         if (
             event.get("kind") in ("scheduled_gate", "forced_gate")
             and event.get("current") is True
             and time >= window_start
         ):
-            rises.append(time)
-    if len(rises) < 2:
-        return None
-    span = rises[-1] - rises[0]
-    if span <= 0.0:
-        return None
-    return (len(rises) - 1) / span
+            rises.setdefault(str(event.get("target")), []).append(time)
+
+    by_gate: dict[str, float] = {}
+    for gate, times in sorted(rises.items()):
+        times.sort()
+        spacings = [later - earlier for earlier, later in zip(times, times[1:])]
+        spacings = [spacing for spacing in spacings if spacing > 0.0]
+        if spacings:
+            by_gate[gate] = 1.0 / statistics.median(spacings)
+    if not by_gate:
+        return None, by_gate
+    low, high = min(by_gate.values()), max(by_gate.values())
+    if high - low > _FSW_AGREEMENT_REL * high:
+        return None, by_gate
+    return statistics.median(by_gate.values()), by_gate
 
 
 def _point_metrics(
@@ -478,9 +501,11 @@ def _point_metrics(
                     event_onset if event_onset is not None else window[0][0]
                 )
 
-    frequency = _measured_switching_frequency(run_dir, settled_start)
+    frequency, by_gate = _switching_frequency_by_gate(run_dir, settled_start)
     if frequency is not None:
         measured["fsw_measured_hz"] = frequency
+    if by_gate:
+        measured["fsw_measured_hz_by_gate"] = by_gate
 
     # Explicitly NOT an observation of "protection did not trip".
     measured["protection"] = _NOT_MODELLED
