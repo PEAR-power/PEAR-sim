@@ -19,6 +19,15 @@ break the model format; every break carries a migration note).
   `signed_distance_hz` is always measured to an edge of the range that was used.
   Estimates with `1/period` inside a range, or outside all of them, are unchanged.
 
+- MCP `simulate`: the `losses` block now carries `electrothermal_mode` and
+  `electrothermal_status`, and each device `electrothermal_status` and
+  `electrothermal_loop_gain`. When a self-consistent junction-temperature loop has no
+  fixed point (`thermal_runaway`, `beyond_card_temperature_axis`, `not_converged`) the
+  kernel withholds every loss and temperature number; the reply showed
+  `total_mean_power_w: null` and `tj_max_c: null` with the reason only in
+  `losses-thermal.json`. The kernel's behaviour is unchanged.
+
+
 - `fsw_measured_hz` in perturbation-campaign summaries (`pear-sim sweep perturbation`)
   is now the switching frequency, not the pooled rate of gate rises. Before, it counted
   rising edges of **all** gates together and counted `forced_gate` rises and the

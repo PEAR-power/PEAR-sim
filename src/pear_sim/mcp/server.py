@@ -102,7 +102,9 @@ DESCRIPTIONS = {
         """Run a transient simulation. Returns a run_id, per-signal mean/rms/min/max/
         peak-to-peak over the LAST HALF of the run, loss and THD summaries when the model
         requests them, mean powers from the run's energy audit, warnings and a confidence
-        level — never full waveforms. `overrides` maps parameter names to values with
+        level — never full waveforms. When `losses` shows null powers or tj_max_c, read
+        `electrothermal_status` (global and per device): thermal_runaway,
+        beyond_card_temperature_axis and not_converged withhold every number. `overrides` maps parameter names to values with
         units. `efficiency_output` (component ids, e.g. ["load"]) adds efficiency =
         P(those components) / P(sources).""",
         model_input=True,
