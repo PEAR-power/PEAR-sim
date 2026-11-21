@@ -23,6 +23,7 @@ from typing import Any
 
 import numpy as np
 
+from pear_sim.core.solver import run_time_tolerance
 from pear_sim.errors import ModelError
 from pear_sim.spec.device_cards import (
     DeviceCard,
@@ -305,38 +306,75 @@ def build_losses_thermal_observation(result: Any) -> dict[str, Any]:
             }
             totals = {"e_on_j": 0.0, "e_off_j": 0.0, "e_rec_j": 0.0}
             counted = {"turn_on": 0, "turn_off": 0, "reverse_recovery": 0}
+            unresolved = {"turn_on": 0, "turn_off": 0, "reverse_recovery": 0}
             control_id = component.control
-            for event in result.events:
+            if component.type == "ideal_switch":
+                # Every EFFECTIVE gate change switches the device: the solver
+                # records a change inside a forced_gate_windows entry as
+                # ``forced_gate``, not ``scheduled_gate``. Skipping it books
+                # the window's release edge but not its forced edge.
+                edge_kinds = {"scheduled_gate", "forced_gate"}
+                edge_target = control_id
+            else:
+                # A freewheel diode is hard-commutated by the opposite switch
+                # (switch_manager) or soft-commutated at zero current
+                # (natural_commutation, where E_rec(~0) ~ 0).
+                edge_kinds = {"natural_commutation", "switch_manager"}
+                edge_target = component.id
+            edges = [
+                event
+                for event in result.events
+                if event.kind in edge_kinds
+                and event.target == edge_target
+                and bool(event.previous) != bool(event.current)
+            ]
+            # Which side of an edge a sample lies on is the SOLVER's rule, not
+            # ours: it records a sample at t post-edge iff t >= t_event - tol.
+            # Any tolerance of our own disagrees with it somewhere — a quarter
+            # step once read the 30 us sample as post-edge for a turn-on at
+            # 30.15 us, and 1e-6 step (1 ps) still did for 30 us + 0.5 ps; both
+            # booked E_on = 0 for a conducting pulse with no warning.
+            on_grid = run_time_tolerance(model.transient.start, model.transient.stop)
+            for position, event in enumerate(edges):
                 if component.type == "ideal_switch":
-                    if event.kind != "scheduled_gate" or event.target != control_id:
-                        continue
-                    turning_on = bool(event.current) and not bool(event.previous)
+                    turning_on = bool(event.current)
                     field = "e_on_j" if turning_on else "e_off_j"
                     label = "turn_on" if turning_on else "turn_off"
                 else:
-                    # A freewheel diode is hard-commutated by the opposite
-                    # switch (switch_manager) or soft-commutated at zero
-                    # current (natural_commutation, where E_rec(~0) ~ 0).
-                    if (
-                        event.kind not in {"natural_commutation", "switch_manager"}
-                        or event.target != component.id
-                        or not (bool(event.previous) and not bool(event.current))
-                    ):
+                    if not bool(event.previous):
                         continue
                     field, label = "e_rec_j", "reverse_recovery"
                 lookup = lookups[field]
                 if lookup is None:
                     continue
                 # Grid samples exactly AT a boundary are recorded post-edge.
-                # Anchor the index a quarter-step early so float noise cannot
-                # flip it: ``base`` is the first grid sample at/after the
-                # event. Turn-on energy uses that post-edge sample (current
-                # taken over); turn-off/recovery uses the last strictly
-                # pre-event sample (the interrupted current).
-                base = int(np.searchsorted(time, event.time - 0.25 * step))
+                # ``base`` is the first grid sample at/after the event.
+                # Turn-on energy uses that post-edge sample (current taken
+                # over); turn-off/recovery uses the last strictly pre-event
+                # sample (the interrupted current).
+                base = int(np.searchsorted(time, event.time - on_grid))
+                post_side = field == "e_on_j"
+                sample = base if post_side else base - 1
+                # The sample must see the state THIS edge left or ended: a
+                # neighbouring edge of the same device between the event and
+                # its sample (a pulse shorter than the output grid) would make
+                # it read the other state and book a silent ~0 J. Such an edge
+                # is counted as unresolved instead, never as a number.
+                if post_side:
+                    following = edges[position + 1].time if position + 1 < len(edges) else None
+                    resolved = sample < len(time) and (
+                        following is None or time[sample] < following - on_grid
+                    )
+                else:
+                    preceding = edges[position - 1].time if position > 0 else None
+                    resolved = sample >= 0 and (
+                        preceding is None or time[sample] >= preceding - on_grid
+                    )
+                if not resolved:
+                    unresolved[label] += 1
+                    continue
                 post = min(base, len(time) - 1)
                 pre = max(base - 1, 0)
-                sample = post if field == "e_on_j" else pre
                 event_current = float(current[sample])
                 event_voltage = abs(float(commutation[post]))
                 energy = lookup(event_current) * event_voltage / table.test_voltage_v
@@ -346,6 +384,14 @@ def build_losses_thermal_observation(result: Any) -> dict[str, Any]:
                 # for the thermal power series (declared smearing convention).
                 interval = min(pre, len(time) - 2)
                 switching_power[interval] += energy / step
+            if any(unresolved.values()):
+                warnings.append(
+                    f"{binding.component_id}: {sum(unresolved.values())} switching "
+                    "edge(s) fall in a pulse shorter than the output grid, so no "
+                    "recorded sample shows the device current at the edge; their "
+                    "energy is NOT booked (switching totals are a lower bound). "
+                    "Reduce analysis.transient.output_step to resolve them."
+                )
             switching_payload = {
                 "test_voltage_v": table.test_voltage_v,
                 "test_temperature_c": table.test_temperature_c,
@@ -356,6 +402,7 @@ def build_losses_thermal_observation(result: Any) -> dict[str, Any]:
                 if (counted_any := any(counted.values()))
                 else {key: 0.0 for key in totals},
                 "events_counted": counted,
+                "events_unresolved_by_output_grid": unresolved,
                 "extrapolated_lookups": {
                     key: lookup.above
                     for key, lookup in lookups.items()

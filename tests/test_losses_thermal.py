@@ -352,3 +352,106 @@ def test_foster_response_can_start_from_a_steady_state() -> None:
     assert cold[0] == pytest.approx(40.0)
     assert np.max(np.abs(steady - (40.0 + 25.0 * 1.0))) < 1e-9
     assert stored == pytest.approx(sum(s.time_constant_s * 25.0 for s in stages), rel=1e-12)
+
+
+def test_forced_gate_edges_are_counted_as_switching_events(tmp_path: Path) -> None:
+    # Regression: only scheduled_gate events were counted, so a forced turn-off
+    # mid-pulse booked no E_off while the scheduled recovery at the window end
+    # still booked an E_on — an asymmetric, silently low switching-loss total.
+    def shorten(document):
+        document["analysis"]["transient"]["stop"] = "200 us"
+
+    def shorten_and_force(document):
+        shorten(document)
+        document["perturbations"] = {
+            "forced_gate_windows": [
+                {"control": "pwm", "from": "5 us", "to": "6 us", "level": "off"}
+            ]
+        }
+
+    def q1_switching(mutate, name):
+        path = _mutated(tmp_path / name, mutate)
+        result = HybridSimulator(load_model(path)).simulate()
+        kinds = [event.kind for event in result.events]
+        observation = build_losses_thermal_observation(result)
+        q1 = next(d for d in observation["devices"] if d["component_id"] == "q1")
+        return q1["switching"], kinds
+
+    (tmp_path / "base").mkdir()
+    (tmp_path / "forced").mkdir()
+    base, base_kinds = q1_switching(shorten, "base")
+    forced, forced_kinds = q1_switching(shorten_and_force, "forced")
+    assert "forced_gate" not in base_kinds
+    assert forced_kinds.count("forced_gate") == 1
+    assert forced["events_counted"]["turn_off"] == base["events_counted"]["turn_off"] + 1
+    assert forced["events_counted"]["turn_on"] == base["events_counted"]["turn_on"] + 1
+    # The extra turn-off interrupts ~10 A at 100 V: 1.1 mJ * 100/300 on top.
+    assert forced["totals_j"]["e_off_j"] - base["totals_j"]["e_off_j"] == pytest.approx(
+        1.1e-3 * 100.0 / 300.0, rel=0.1
+    )
+
+
+def _q1_with_forced_on(tmp_path: Path, output_step: str, start: str, stop: str):
+    def mutate(document):
+        document["analysis"]["transient"]["stop"] = "100 us"
+        document["analysis"]["transient"]["output_step"] = output_step
+        document["perturbations"] = {
+            "forced_gate_windows": [
+                {"control": "pwm", "from": start, "to": stop, "level": "on"}
+            ]
+        }
+
+    folder = tmp_path / f"{output_step}-{start}-{stop}".replace(" ", "")
+    folder.mkdir()
+    result = HybridSimulator(load_model(_mutated(folder, mutate))).simulate()
+    observation = build_losses_thermal_observation(result)
+    q1 = next(d for d in observation["devices"] if d["component_id"] == "q1")
+    return q1["switching"], observation["warnings"]
+
+
+def test_off_grid_edge_energy_does_not_depend_on_the_output_grid(tmp_path: Path) -> None:
+    # Regression: the post-edge sample was anchored a quarter step early, so a
+    # forced turn-on at 30.15 us read the 30 us sample (device still off) and
+    # booked E_on = 0 on a 1 us grid but 0.29 mJ on a 50 ns grid.
+    coarse, _ = _q1_with_forced_on(tmp_path, "1 us", "30.15 us", "35.15 us")
+    fine, _ = _q1_with_forced_on(tmp_path, "50 ns", "30.15 us", "35.15 us")
+    for switching in (coarse, fine):
+        assert switching["events_counted"] == {
+            "turn_on": 3,
+            "turn_off": 3,
+            "reverse_recovery": 0,
+        }
+        assert not any(switching["events_unresolved_by_output_grid"].values())
+    for field in ("e_on_j", "e_off_j"):
+        assert coarse["totals_j"][field] == pytest.approx(fine["totals_j"][field], rel=0.02)
+
+
+def test_a_pulse_shorter_than_the_output_grid_is_unresolved_not_zero(
+    tmp_path: Path,
+) -> None:
+    # 0.5 us forced pulse between the 30 us and 31 us samples: no sample sees
+    # the device on, so neither edge may be booked as a number.
+    coarse, warnings = _q1_with_forced_on(tmp_path, "1 us", "30.15 us", "30.65 us")
+    assert coarse["events_unresolved_by_output_grid"] == {
+        "turn_on": 1,
+        "turn_off": 1,
+        "reverse_recovery": 0,
+    }
+    assert coarse["events_counted"]["turn_on"] == 2
+    assert any("lower bound" in warning and "q1" in warning for warning in warnings)
+    fine, fine_warnings = _q1_with_forced_on(tmp_path, "50 ns", "30.15 us", "30.65 us")
+    assert not any(fine["events_unresolved_by_output_grid"].values())
+    assert fine["events_counted"]["turn_on"] == 3
+    assert not any("lower bound" in warning for warning in fine_warnings)
+
+
+def test_an_edge_just_after_a_sample_uses_the_solvers_side_rule(tmp_path: Path) -> None:
+    # Regression: a 1e-6-step "on grid" allowance (1 ps on a 1 us grid) read the
+    # 30 us sample as post-edge for a turn-on at 30 us + 0.5 ps, but the solver
+    # recorded that sample BEFORE the edge (0 A): E_on = 0 with no warning.
+    coarse, _ = _q1_with_forced_on(tmp_path, "1 us", "30.0000005 us", "35.15 us")
+    fine, _ = _q1_with_forced_on(tmp_path, "50 ns", "30.0000005 us", "35.15 us")
+    for switching in (coarse, fine):
+        assert not any(switching["events_unresolved_by_output_grid"].values())
+        assert switching["events_counted"]["turn_on"] == 3
+    assert coarse["totals_j"]["e_on_j"] == pytest.approx(fine["totals_j"]["e_on_j"], rel=0.02)

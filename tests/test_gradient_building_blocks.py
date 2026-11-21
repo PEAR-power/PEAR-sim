@@ -100,6 +100,72 @@ def test_extraction_reproduces_the_event_log(example: str, fsw: float) -> None:
     assert sequence.steps[-1].exit_condition.kind is ExitKind.PERIOD_END
 
 
+def _buck_with_forced_window(tmp_path: Path, start: str, stop: str) -> Path:
+    source = (EXAMPLES / "buck.yaml").read_text(encoding="utf-8")
+    source = source.rstrip("\n") + (
+        "\n\nperturbations:\n  forced_gate_windows:\n"
+        f'    - {{control: pwm, from: {start}, to: {stop}, level: "off"}}\n'
+    )
+    path = tmp_path / "buck-forced.yaml"
+    path.write_text(source, encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize(
+    "start,stop",
+    [
+        # forced turn-off mid-pulse inside the last cycle [1950 us, 2000 us)
+        ("1955 us", "1956 us"),
+        # window opened in the previous cycle; only its scheduled_gate-kind
+        # release at 1951 us falls in the last cycle and used to be read as a
+        # PWM edge whose instant depends on the duty — a silent misclassification
+        ("1940 us", "1951 us"),
+    ],
+)
+def test_a_cycle_touched_by_a_forced_gate_window_fails_closed(
+    tmp_path: Path, start: str, stop: str
+) -> None:
+    result = HybridSimulator(
+        load_model(_buck_with_forced_window(tmp_path, start, stop))
+    ).simulate()
+    with pytest.raises(ModeSequenceError, match="forced_gate_windows"):
+        extract_mode_sequence(result, period_s=1.0 / 20e3)
+
+
+def test_a_cycle_clear_of_forced_gate_windows_still_extracts(tmp_path: Path) -> None:
+    result = HybridSimulator(
+        load_model(_buck_with_forced_window(tmp_path, "1955 us", "1956 us"))
+    ).simulate()
+    clean = extract_mode_sequence(result, period_s=1.0 / 20e3, cycle_index=-2)
+    assert [step.exit_condition.kind for step in clean.steps][-1] is ExitKind.PERIOD_END
+
+
+@pytest.mark.parametrize(
+    "start,stop,clean_index,touched_index",
+    [
+        # opens exactly at the end of cycle 0: cycle 0 is untouched
+        ("50 us", "55 us", 0, 1),
+        # closes exactly at the start of cycle 1: cycle 1 is untouched
+        ("45 us", "50 us", 1, 0),
+    ],
+)
+def test_a_window_on_the_cycle_boundary_does_not_touch_the_neighbour(
+    tmp_path: Path, start: str, stop: str, clean_index: int, touched_index: int
+) -> None:
+    model = load_model(_buck_with_forced_window(tmp_path, start, stop))
+    result = HybridSimulator(model).simulate()
+    baseline = HybridSimulator(load_model(EXAMPLES / "buck.yaml")).simulate()
+    clean = extract_mode_sequence(result, period_s=1.0 / 20e3, cycle_index=clean_index)
+    reference = extract_mode_sequence(
+        baseline, period_s=1.0 / 20e3, cycle_index=clean_index
+    )
+    assert [(s.signature, s.exit_condition.kind) for s in clean.steps] == [
+        (s.signature, s.exit_condition.kind) for s in reference.steps
+    ]
+    with pytest.raises(ModeSequenceError, match="forced_gate_windows"):
+        extract_mode_sequence(result, period_s=1.0 / 20e3, cycle_index=touched_index)
+
+
 def test_provenance_is_the_bundle_writers_run_identity(buck_run) -> None:
     """Acceptance: the sequence carries the run's sha256 — same recipe as run.json."""
 

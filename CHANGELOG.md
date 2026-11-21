@@ -30,6 +30,41 @@ break the model format; every break carries a migration note).
   the command. Additive within v0.1: no run with a forced SPWM edge could produce the
   artifact before.
 
+- `gate-drive.json` now follows `forced_gate` events as well as `scheduled_gate` ones.
+  Before, a `perturbations.forced_gate_windows` entry that changed a gate (e.g. a forced
+  turn-off in the middle of a PWM pulse) left the observer tracking the wrong state, and
+  the run failed in `write_result` with `analysis.gate_drive_invalid` (a continuity
+  mismatch or a false complementary overlap). Each timeline change now carries
+  `source_event_kind`; the summary adds `forced_gate_event_count` and
+  `effective_gate_event_count`, and `scheduled_gate_event_count` counts scheduled events
+  only. `source_binding.timeline_source` is now
+  `accepted_initial_mode_and_scheduled_and_forced_gate_events`. Additive within v0.1: no
+  run with a forced gate change could produce the artifact before.
+
+- Loss analysis (`losses-thermal.json`) now counts `forced_gate` edges as switching
+  events. Before, a forced turn-off mid-pulse booked no `E_off` while the window's
+  release edge still booked an `E_on`, so the switching-loss total came out silently low.
+
+- Loss analysis read the current of an edge that falls between output samples from the
+  wrong side: the post-edge sample was anchored a quarter step early, so a turn-on at
+  30.15 us read the 30 us sample (device still off) and booked `E_on = 0` on a 1 us grid
+  but 0.29 mJ on a 50 ns grid. The side of an edge a sample lies on is now the solver's
+  own rule (`core.solver.run_time_tolerance`, `max(1e-15 s, 1e-12 · run span)`), so an
+  edge 0.5 ps after a sample no longer reads that pre-edge sample either.
+  An edge whose pulse is shorter than the output grid — no sample shows the device
+  conducting — is counted in the new `switching.events_unresolved_by_output_grid`, its
+  energy is not booked and a warning marks the totals as a lower bound. The MCP loss
+  summary now carries that counter and the artifact's warnings.
+
+- Mode-sequence extraction (gradient analysis, topology comparison) refuses a cycle that
+  overlaps a `perturbations.forced_gate_windows` entry, naming the window (half-open on
+  both sides: a window opening exactly at the cycle's end or closing exactly at its start
+  does not touch it). Before, a
+  forced edge inside the cycle failed with an unclear "cannot classify" error, and a
+  window opened in the previous cycle had its release edge (logged as `scheduled_gate`)
+  read as a PWM edge whose instant depends on the duty — a plausible but wrong
+  sensitivity. Pick a `cycle_index` clear of every window.
+
 ### Added
 
 - Optional model section `switching_transitions` (docs/model-format.md §7c): a
