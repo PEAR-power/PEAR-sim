@@ -1003,7 +1003,14 @@ class HybridSimulator:
         def observe_edge(
             time: float, edge_state: np.ndarray, edge_mode: CompiledMode, *, closing: bool
         ) -> None:
-            algebraic = edge_mode.algebraic(edge_state, time)
+            # Sources are read on this interval's own side of the instant. A
+            # source that steps exactly where the interval closes still has
+            # its OLD value in this topology; reading it at the instant itself
+            # pairs the old topology with the new source value and reports a
+            # current that never flowed (a switch opening as its supply steps
+            # from 0 to 100 V would show 100 V across the old load path).
+            source_time = time - self.time_tolerance if closing else time + self.time_tolerance
+            algebraic = edge_mode.algebraic(edge_state, source_time)
             # An event exactly at the window start belongs to the window with
             # its state AFTER the switching, like the sample recorded there:
             # the end of the interval that closes at that instant is the last
@@ -1014,7 +1021,7 @@ class HybridSimulator:
                 else time >= last_half_start - self.time_tolerance
             )
             for name in kernel_outputs:
-                value = float(edge_mode.output(name, edge_state, time, algebraic))
+                value = float(edge_mode.output(name, edge_state, source_time, algebraic))
                 bounds = edge_extrema[name]
                 bounds[0] = min(bounds[0], value)
                 bounds[1] = max(bounds[1], value)
