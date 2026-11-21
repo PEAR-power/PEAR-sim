@@ -137,6 +137,24 @@ class SampledBound:
         return self.value != self.sampled
 
 
+def fitness_context(record: Any) -> dict[str, Any] | None:
+    """What the rule needs from one signal record of ``metrics.json``.
+
+    The record's ``extrema_grid`` plus, under ``sampled``, the grid's own
+    extremes, so that a peak-to-peak can be rebuilt from the joint extremes of
+    samples and event edges. ``None`` (unresolved) without ``extrema_grid``.
+    """
+
+    grid = record.get(EXTREMA_GRID_FIELD) if isinstance(record, Mapping) else None
+    if not isinstance(grid, Mapping):
+        return None
+    sampled = {
+        key: record.get(key, record.get(f"sample_{key}"))
+        for key in ("min", "max", "min_last_half", "max_last_half")
+    }
+    return {**grid, "sampled": sampled}
+
+
 def _event_edge_bound(metric: str, grid: Any, value: float, bias: str) -> float:
     """``value`` tightened by the signal's values at the solver's interval end points.
 
@@ -144,6 +162,11 @@ def _event_edge_bound(metric: str, grid: Any, value: float, bias: str) -> float:
     pulse between two samples 5 us apart reads 0 A). The end points of every
     integration interval are part of the waveform, so their extremes bound
     the true extremum from the same side the samples do.
+
+    A peak-to-peak (or ripple) is the span of ALL observations: the highest
+    of samples and edges minus the lowest of samples and edges. The larger of
+    the two separate spans is not enough when the maximum was seen at an edge
+    and the minimum in a sample.
     """
 
     edge = grid.get("event_edge") if isinstance(grid, Mapping) else None
@@ -152,7 +175,17 @@ def _event_edge_bound(metric: str, grid: Any, value: float, bias: str) -> float:
     suffix = "_last_half" if metric.endswith("_last_half") else ""
     low, high = _number(edge.get(f"min{suffix}")), _number(edge.get(f"max{suffix}"))
     if "peak_to_peak" in metric or "ripple" in metric:
-        return value if low is None or high is None else max(value, high - low)
+        if low is None or high is None:
+            return value
+        sampled = grid.get("sampled")
+        sampled = sampled if isinstance(sampled, Mapping) else {}
+        sample_low = _number(sampled.get(f"min{suffix}"))
+        sample_high = _number(sampled.get(f"max{suffix}"))
+        if sample_low is not None:
+            low = min(low, sample_low)
+        if sample_high is not None:
+            high = max(high, sample_high)
+        return max(value, high - low)
     if bias == "under":
         return value if high is None else max(value, high)
     return value if low is None else min(value, low)
@@ -168,9 +201,10 @@ def judge_sampled_bound(
 ) -> SampledBound:
     """Judge ``lower <= metric <= upper`` from the sampled ``value``.
 
-    ``grid`` is the signal record's ``extrema_grid``. With neither bound the
-    question is whether the number itself is usable (a ranking objective),
-    which needs a resolved grid.
+    ``grid`` is ``fitness_context(record)`` for the signal (a bare
+    ``extrema_grid`` also works, without the joint peak-to-peak). With neither
+    bound the question is whether the number itself is usable (a ranking
+    objective), which needs a resolved grid.
     """
 
     bias = sampled_extremum_bias(metric)
@@ -220,6 +254,7 @@ __all__ = [
     "MIN_SAMPLES_PER_SWITCHING_PERIOD",
     "SAMPLED_EXTREMUM_METRICS",
     "SampledBound",
+    "fitness_context",
     "judge_sampled_bound",
     "grid_unresolved_reason",
     "sampled_bound_unfit_reason",

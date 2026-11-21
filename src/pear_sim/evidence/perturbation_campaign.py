@@ -58,7 +58,7 @@ from typing import Any, Iterable, Mapping, Sequence
 import yaml
 
 from pear_sim.errors import ModelError
-from pear_sim.evidence.metric_fitness import EXTREMA_GRID_FIELD, judge_sampled_bound
+from pear_sim.evidence.metric_fitness import fitness_context, judge_sampled_bound
 from pear_sim.evidence.parallel_points import resolve_jobs, run_ordered
 from pear_sim.spec.model import Model, load_model
 from pear_sim.spec.signals import unit_for
@@ -710,9 +710,7 @@ def _point_metrics(
     settled_start = times[len(times) // 2] if times else 0.0
 
     measured: dict[str, Any] = {}
-    grids = {
-        signal: fields.get(EXTREMA_GRID_FIELD) for signal, fields in metrics_payload.items()
-    }
+    grids = {signal: fitness_context(fields) for signal, fields in metrics_payload.items()}
     for signal, fields in metrics_payload.items():
         for field in ("min", "max", "mean_last_half", "min_last_half", "max_last_half"):
             if field in fields:

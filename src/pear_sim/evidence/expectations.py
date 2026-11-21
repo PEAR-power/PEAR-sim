@@ -10,7 +10,7 @@ from collections.abc import Mapping
 import math
 from typing import Any
 
-from pear_sim.evidence.metric_fitness import EXTREMA_GRID_FIELD, judge_sampled_bound
+from pear_sim.evidence.metric_fitness import fitness_context, judge_sampled_bound
 from pear_sim.run.contracts import sha256_json
 
 
@@ -491,7 +491,7 @@ def _evaluate_criterion(
     else:
         lower, upper = criterion.get("minimum"), criterion.get("maximum")
     judged = judge_sampled_bound(
-        metric_name, record.get(EXTREMA_GRID_FIELD), value, lower=lower, upper=upper
+        metric_name, fitness_context(record), value, lower=lower, upper=upper
     )
     if judged.unfit_reason is not None:
         return _unevaluated(
