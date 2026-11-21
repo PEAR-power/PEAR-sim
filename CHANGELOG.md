@@ -30,7 +30,10 @@ break the model format; every break carries a migration note).
   summary, a `not_comparable` column in `designs.csv`). At `output_step: 1 us` all
   three paths report the violation. Models without a switching control are unaffected.
   The floor rules out aliasing against the carrier; it does not make a sampled extremum
-  exact. `sensitivity` does not apply the rule yet.
+  exact. `sensitivity` applies the same rule to its outputs: if any run cannot supply
+  a sampled extremum, that output is `not_estimated` (`not_comparable_runs`, summary
+  `incomplete`) instead of being estimated on aliased values or on the subset of runs
+  the grid happened to resolve; other outputs of the request are estimated as before.
 
   Samples per period do not see a pulse narrower than the grid step. With 4 % duty at
   20 kHz (the switch conducting from 1 µs to 3 µs) and `output_step: 5 us` there are

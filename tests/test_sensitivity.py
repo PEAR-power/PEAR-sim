@@ -228,3 +228,40 @@ def test_sensitivity_on_the_compiled_kernel_matches_the_reference(tmp_path: Path
     for left, right in zip(py["outputs"][0]["parameters"], rs["outputs"][0]["parameters"], strict=True):
         assert left["name"] == right["name"]
         assert right["mu_star"] == pytest.approx(left["mu_star"], rel=1e-9, abs=1e-9)
+
+
+def test_an_aliased_extremum_is_not_estimated_while_a_mean_still_is(tmp_path: Path) -> None:
+    """Recorded once per PWM period the buck's inductor current samples as its
+    valley. An index of that ``max`` would describe the grid, not the
+    converter; the mean, integrated on the solver's own steps, is unaffected."""
+
+    buck = Path(__file__).parents[1] / "examples" / "buck.yaml"
+    outputs = [
+        {"signal": "i(l1)", "metric": "max_last_half"},
+        {"signal": "v(out)", "metric": "mean_last_half"},
+    ]
+    statuses = {}
+    for step in ("50 us", "1 us"):
+        work = tmp_path / step.replace(" ", "")
+        work.mkdir()
+        model = work / "buck.yaml"
+        model.write_text(buck.read_text().replace("output_step: 1 us", f"output_step: {step}"))
+        request = _request(work, outputs=outputs)
+        artifacts = run_sensitivity(model, request, work / "out", jobs=4)
+        summary = json.loads(artifacts.summary.read_text())
+        by_output = {entry["output"]: entry for entry in summary["outputs"]}
+        statuses[step] = (artifacts.status, by_output)
+
+    status, by_output = statuses["50 us"]
+    assert status == "incomplete"
+    peak = by_output["i(l1).max_last_half"]
+    assert peak["status"] == "not_estimated"
+    assert peak["not_comparable_runs"] == 12
+    assert "1 sample(s) per shortest switching period" in peak["reason"]
+    assert "parameters" not in peak and "ranking" not in peak
+    assert by_output["v(out).mean_last_half"]["status"] == "pass"
+
+    status, by_output = statuses["1 us"]
+    assert status == "pass"
+    assert by_output["i(l1).max_last_half"]["status"] == "pass"
+    assert by_output["i(l1).max_last_half"]["ranking"]
