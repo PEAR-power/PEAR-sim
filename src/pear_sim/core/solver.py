@@ -366,8 +366,9 @@ class HybridSimulator:
             self.backend_id = rust_backend.require_supported(model, self.circuit)
         else:
             self.backend_id = "reference-python"
-        span = model.transient.stop - model.transient.start
-        self.time_tolerance = max(1e-15, span * 1e-12)
+        self.time_tolerance = run_time_tolerance(
+            model.transient.start, model.transient.stop
+        )
         self.guard_tolerance = 1e-10
         self.constraint_tolerance = STATE_CONSTRAINT_TOLERANCE
         self._impulses: list[dict[str, Any]] = []
@@ -2530,10 +2531,24 @@ class _MachineDriver:
                 )
 
 
+def run_time_tolerance(start: float, stop: float) -> float:
+    """Event/sample coincidence tolerance of one run.
+
+    This is the solver's side rule for the output grid: a recorded sample at
+    ``t`` shows the state AFTER an event at ``t_event`` exactly when
+    ``t >= t_event - run_time_tolerance(start, stop)``; every earlier sample was
+    recorded on the segment that the event ended. Post-processing that needs to
+    know which side of an edge a sample lies on must use this function, not a
+    tolerance of its own.
+    """
+
+    return max(1e-15, (stop - start) * 1e-12)
+
+
 def _sample_times(start: float, stop: float, step: float) -> np.ndarray:
     count = int(math.floor((stop - start) / step + 1e-12))
     times = start + np.arange(count + 1, dtype=float) * step
-    if times[-1] < stop - max(1e-15, (stop - start) * 1e-12):
+    if times[-1] < stop - run_time_tolerance(start, stop):
         times = np.append(times, stop)
     else:
         times[-1] = stop
