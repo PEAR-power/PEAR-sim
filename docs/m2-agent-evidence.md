@@ -90,7 +90,11 @@ or the bundle predates `extrema_grid`, a criterion is decided only if that one-s
 cannot change the verdict: `max <= limit` with a sampled value already above the limit is
 `fail`; with a sampled value below it the criterion is `not_comparable`, because the
 waveform may exceed the limit between samples. Re-simulate with a finer
-`analysis.transient.output_step` to get a verdict. The perturbation campaign and the batch
+`analysis.transient.output_step` to get a verdict. The value compared with the bound is
+the sampled extremum tightened by `extrema_grid.event_edge` (the signal at the end points
+of the solver's integration intervals), so a conduction pulse that falls between two
+samples still counts; `measured` then carries `sampled_value` and `value_method` beside
+`value`. The perturbation campaign and the batch
 ranking apply the same rule (`pear_sim.evidence.metric_fitness`).
 
 The evidence records source/run/metrics/expectations hashes, every criterion result,

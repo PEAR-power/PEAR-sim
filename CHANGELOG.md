@@ -32,6 +32,18 @@ break the model format; every break carries a migration note).
   The floor rules out aliasing against the carrier; it does not make a sampled extremum
   exact. `sensitivity` does not apply the rule yet.
 
+  Samples per period do not see a pulse narrower than the grid step. With 4 % duty at
+  20 kHz (the switch conducting from 1 µs to 3 µs) and `output_step: 5 us` there are
+  exactly 10 samples per period and none inside the pulse: `i(q1)` sampled as 0 A and
+  `max i(q1) <= 0.1 A` passed, against 3.46 A at `0.25 us`. `extrema_grid.event_edge`
+  now records each electrical output's `min`/`max` (full window and last half) over the
+  end points of the solver's integration intervals, on both sides of every event, and
+  the rule compares the limit with the sampled value tightened by them. Both grids now
+  fail with 3.48 A, and the buck above fails `<= 4.1 A` at `50 us` with the same 4.60 A
+  as at `1 us`. Verdicts report `value` (the bound used) and `sampled_value` when they
+  differ; the metric fields stay grid statistics. An extremum strictly inside an
+  interval between two events is still seen only by the samples.
+
   `boundary_search` reports a number only between a comparable `pass` and a comparable
   `fail`. It used to count a probe it could not judge as a failure: searching `fsw`
   from 20 to 200 kHz against a 1000 A limit, where no probe can fail, returned

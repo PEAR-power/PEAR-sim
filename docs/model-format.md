@@ -1754,6 +1754,16 @@ one-sided error cannot change the verdict (a sampled `max` above an upper limit 
 a violation) and report `not_comparable` otherwise. The floor rules out aliasing against
 the carrier; it is not an accuracy statement about the extremum.
 
+For electrical outputs `extrema_grid.event_edge` holds `min`, `max`, `min_last_half` and
+`max_last_half` of the signal over the end points of the solver's integration intervals,
+on both sides of every event. A grid can step over a whole conduction interval (a 2 µs
+switch pulse between samples 5 µs apart reads 0 A at 10 samples per period); its end
+points are on the waveform, so they bound the true extremum from the same side as the
+samples. The three acceptance paths compare the limit with the sampled value tightened by
+these extremes and report both (`value` and `sampled_value`) when they differ. `min`,
+`max` and the other metric fields themselves stay grid statistics. An extremum strictly
+inside an interval between two events (a resonant peak) is seen by neither.
+
 Metrics do not replace the waveform or a separate event analysis. The `last_half`
 window is a general alpha aggregate, not automatic proof that steady state has been
 reached.

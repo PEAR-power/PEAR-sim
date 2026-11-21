@@ -4,8 +4,8 @@
 
 The buck in ``examples/buck.yaml`` switches at 20 kHz and its inductor current
 peaks at 4.6 A. Recorded once per PWM period the grid only ever sees the
-valley, 3.4 A. ``i(l1) max <= 4.1 A`` is violated; no path may accept it, and
-on the coarse grid no path may report a positive margin or a winner.
+valley, 3.4 A. ``i(l1) max <= 4.1 A`` is violated; no path may accept it on
+any grid. A limit the record cannot clear gets no margin and no winner.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from pear_sim.evidence.expectations import evaluate_expectations
 from pear_sim.evidence.metric_fitness import (
     MIN_SAMPLES_PER_SWITCHING_PERIOD,
     grid_unresolved_reason,
+    judge_sampled_bound,
     sampled_bound_unfit_reason,
 )
 from pear_sim.evidence.perturbation_campaign import REQUEST_SCHEMA, run_campaign
@@ -122,7 +123,7 @@ def test_metrics_state_the_grid_against_the_carrier(tmp_path, step, samples) -> 
 # --- the three acceptance paths ----------------------------------------------
 
 
-def _evaluate(tmp_path: Path, model: Path) -> dict:
+def _evaluate(tmp_path: Path, model: Path, limit: float = LIMIT_A) -> dict:
     run = tmp_path / "run"
     write_result(HybridSimulator(load_model(model)).simulate(), run)
     expectations = tmp_path / "expectations.json"
@@ -135,7 +136,7 @@ def _evaluate(tmp_path: Path, model: Path) -> dict:
                 "criteria": [
                     {
                         "id": "ipk", "signal": "i(l1)", "metric": "max_last_half",
-                        "unit": "A", "maximum": LIMIT_A, "blocking": True,
+                        "unit": "A", "maximum": limit, "blocking": True,
                     }
                 ],
             }
@@ -147,7 +148,7 @@ def _evaluate(tmp_path: Path, model: Path) -> dict:
     return criterion
 
 
-def _campaign(tmp_path: Path, model: Path) -> dict:
+def _campaign(tmp_path: Path, model: Path, limit: float = LIMIT_A) -> dict:
     request = tmp_path / "campaign.json"
     request.write_text(
         json.dumps(
@@ -163,7 +164,7 @@ def _campaign(tmp_path: Path, model: Path) -> dict:
                 "criteria": [
                     {
                         "id": "ipk", "signal": "i(l1)", "field": "max_last_half",
-                        "op": "max", "limit": LIMIT_A, "unit": "A",
+                        "op": "max", "limit": limit, "unit": "A",
                         "source": "assumption", "note": "placeholder limit",
                     }
                 ],
@@ -174,7 +175,7 @@ def _campaign(tmp_path: Path, model: Path) -> dict:
     return json.loads(artifacts.summary.read_text())
 
 
-def _batch(tmp_path: Path, model: Path) -> dict:
+def _batch(tmp_path: Path, model: Path, limit: float = LIMIT_A) -> dict:
     request = tmp_path / "batch.json"
     request.write_text(
         json.dumps(
@@ -183,7 +184,7 @@ def _batch(tmp_path: Path, model: Path) -> dict:
                 "designs": {"method": "list", "rows": [{"vin": "100 V"}]},
                 "objective": {"minimize": {"signal": "i(l1)", "metric": "mean_last_half"}},
                 "constraints": [
-                    {"signal": "i(l1)", "metric": "max_last_half", "max": LIMIT_A}
+                    {"signal": "i(l1)", "metric": "max_last_half", "max": limit}
                 ],
                 "finalists": 1,
             }
@@ -213,15 +214,46 @@ def test_on_a_resolved_grid_every_path_reports_the_violation(tmp_path) -> None:
     assert batch["feasible_count"] == 0 and batch["best_design"] is None
 
 
-def test_on_an_aliased_grid_no_path_accepts_or_reports_a_margin(tmp_path) -> None:
+def test_on_an_aliased_grid_the_event_edges_still_show_the_violation(tmp_path) -> None:
+    """Once per PWM period the samples read the 3.40 A valley, but the switch-off
+    instant is an interval end point: the 4.60 A peak is on record and the
+    4.1 A limit fails on every path, with the same value as on the fine grid."""
+
     model = _buck(tmp_path, "50 us")
 
     criterion = _evaluate(tmp_path, model)
+    assert criterion["status"] == "fail"
+    assert criterion["measured"]["value"] == pytest.approx(PEAK_A, abs=1e-3)
+    assert criterion["measured"]["sampled_value"] == pytest.approx(VALLEY_A, abs=1e-3)
+
+    campaign = _campaign(tmp_path, model)
+    (run,) = campaign["runs"]
+    verdict = run["criteria"]["ipk"]
+    assert verdict["status"] == "fail"
+    assert verdict["margin"] == pytest.approx(LIMIT_A - PEAK_A, abs=1e-3)
+    assert verdict["sampled_value"] == pytest.approx(VALLEY_A, abs=1e-3)
+    assert campaign["overall_status"] == "fail"
+
+    batch = _batch(tmp_path, model)
+    (design,) = batch["designs"]
+    assert design["violations"] == ["i(l1).max_last_half"]
+    assert not design["feasible"] and batch["best_design"] is None
+
+
+def test_on_an_aliased_grid_no_path_accepts_or_reports_a_margin(tmp_path) -> None:
+    """A limit above everything on record (5.0 A against a 4.60 A event-edge
+    peak) cannot be cleared on one sample per period: an extremum inside an
+    interval is not excluded. No path may accept it or report a margin."""
+
+    model = _buck(tmp_path, "50 us")
+    high = 5.0
+
+    criterion = _evaluate(tmp_path, model, limit=high)
     assert criterion["status"] == "not_comparable"
     assert criterion["measured"] is None
     assert "1 sample(s) per shortest switching period" in criterion["reason"]
 
-    campaign = _campaign(tmp_path, model)
+    campaign = _campaign(tmp_path, model, limit=high)
     (run,) = campaign["runs"]
     verdict = run["criteria"]["ipk"]
     assert verdict["status"] == "not_comparable"
@@ -231,7 +263,7 @@ def test_on_an_aliased_grid_no_path_accepts_or_reports_a_margin(tmp_path) -> Non
     assert campaign["acceptance_status"] != "pass"
     assert campaign["overall_status"] != "pass"
 
-    batch = _batch(tmp_path, model)
+    batch = _batch(tmp_path, model, limit=high)
     (design,) = batch["designs"]
     assert not design["feasible"] and design["rank"] is None
     assert design["violations"] == []
@@ -241,6 +273,13 @@ def test_on_an_aliased_grid_no_path_accepts_or_reports_a_margin(tmp_path) -> Non
     assert batch["best_design"] is None
     assert batch["finalists"] == []
     assert batch["status"] == "no_feasible_design"
+
+    # The same limit on a grid that resolves the period is a pass everywhere.
+    fine = _buck(tmp_path, "1 us")
+    (fine_dir := tmp_path / "fine").mkdir()
+    assert _evaluate(fine_dir, fine, limit=high)["status"] == "pass"
+    assert _campaign(fine_dir, fine, limit=high)["overall_status"] == "pass"
+    assert _batch(fine_dir, fine, limit=high)["best_design"] == "d0001"
 
 
 def test_a_batch_does_not_rank_by_an_aliased_extremum(tmp_path) -> None:
@@ -290,3 +329,106 @@ def test_a_bundle_without_grid_metadata_keeps_means_and_loses_extrema() -> None:
     statuses = {item["id"]: item["status"] for item in evidence["criteria"]}
     # 3.4 A sampled already exceeds 3.0 A, so that violation stands on any grid.
     assert statuses == {"mean": "pass", "peak": "not_comparable", "peak_low": "fail"}
+
+
+# --- a pulse narrower than the grid step ------------------------------------
+
+
+def test_event_edges_tighten_a_sampled_bound_from_its_own_side() -> None:
+    grid = dict(FINE, event_edge={"min": -1.0, "max": 3.5, "min_last_half": 0.0,
+                                  "max_last_half": 0.2})
+    judged = judge_sampled_bound("max", grid, 0.0, upper=0.1)
+    assert (judged.value, judged.sampled, judged.unfit_reason) == (3.5, 0.0, None)
+    assert judged.tightened
+    assert judge_sampled_bound("max_last_half", grid, 0.0, upper=0.1).value == 0.2
+    assert judge_sampled_bound("min", grid, 0.5, lower=0.0).value == -1.0
+    assert judge_sampled_bound("peak_to_peak", grid, 1.0, upper=5.0).value == 4.5
+    # Never looser than what the grid already saw, and never applied to a mean.
+    assert judge_sampled_bound("max", grid, 4.0, upper=5.0).value == 4.0
+    assert judge_sampled_bound("mean_last_half", grid, 0.0, upper=0.1).value == 0.0
+
+
+def test_an_event_edge_above_the_limit_fails_even_on_an_unresolved_grid() -> None:
+    grid = dict(COARSE, event_edge={"min": 0.0, "max": 3.5})
+    judged = judge_sampled_bound("max", grid, 0.0, upper=0.1)
+    assert judged.unfit_reason is None and judged.value == 3.5
+    # Below the limit on a coarse grid it still decides nothing.
+    assert judge_sampled_bound("max", grid, 0.0, upper=4.1).unfit_reason is not None
+
+
+def _pulse_buck(tmp_path: Path, step: str) -> Path:
+    """20 kHz, 4 % duty, the switch conducting from 1 us to 3 us of each period."""
+
+    text = (
+        BUCK.read_text()
+        .replace("duty: 40 %", "duty: 4 %")
+        .replace("phase: 0 s", "phase: 1 us")
+        .replace("output_step: 1 us", f"output_step: {step}")
+    )
+    assert "duty: 4 %" in text and "phase: 1 us" in text and f"output_step: {step}" in text
+    path = tmp_path / f"pulse_{step.replace(' ', '').replace('.', '')}.yaml"
+    path.write_text(text)
+    return path
+
+
+@pytest.mark.parametrize("step", ["5 us", "0.25 us"])
+def test_a_conduction_pulse_between_two_samples_is_not_read_as_zero(tmp_path, step) -> None:
+    """At 5 us the grid has exactly 10 samples per period and every one of them
+    falls outside the 2 us pulse: i(q1) samples as 0 A. ``max i(q1) <= 0.1 A``
+    must fail on that grid exactly as it does on a 0.25 us grid."""
+
+    model = _pulse_buck(tmp_path, step)
+    request = tmp_path / "campaign.json"
+    request.write_text(
+        json.dumps(
+            {
+                "schema": REQUEST_SCHEMA,
+                "label": "switch peak",
+                "axes": [
+                    {
+                        "id": "vin", "kind": "parameter_values", "parameter": "vin",
+                        "values": ["100 V"], "source": "assumption", "note": "nominal",
+                    }
+                ],
+                "criteria": [
+                    {
+                        "id": "iq", "signal": "i(q1)", "field": "max", "op": "max",
+                        "limit": 0.1, "unit": "A",
+                        "source": "assumption", "note": "placeholder limit",
+                    }
+                ],
+            }
+        )
+    )
+    summary = json.loads(
+        run_campaign(model, request, tmp_path / "campaign", jobs=1).summary.read_text()
+    )
+    (run,) = summary["runs"]
+    verdict = run["criteria"]["iq"]
+    assert verdict["status"] == "fail"
+    assert verdict["value"] == pytest.approx(3.48, abs=0.02)
+    assert verdict["margin"] == pytest.approx(0.1 - 3.48, abs=0.02)
+    assert summary["overall_status"] == "fail"
+    if step == "5 us":
+        assert run["metrics"]["i(q1)::max"] == 0.0  # what the grid alone recorded
+        assert verdict["sampled_value"] == 0.0
+
+    metrics = HybridSimulator(load_model(model)).simulate().metrics()
+    edge = metrics["i(q1)"]["extrema_grid"]["event_edge"]
+    assert edge["max"] == pytest.approx(3.48, abs=0.02)
+    assert edge["min"] == pytest.approx(0.0, abs=1e-9)
+    evidence = evaluate_expectations(
+        {
+            "schema": "pear-sim/expectations/v0.1",
+            "purpose": "switch peak",
+            "measurement_window": {"kind": "last_half", "start_s": 0.001, "end_s": 0.002},
+            "criteria": [
+                {"id": "iq", "signal": "i(q1)", "metric": "max_last_half", "unit": "A",
+                 "maximum": 0.1, "blocking": True}
+            ],
+        },
+        metrics,
+    )
+    (criterion,) = evidence["criteria"]
+    assert criterion["status"] == "fail"
+    assert criterion["measured"]["value"] > 0.1

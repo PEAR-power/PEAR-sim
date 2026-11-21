@@ -48,7 +48,11 @@ from pear_sim.evidence.parameter_sweep import (
     _run_point_worker,
     _safe_run_artifact,
 )
-from pear_sim.evidence.metric_fitness import EXTREMA_GRID_FIELD, sampled_bound_unfit_reason
+from pear_sim.evidence.metric_fitness import (
+    EXTREMA_GRID_FIELD,
+    SampledBound,
+    judge_sampled_bound,
+)
 from pear_sim.core.solver import HybridSimulator
 from pear_sim.spec.model import Model, load_model
 from pear_sim.spec.units import parse_quantity
@@ -126,24 +130,24 @@ class _Quantity:
             raise BatchError(f"{self.label} is not finite in the run")
         return float(value)
 
-    def unfit_reason(
+    def judge(
         self,
         value: float,
         grids: Mapping[str, Any],
         *,
         lower: float | None = None,
         upper: float | None = None,
-    ) -> str | None:
-        """Why ``value`` cannot decide ``lower <= quantity <= upper``, or ``None``.
+    ) -> SampledBound:
+        """How ``value`` stands against ``lower <= quantity <= upper``.
 
-        Only a sampled extremum of a signal can be unfit (see
+        Only a sampled extremum of a signal can be unfit or tightened (see
         ``pear_sim.evidence.metric_fitness``). With no bound the question is
         whether the number can be ranked at all.
         """
 
         if self.signal is None:
-            return None
-        return sampled_bound_unfit_reason(
+            return SampledBound(value, value, None)
+        return judge_sampled_bound(
             str(self.metric), grids.get(self.label), value, lower=lower, upper=upper
         )
 
@@ -681,30 +685,30 @@ def run_batch(
             # period cannot clear a constraint or be ranked: a design is never
             # feasible, let alone the winner, on a number the grid may have missed.
             undecided: dict[str, str] = {}
+            violations: list[str] = []
             for constraint in request.constraints:
                 label = constraint.quantity.label
-                reason = constraint.quantity.unfit_reason(
+                judged = constraint.quantity.judge(
                     row["values"][label],
                     row["extrema_grid"],
                     lower=constraint.minimum,
                     upper=constraint.maximum,
                 )
-                if reason is not None:
-                    undecided[label] = reason
-            reason = request.objective.unfit_reason(
+                if judged.unfit_reason is not None:
+                    undecided[label] = judged.unfit_reason
+                # The bound the verdict rests on: the sampled value tightened
+                # by the signal's event-edge extremes.
+                elif not constraint.holds(judged.value) and label not in violations:
+                    violations.append(label)
+            reason = request.objective.judge(
                 row["values"][request.objective.label], row["extrema_grid"]
-            )
+            ).unfit_reason
             if reason is not None:
                 undecided.setdefault(request.objective.label, reason)
             row["not_comparable"] = [
                 {"quantity": label, "reason": reason} for label, reason in undecided.items()
             ]
-            row["violations"] = [
-                constraint.quantity.label
-                for constraint in request.constraints
-                if constraint.quantity.label not in undecided
-                and not constraint.holds(row["values"][constraint.quantity.label])
-            ]
+            row["violations"] = violations
         row["feasible"] = (
             row["status"] == "pass" and not row["violations"] and not row["not_comparable"]
         )

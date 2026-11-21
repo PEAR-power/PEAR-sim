@@ -171,6 +171,11 @@ class SimulationResult:
     #: (run_sha256), so a run from another engine is never mistaken for one
     #: from the reference implementation.
     backend: str = "reference-python"
+    #: Extremes of each electrical output over the END POINTS of the solver's
+    #: integration intervals (both sides of every event), per window. The
+    #: output grid can step over a whole conduction interval; its end points
+    #: are still part of the waveform. ``None`` on a hand-built result.
+    event_edge_extrema: dict[str, dict[str, float]] | None = None
 
     def metrics(self) -> dict[str, dict[str, Any]]:
         """Return time-weighted metrics and explicitly named output-grid statistics.
@@ -190,6 +195,7 @@ class SimulationResult:
             {block.id: block.unit for block in graph.blocks} if graph else {}
         )
         extrema_grid = _extrema_grid(self.model)
+        edges = self.event_edge_extrema or {}
         for name, values in self.signals.items():
             tail = values[tail_index:]
             if not len(tail):
@@ -271,6 +277,8 @@ class SimulationResult:
                 payload["continuity"] = "topology_dependent_or_unproven"
             if extrema_grid is not None:
                 payload["extrema_grid"] = dict(extrema_grid)
+                if name in edges:
+                    payload["extrema_grid"]["event_edge"] = dict(edges[name])
             result[name] = payload
         return result
 
@@ -296,6 +304,8 @@ def _extrema_grid(model: Any) -> dict[str, Any] | None:
     ]
     periods = [float(control.period) for control in controls]
     shortest = min(periods) if periods else None
+    # `event_edge` (min/max of the signal at the end points of the solver's
+    # integration intervals) is added per signal by the caller.
     return {
         "output_step_s": float(step),
         "switching_control_count": len(periods),
@@ -985,6 +995,23 @@ class HybridSimulator:
                 )
 
         kernel_outputs = electrical_outputs(self.model)
+        # name -> [min, max, min_last_half, max_last_half] over interval end points.
+        edge_extrema: dict[str, list[float]] = {
+            name: [math.inf, -math.inf, math.inf, -math.inf] for name in kernel_outputs
+        }
+
+        def observe_edge(time: float, edge_state: np.ndarray, edge_mode: CompiledMode) -> None:
+            algebraic = edge_mode.algebraic(edge_state, time)
+            in_tail = time >= last_half_start
+            for name in kernel_outputs:
+                value = float(edge_mode.output(name, edge_state, time, algebraic))
+                bounds = edge_extrema[name]
+                bounds[0] = min(bounds[0], value)
+                bounds[1] = max(bounds[1], value)
+                if in_tail:
+                    bounds[2] = min(bounds[2], value)
+                    bounds[3] = max(bounds[3], value)
+
         state_extrema = (
             rust_backend.state_extrema if self.backend == "rust" else _dense_state_extrema
         )
@@ -1096,6 +1123,11 @@ class HybridSimulator:
             if float(solution.t[-1]) > float(solution.t[0]):
                 interval_start = float(solution.t[0])
                 interval_end = float(solution.t[-1])
+                # Both sides of every event: the start of this interval in its
+                # mode and its end in the same mode. A conduction interval the
+                # output grid steps over entirely is still seen here.
+                observe_edge(interval_start, np.asarray(solution.y[:, 0], dtype=float), mode)
+                observe_edge(interval_end, np.asarray(solution.y[:, -1], dtype=float), mode)
                 # The published `state_extrema` observation covers the last-half
                 # window only; per-interval extrema outside it exist solely for
                 # the `mode_intervals` audit trail. A lean run therefore searches
@@ -1412,6 +1444,13 @@ class HybridSimulator:
             signal_trace=signal_trace,
             evidence_mode=self.evidence_mode,
             backend=self.backend_id,
+            event_edge_extrema={
+                name: dict(
+                    zip(("min", "max", "min_last_half", "max_last_half"), bounds, strict=True)
+                )
+                for name, bounds in edge_extrema.items()
+                if all(math.isfinite(bound) for bound in bounds)
+            },
         )
 
     def _assert_star_invariants(

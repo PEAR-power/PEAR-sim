@@ -58,7 +58,7 @@ from typing import Any, Iterable, Mapping, Sequence
 import yaml
 
 from pear_sim.errors import ModelError
-from pear_sim.evidence.metric_fitness import EXTREMA_GRID_FIELD, sampled_bound_unfit_reason
+from pear_sim.evidence.metric_fitness import EXTREMA_GRID_FIELD, judge_sampled_bound
 from pear_sim.evidence.parallel_points import resolve_jobs, run_ordered
 from pear_sim.spec.model import Model, load_model
 from pear_sim.spec.signals import unit_for
@@ -315,13 +315,18 @@ class _Criterion:
             return {"status": "not_run", "reason": "metric absent"}
         value = float(value)
         lower, upper = self.bounds()
-        unfit = sampled_bound_unfit_reason(
+        judged = judge_sampled_bound(
             self.field, grids.get(self.signal), value, lower=lower, upper=upper
         )
-        if unfit is not None:
-            return {"status": "not_comparable", "value": value, "reason": unfit}
-        status, margin = self.evaluate(value)
-        return {"status": status, "value": value, "margin": margin}
+        if judged.unfit_reason is not None:
+            return {"status": "not_comparable", "value": value, "reason": judged.unfit_reason}
+        # The margin is taken from the bound the verdict rests on: the sampled
+        # value tightened by the signal's event-edge extremes.
+        status, margin = self.evaluate(judged.value)
+        verdict = {"status": status, "value": judged.value, "margin": margin}
+        if judged.tightened:
+            verdict["sampled_value"] = judged.sampled
+        return verdict
 
     def evaluate(self, value: float) -> tuple[str, float]:
         if self.op == "max":

@@ -18,6 +18,15 @@ verdict already points (a sampled maximum above an upper limit is a violation
 on any grid). Everything else is ``not_comparable``: a coarse grid that reads
 3.4 A where the waveform peaks at 4.6 A must not pass ``max <= 4.1 A``.
 
+Samples per period alone do not see a pulse narrower than the grid step: ten
+samples per period can all fall outside a 4 % duty conduction interval and
+read 0 A. The producer therefore also records each signal's extremes over the
+END POINTS of the solver's integration intervals (``extrema_grid.event_edge``,
+both sides of every event). Those points are on the waveform, so they tighten
+the sampled bound from the same side, and it is the tightened value that is
+compared with the limit. What neither the samples nor the event edges see is
+an extremum strictly inside an interval between events (a resonant peak).
+
 This is the one place that rule lives. ``evaluate`` (expectations), the
 perturbation campaign and the batch ranking all call it, so the same run and
 the same requirement cannot get different verdicts on different paths.
@@ -29,6 +38,7 @@ accuracy statement: a resolved sampled extremum is still a grid statistic.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 import math
 from typing import Any
 
@@ -108,6 +118,90 @@ def grid_unresolved_reason(grid: Any) -> str | None:
     return None
 
 
+@dataclass(frozen=True)
+class SampledBound:
+    """How a sampled extremum stands against ``lower <= metric <= upper``.
+
+    ``value`` is the number to compare with the bounds: the sampled value
+    tightened by the signal's event-edge extremes (still a one-sided bound on
+    the true extremum, never looser than the sampled one). ``unfit_reason`` is
+    ``None`` exactly when comparing ``value`` with the bounds is a sound verdict.
+    """
+
+    value: float
+    sampled: float
+    unfit_reason: str | None
+
+    @property
+    def tightened(self) -> bool:
+        return self.value != self.sampled
+
+
+def _event_edge_bound(metric: str, grid: Any, value: float, bias: str) -> float:
+    """``value`` tightened by the signal's values at the solver's interval end points.
+
+    The output grid can step over a whole conduction interval (a 2 us switch
+    pulse between two samples 5 us apart reads 0 A). The end points of every
+    integration interval are part of the waveform, so their extremes bound
+    the true extremum from the same side the samples do.
+    """
+
+    edge = grid.get("event_edge") if isinstance(grid, Mapping) else None
+    if not isinstance(edge, Mapping):
+        return value
+    suffix = "_last_half" if metric.endswith("_last_half") else ""
+    low, high = _number(edge.get(f"min{suffix}")), _number(edge.get(f"max{suffix}"))
+    if "peak_to_peak" in metric or "ripple" in metric:
+        return value if low is None or high is None else max(value, high - low)
+    if bias == "under":
+        return value if high is None else max(value, high)
+    return value if low is None else min(value, low)
+
+
+def judge_sampled_bound(
+    metric: str,
+    grid: Any,
+    value: float,
+    *,
+    lower: float | None = None,
+    upper: float | None = None,
+) -> SampledBound:
+    """Judge ``lower <= metric <= upper`` from the sampled ``value``.
+
+    ``grid`` is the signal record's ``extrema_grid``. With neither bound the
+    question is whether the number itself is usable (a ranking objective),
+    which needs a resolved grid.
+    """
+
+    bias = sampled_extremum_bias(metric)
+    if bias is None:
+        return SampledBound(value, value, None)
+    bound = _event_edge_bound(metric, grid, value, bias)
+    unresolved = grid_unresolved_reason(grid)
+    if unresolved is None:
+        return SampledBound(bound, value, None)
+    if bias == "under":
+        # true >= bound
+        if upper is not None and bound > upper:
+            return SampledBound(bound, value, None)  # above the limit; so is the truth
+        if upper is None and lower is not None and bound >= lower:
+            return SampledBound(bound, value, None)  # above the floor; so is the truth
+        direction = "a lower bound on"
+    else:
+        # true <= bound
+        if lower is not None and bound < lower:
+            return SampledBound(bound, value, None)
+        if lower is None and upper is not None and bound <= upper:
+            return SampledBound(bound, value, None)
+        direction = "an upper bound on"
+    return SampledBound(
+        bound,
+        value,
+        f"sampled {metric} is only {direction} the true value and {unresolved}, "
+        "so it cannot decide this requirement",
+    )
+
+
 def sampled_bound_unfit_reason(
     metric: str,
     grid: Any,
@@ -116,44 +210,17 @@ def sampled_bound_unfit_reason(
     lower: float | None = None,
     upper: float | None = None,
 ) -> str | None:
-    """Why ``lower <= metric <= upper`` cannot be decided from ``value``, or ``None``.
+    """``judge_sampled_bound(...).unfit_reason``."""
 
-    ``None`` means the plain comparison of ``value`` with the bounds is a
-    sound verdict. ``grid`` is the signal record's ``extrema_grid``. With
-    neither bound the question is whether the number itself is usable (a
-    ranking objective), which needs a resolved grid.
-    """
-
-    bias = sampled_extremum_bias(metric)
-    if bias is None:
-        return None
-    unresolved = grid_unresolved_reason(grid)
-    if unresolved is None:
-        return None
-    if bias == "under":
-        # true >= value
-        if upper is not None and value > upper:
-            return None  # already above the limit; the true value is too
-        if upper is None and lower is not None and value >= lower:
-            return None  # already above the floor; the true value is too
-        direction = "a lower bound on"
-    else:
-        # true <= value
-        if lower is not None and value < lower:
-            return None
-        if lower is None and upper is not None and value <= upper:
-            return None
-        direction = "an upper bound on"
-    return (
-        f"sampled {metric} is only {direction} the true value and {unresolved}, "
-        "so it cannot decide this requirement"
-    )
+    return judge_sampled_bound(metric, grid, value, lower=lower, upper=upper).unfit_reason
 
 
 __all__ = [
     "EXTREMA_GRID_FIELD",
     "MIN_SAMPLES_PER_SWITCHING_PERIOD",
     "SAMPLED_EXTREMUM_METRICS",
+    "SampledBound",
+    "judge_sampled_bound",
     "grid_unresolved_reason",
     "sampled_bound_unfit_reason",
     "sampled_extremum_bias",
