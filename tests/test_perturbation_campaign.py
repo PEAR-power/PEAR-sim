@@ -366,3 +366,21 @@ def test_no_measurable_gate_gives_none_with_a_reason(tmp_path):
 
     assert result.value_hz is None
     assert result.reason
+
+
+def test_a_median_outside_the_shared_bounds_is_withheld(tmp_path):
+    from pear_sim.evidence.perturbation_campaign import _measured_switching_frequency
+
+    # "long": 100 clean intervals over 1 s -> 100 Hz, bounds (99, 101).
+    # "short": one clean 5 ms interval -> 200 Hz, bounds (0, 400).
+    # The bounds intersect in (99, 101); the median, 150 Hz, lies outside it.
+    events = [_rise(k * 0.01, "long") for k in range(101)]
+    events += [_rise(0.5, "short"), _rise(0.505, "short")]
+    events.sort(key=lambda r: r["time"])
+
+    result = _measured_switching_frequency(_events_run(tmp_path, events), 0.0, ())
+
+    assert result.value_hz is None
+    assert "outside" in result.reason
+    assert result.per_gate_hz["long"] == pytest.approx(100.0, rel=1e-9)
+    assert result.per_gate_hz["short"] == pytest.approx(200.0, rel=1e-9)

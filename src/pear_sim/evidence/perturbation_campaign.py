@@ -520,6 +520,15 @@ def _measured_switching_frequency(
     median = (
         values[middle] if len(values) % 2 else 0.5 * (values[middle - 1] + values[middle])
     )
+    if not lo <= median <= hi:
+        # Overlapping bounds do not put the median inside them: a gate with few
+        # clean intervals has wide bounds but still pulls the median. Publishing
+        # a number its own bounds rule out would be a wrong number.
+        return _SwitchingFrequency(
+            None, None, None, per_gate,
+            "the median of the per-gate estimates lies outside the frequency "
+            "interval shared by all gates",
+        )
     return _SwitchingFrequency(median, lo, hi, per_gate, None)
 
 
