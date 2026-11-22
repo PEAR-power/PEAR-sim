@@ -62,7 +62,10 @@ break the model format; every break carries a migration note).
     With a supply stepping from 0 to 100 V at the instant a series switch to a 10 Ω load
     opens, the closing interval paired the old topology with the new source value and
     recorded 10 A that never flowed: `max <= 5 A` failed and `max >= 5 A` passed (campaign
-    margin +5 A, `batch` winner). The edge now reads 0 A.
+    margin +5 A, `batch` winner). The edge now reads 0 A. The side is the source's exact
+    left or right limit, not a read a time tolerance away: a source that is continuous at
+    the instant is read exactly there, so a PWL apex declared at a node (100 V on a
+    100 V/ns edge) is recorded as 100 V whatever the run length.
   - A periodic source declares a period the grid must resolve, like a switching control.
     A 10 V, 1 kHz sine recorded every 1 ms samples one phase and reads 0 V; with no PWM
     control the grid counted as resolved and `max <= 5 V` passed. `extrema_grid` adds

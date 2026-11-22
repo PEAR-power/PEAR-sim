@@ -1023,8 +1023,16 @@ class HybridSimulator:
             # pairs the old topology with the new source value and reports a
             # current that never flowed (a switch opening as its supply steps
             # from 0 to 100 V would show 100 V across the old load path).
-            source_time = time - self.time_tolerance if closing else time + self.time_tolerance
-            algebraic = edge_mode.algebraic(edge_state, source_time)
+            # Its left limit when the interval closes there, its right limit
+            # when it opens there; a source that is continuous at the instant
+            # is read exactly at it either way (a PWL peak sits on its node,
+            # and a nudge of the read time would land beside the peak).
+            with edge_mode.circuit.source_side("before" if closing else "after"):
+                algebraic = edge_mode.algebraic(edge_state, time)
+                values = [
+                    float(edge_mode.output(name, edge_state, time, algebraic))
+                    for name in kernel_outputs
+                ]
             # An event exactly at the window start belongs to the window with
             # its state AFTER the switching, like the sample recorded there:
             # the end of the interval that closes at that instant is the last
@@ -1034,8 +1042,7 @@ class HybridSimulator:
                 if closing
                 else time >= last_half_start - self.time_tolerance
             )
-            for name in kernel_outputs:
-                value = float(edge_mode.output(name, edge_state, source_time, algebraic))
+            for name, value in zip(kernel_outputs, values, strict=True):
                 bounds = edge_extrema[name]
                 bounds[0] = min(bounds[0], value)
                 bounds[1] = max(bounds[1], value)

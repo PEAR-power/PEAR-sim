@@ -1768,7 +1768,8 @@ peak-to-peak or ripple is tightened to the joint span: the highest of samples an
 minus the lowest of both. An event exactly at the start of the last-half window counts in
 that window with its state after the switching; when the window starts inside an interval,
 the signal is observed at that instant too. Each end point reads its sources on its own
-interval's side of the instant, so a source step that coincides with a switching event is
+interval's side of the instant (the exact left or right limit; a continuous source is read
+exactly at the instant), so a source step that coincides with a switching event is
 not paired with the other side's topology. `min`,
 `max` and the other metric fields themselves stay grid statistics. An extremum strictly
 inside an interval between two events (a resonant peak) is seen by neither.

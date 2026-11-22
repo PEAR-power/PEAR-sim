@@ -732,3 +732,87 @@ outputs: [v(out)]
         assert record["max_last_half"] == pytest.approx(3.012, abs=1e-3)
     assert _judge(record, "max_last_half", maximum=3.3) == "fail"
     assert _judge(record, "max_last_half", maximum=3.7) == "pass"
+
+
+# --- one-sided source values ---------------------------------------------------
+
+
+def test_one_sided_values_differ_only_at_a_discontinuity() -> None:
+    from pear_sim.spec.waveforms import (
+        PulseWaveform,
+        PwlWaveform,
+        SineWaveform,
+        StepWaveform,
+        value_after,
+        value_before,
+    )
+
+    step = StepWaveform(initial=0.0, final=100.0, at_s=0.5e-3)
+    assert (value_before(step, 0.5e-3), value_after(step, 0.5e-3)) == (0.0, 100.0)
+    assert value_before(step, 0.6e-3) == value_after(step, 0.6e-3) == 100.0
+
+    pulse = PulseWaveform(low=0.0, high=5.0, frequency_hz=1e3, duty=0.25, phase_s=0.1e-3)
+    for rise in pulse.breakpoints(0.0, 5e-3)[0::2]:
+        assert (value_before(pulse, rise), value_after(pulse, rise)) == (0.0, 5.0)
+    for fall in pulse.breakpoints(0.0, 5e-3)[1::2]:
+        assert (value_before(pulse, fall), value_after(pulse, fall)) == (5.0, 0.0)
+    assert value_before(pulse, 0.2e-3) == value_after(pulse, 0.2e-3) == 5.0
+
+    # A continuous PWL is read exactly at its node from either side.
+    peak = PwlWaveform(points=((2.501000e-3, 0.0), (2.501001e-3, 100.0), (2.501002e-3, 0.0)))
+    assert value_before(peak, 2.501001e-3) == value_after(peak, 2.501001e-3) == 100.0
+    assert value_before(peak, 2.501000e-3) == value_after(peak, 2.501000e-3) == 0.0
+    assert value_before(peak, 1.0) == value_after(peak, 1.0) == 0.0
+    # A vertical PWL segment is a step.
+    jump = PwlWaveform(points=((0.0, 0.0), (1.0, 1.0), (1.0, 7.0), (2.0, 7.0)))
+    assert (value_before(jump, 1.0), value_after(jump, 1.0)) == (1.0, 7.0)
+
+    sine = SineWaveform(offset=0.0, amplitude=10.0, frequency_hz=1e3, phase_rad=0.3)
+    assert value_before(sine, 1.234e-3) == value_after(sine, 1.234e-3) == sine.value(1.234e-3)
+
+
+@pytest.mark.parametrize("stop", ["1 s", "10 s"])
+def test_a_declared_pwl_peak_is_read_exactly_at_its_node(tmp_path, stop) -> None:
+    """A 2 ns triangular pulse with a declared 100 V apex at a PWL node, where
+    the solver ends a segment. Reading the source a time tolerance beside the
+    node (10 ps on a 10 s run, on a 100 V/ns edge) recorded 99.0 V and passed
+    ``max <= 99.5 V``; the verdict must not depend on how long the run is."""
+
+    model = _write(
+        tmp_path,
+        "pwl_peak",
+        f"""schema: pear-sim/v0.1
+name: pwl_peak
+circuit:
+  ground: gnd
+  components:
+    - {{id: vs, type: voltage_source, p: out, n: gnd, waveform: {{type: pwl, points: [[0 s, 0 V], [2501000 ns, 0 V], [2501001 ns, 100 V], [2501002 ns, 0 V], [{stop}, 0 V]]}}}}
+    - {{id: load, type: resistor, p: out, n: gnd, value: 10 ohm}}{_ISLAND}
+analysis:
+  transient: {{start: 0 s, stop: {stop}, output_step: 10 ms, solver: dopri5, rtol: 1.0e-8, atol: 1.0e-10}}
+outputs: [v(out)]
+""",
+    )
+    result = HybridSimulator(load_model(model)).simulate()
+    record = result.metrics()["v(out)"]
+    assert record["max"] == 0.0  # the 10 ms grid never sees the pulse
+    assert record["extrema_grid"]["event_edge"]["max"] == 100.0
+    evidence = evaluate_expectations(
+        {
+            "schema": "pear-sim/expectations/v0.1",
+            "purpose": "source peak",
+            "measurement_window": {
+                "kind": "full",
+                "start_s": record["full_window_start_s"],
+                "end_s": record["full_window_end_s"],
+            },
+            "criteria": [
+                {"id": "peak", "signal": "v(out)", "metric": "max", "unit": "V",
+                 "maximum": 99.5, "blocking": True}
+            ],
+        },
+        {"v(out)": record},
+    )
+    (criterion,) = evidence["criteria"]
+    assert criterion["status"] == "fail", criterion
+    assert criterion["measured"]["value"] == 100.0

@@ -260,3 +260,62 @@ Waveform = (
     | PwlWaveform
     | DoubleExponentialWaveform
 )
+
+
+# ---------------------------------------------------------------------------
+# one-sided values
+# ---------------------------------------------------------------------------
+
+
+def _pulse_edge(waveform: PulseWaveform, time: float) -> str | None:
+    """``"rise"`` / ``"fall"`` when ``time`` is one of the pulse's edges, else ``None``.
+
+    The edge instants are produced by ``breakpoints`` as ``phase + k*period``
+    (+ ``duty*period``), which ``fmod`` reproduces only to a few ulps.
+    """
+
+    period = 1.0 / waveform.frequency_hz
+    position = math.fmod(time - waveform.phase_s, period)
+    if position < 0.0:
+        position += period
+    tolerance = 8.0 * math.ulp(max(abs(time), abs(waveform.phase_s), period))
+    if position <= tolerance or period - position <= tolerance:
+        return "rise"
+    if abs(position - waveform.duty * period) <= tolerance:
+        return "fall"
+    return None
+
+
+def value_before(waveform: object, time: float) -> float:
+    """Left limit of ``waveform`` at ``time``.
+
+    Equal to ``value(time)`` wherever the waveform is continuous, EXACTLY: a
+    continuous PWL is read at its node, not next to it. Only a step, a pulse
+    edge or a vertical PWL segment has a different value on each side.
+    """
+
+    if isinstance(waveform, StepWaveform):
+        return waveform.final if time > waveform.at_s else waveform.initial
+    if isinstance(waveform, PulseWaveform):
+        edge = _pulse_edge(waveform, time)
+        if edge is not None:
+            return waveform.low if edge == "rise" else waveform.high
+    if isinstance(waveform, PwlWaveform):
+        for (t0, v0), (t1, v1) in zip(waveform.points, waveform.points[1:]):
+            if t0 < time <= t1:
+                return v0 + (v1 - v0) * (time - t0) / (t1 - t0)
+    return float(waveform.value(time))  # type: ignore[attr-defined]
+
+
+def value_after(waveform: object, time: float) -> float:
+    """Right limit of ``waveform`` at ``time`` (see :func:`value_before`)."""
+
+    if isinstance(waveform, PulseWaveform):
+        edge = _pulse_edge(waveform, time)
+        if edge is not None:
+            return waveform.high if edge == "rise" else waveform.low
+    if isinstance(waveform, PwlWaveform):
+        for (t0, v0), (t1, v1) in zip(waveform.points, waveform.points[1:]):
+            if t0 <= time < t1:
+                return v0 + (v1 - v0) * (time - t0) / (t1 - t0)
+    return float(waveform.value(time))  # type: ignore[attr-defined]
