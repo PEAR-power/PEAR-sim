@@ -336,3 +336,18 @@ def test_the_html_report_states_what_the_boundary_search_established(tmp_path) -
     assert "1 probe(s) passed and 0 failed" in html
     assert "2 probe(s) run (1 pass, 0 fail, 1 undecided), 0 of 3 allowed bisection steps" in html
     assert "not_comparable_at_bracket_high" in html
+
+
+def test_the_html_report_does_not_imply_a_failure_beyond_a_passing_bracket(tmp_path) -> None:
+    """20 kHz and 40 kHz both pass. The probes show the criteria hold up to at
+    least 40 kHz; they do not show anything failing beyond it."""
+
+    boundary = _boundary(tmp_path, "open", 1000.0, "40 kHz")
+    assert boundary["verdict"] == "criteria_still_pass_at_bracket_high"
+    assert boundary["max_passing_value_si"] == pytest.approx(40e3)
+    html = (tmp_path / "open" / "campaign-report.html").read_text()
+    assert "meets every declared criterion up to at least" in html
+    assert "no failure was observed" in html
+    assert "tolerates up to" not in html
+    assert "2 probe(s) run (2 pass, 0 fail, 0 undecided), 0 of 3 allowed bisection steps" in html
+    assert "stroke-dasharray" not in html  # no limit line without an observed limit

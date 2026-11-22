@@ -100,7 +100,9 @@ break the model format; every break carries a migration note).
   shortfall is an absent metric has `acceptance_status: not_run` instead of `fail`.
   The HTML report follows the JSON: it no longer says that no value in the bracket met
   the criteria when the search merely stopped at an undecided probe, and it states the
-  probes actually run and the bisection steps actually taken.
+  probes actually run and the bisection steps actually taken. When both ends of the
+  bracket pass it says the criteria hold up to at least the bracket end and that no
+  failure was observed, instead of wording that end as the limit before a failure.
 
   **Migration.** Bundles written by 0.1.x have no `extrema_grid`. `report` reads them
   as before and `evaluate` still decides means, RMS and `final`, but a sampled-extremum
