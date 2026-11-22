@@ -1275,6 +1275,8 @@ class Circuit:
         # or right limit, for an observation that belongs to one side of an
         # instant (see source_side).
         self._source_side: str | None = None
+        # Instant of the event a sample is recorded after (see after_event).
+        self._source_event_time: float | None = None
         self.initial_diodes = {component.id: component.initial for component in self.diodes}
         self._cache: dict[Topology, CompiledMode | TopologyError] = {}
         # Active-set search plans, see _ModePlan. Cleared with the cache.
@@ -1397,9 +1399,33 @@ class Circuit:
         finally:
             self._source_side = previous
 
+    @contextmanager
+    def after_event(self, event_time: float) -> Iterator[None]:
+        """Read sources for a sample recorded in the state AFTER an event.
+
+        An output sample whose grid time coincides with an event is recorded
+        with the post-event topology, but its grid time can round to just
+        before the event. A source that steps at the event must then be read
+        at its value after the step, or the sample pairs the new topology with
+        the old source value. A source that is continuous at the event is
+        still read at the sample's own time, unchanged.
+        """
+
+        previous = self._source_event_time
+        self._source_event_time = float(event_time)
+        try:
+            yield
+        finally:
+            self._source_event_time = previous
+
     def waveform_value(self, waveform: Any, time: float) -> float:
         """``waveform`` at ``time``, on the side selected by :meth:`source_side`."""
 
+        if self._source_event_time is not None:
+            after = value_after(waveform, self._source_event_time)
+            if after != value_before(waveform, self._source_event_time):
+                return after
+            return float(waveform.value(time))
         if self._source_side == "before":
             return value_before(waveform, time)
         if self._source_side == "after":

@@ -984,7 +984,22 @@ class HybridSimulator:
                 )
 
 
-        def record(time: float, sample_state: np.ndarray, sample_mode: CompiledMode) -> None:
+        def record(
+            time: float,
+            sample_state: np.ndarray,
+            sample_mode: CompiledMode,
+            *,
+            event_time: float | None = None,
+        ) -> None:
+            # ``event_time``: the sample is recorded in the state after the
+            # event at that instant. Its grid time stays the label, but a
+            # source that steps at the event is read after the step: the grid
+            # time can round to just before the event, which would pair the
+            # post-event topology with the pre-event source value.
+            if event_time is not None:
+                with sample_mode.circuit.after_event(event_time):
+                    record(time, sample_state, sample_mode)
+                return
             recorded_time.append(float(time))
             # One solve of the algebraic unknowns per sample, shared by every
             # electrical output (same values output() would compute itself).
@@ -1114,7 +1129,9 @@ class HybridSimulator:
                     else math.inf
                 )
                 if -self.time_tolerance <= sample_delta <= 0.0:
-                    record(float(sample_times[sample_index]), state, mode)
+                    record(
+                        float(sample_times[sample_index]), state, mode, event_time=current_time
+                    )
                     sample_index += 1
                 continue
 
@@ -1392,7 +1409,12 @@ class HybridSimulator:
                         else math.inf
                     )
                     if -self.time_tolerance <= sample_delta <= 0.0:
-                        record(float(sample_times[sample_index]), state, mode)
+                        record(
+                            float(sample_times[sample_index]),
+                            state,
+                            mode,
+                            event_time=current_time,
+                        )
                         sample_index += 1
                     continue
 
@@ -1415,11 +1437,11 @@ class HybridSimulator:
                 sample_index < len(sample_times)
                 and sample_times[sample_index] <= current_time + self.time_tolerance
             ):
-                record(float(sample_times[sample_index]), state, mode)
+                record(float(sample_times[sample_index]), state, mode, event_time=current_time)
                 sample_index += 1
 
         if sample_index < len(sample_times):
-            record(float(sample_times[-1]), state, mode)
+            record(float(sample_times[-1]), state, mode, event_time=current_time)
 
         metric_accumulator.impulses = list(self._impulses)
         time_integrals, continuous_outputs, physics_audit = metric_accumulator.finalize(

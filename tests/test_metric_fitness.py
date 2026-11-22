@@ -816,3 +816,42 @@ outputs: [v(out)]
     (criterion,) = evidence["criteria"]
     assert criterion["status"] == "fail", criterion
     assert criterion["measured"]["value"] == 100.0
+
+
+def test_a_sample_at_a_switching_instant_reads_the_source_after_its_step(tmp_path) -> None:
+    """A 1 kHz, 50 % switch feeds 10 ohm from a source that is 0 V while the
+    switch conducts and 100 V while it is open: the switch current is 0 A
+    throughout. A sample whose grid time coincides with a switching instant
+    is recorded in the post-event topology; its grid time can round to just
+    before the event, and reading the source there recorded 10 A samples."""
+
+    model = _write(
+        tmp_path,
+        "complementary",
+        f"""schema: pear-sim/v0.1
+name: complementary
+circuit:
+  ground: gnd
+  components:
+    - {{id: vs, type: voltage_source, p: in, n: gnd, waveform: {{type: pulse, low: 100 V, high: 0 V, frequency: 1 kHz, duty: 50 %}}}}
+    - {{id: q1, type: ideal_switch, p: in, n: out, control: pwm, initial: on}}
+    - {{id: load, type: resistor, p: out, n: gnd, value: 10 ohm}}{_ISLAND}
+controls:
+  pwm: {{type: pwm, frequency: 1 kHz, duty: 50 %, phase: 0 s}}
+analysis:
+  transient: {{start: 0 s, stop: 10 ms, output_step: 10 us, solver: dopri5, rtol: 1.0e-8, atol: 1.0e-10}}
+outputs: [i(q1), i(load), v(out)]
+""",
+    )
+    result = HybridSimulator(load_model(model)).simulate()
+    for name in ("i(q1)", "i(load)", "v(out)"):
+        assert float(abs(result.signals[name]).max()) == 0.0, name
+    record = result.metrics()["i(q1)"]
+    assert record["max"] == 0.0 and record["min"] == 0.0
+    edge = record["extrema_grid"]["event_edge"]
+    assert edge["max"] == 0.0 and edge["min"] == 0.0
+    assert _judge(record, "max_last_half", maximum=5.0) == "pass"
+    assert _judge(record, "max_last_half", minimum=5.0) == "fail"
+    # The grid keeps its own time labels.
+    assert result.time[1] - result.time[0] == pytest.approx(10e-6)
+    assert len(result.time) == 1001

@@ -131,6 +131,17 @@ break the model format; every break carries a migration note).
 
 ### Fixed
 
+- A sample recorded at a switching instant paired the post-event topology with the
+  pre-event value of a source that steps at the same instant (present in 0.1.1). The
+  sample is recorded after the event, but its grid time can round to just before it and
+  the source was read at the grid time. With a 1 kHz, 50 % switch feeding 10 Ω from a
+  source that is 0 V while the switch conducts and 100 V while it is open, the switch
+  current is 0 A throughout, yet `waveforms.csv` at `output_step: 10 us` held four
+  10 A samples: `max <= 5 A` failed and `max >= 5 A` passed. A source that steps at the
+  event is now read after its step; the sample keeps its grid time, and a source that
+  is continuous at the event is read at the grid time exactly as before, so runs
+  without such a coincidence are unchanged.
+
 - Core loss (iGSE): with `1/period` in a **gap between two Steinmetz ranges** of a
   material card, the last range was used whatever its distance, and the flag reported
   the distance to that far range. With ranges 25–99 kHz and 200–1000 kHz and a 100 kHz
