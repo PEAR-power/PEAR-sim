@@ -48,6 +48,11 @@ from pear_sim.evidence.parameter_sweep import (
     _run_point_worker,
     _safe_run_artifact,
 )
+from pear_sim.evidence.metric_fitness import (
+    SampledBound,
+    fitness_context,
+    judge_sampled_bound,
+)
 from pear_sim.core.solver import HybridSimulator
 from pear_sim.spec.model import Model, load_model
 from pear_sim.spec.units import parse_quantity
@@ -124,6 +129,27 @@ class _Quantity:
         if not math.isfinite(float(value)):
             raise BatchError(f"{self.label} is not finite in the run")
         return float(value)
+
+    def judge(
+        self,
+        value: float,
+        grids: Mapping[str, Any],
+        *,
+        lower: float | None = None,
+        upper: float | None = None,
+    ) -> SampledBound:
+        """How ``value`` stands against ``lower <= quantity <= upper``.
+
+        Only a sampled extremum of a signal can be unfit or tightened (see
+        ``pear_sim.evidence.metric_fitness``). With no bound the question is
+        whether the number can be ranked at all.
+        """
+
+        if self.signal is None:
+            return SampledBound(value, value, None)
+        return judge_sampled_bound(
+            str(self.metric), grids.get(self.label), value, lower=lower, upper=upper
+        )
 
     def _read_losses(self, losses: Mapping[str, Any] | None) -> Any:
         if losses is None:
@@ -459,8 +485,18 @@ def _read_run(
     quantities: Sequence[_Quantity],
     *,
     backend_id: str = "reference-python",
+    grids: dict[str, Any] | None = None,
+    sampled: dict[str, float] | None = None,
 ) -> tuple[str, dict[str, float]]:
-    """Verify one run bundle and read the requested quantities from it."""
+    """Verify one run bundle and read the requested quantities from it.
+
+    A sampled extremum is returned TIGHTENED by the signal's event-edge
+    extremes (``pear_sim.evidence.metric_fitness``): that is the number the
+    constraints, the ranking and the finalist check all use, so a design
+    cannot win on a peak the output grid stepped over. ``sampled``, when
+    given, receives the raw grid statistic for every quantity it differs
+    for; ``grids`` receives each signal quantity's fitness context by label.
+    """
 
     expected = load_model(model_path, overrides=dict(overrides))
     metrics, run_sha256 = _read_verified_metrics(
@@ -474,6 +510,18 @@ def _read_run(
         )
         losses, _raw = _read_strict_json(losses_path, role="run losses")
     values = {quantity.label: quantity.read(metrics, losses) for quantity in quantities}
+    for quantity in quantities:
+        if quantity.signal is None:
+            continue
+        context = fitness_context(metrics.get(quantity.signal))
+        raw = values[quantity.label]
+        bound = judge_sampled_bound(str(quantity.metric), context, raw).value
+        if bound != raw:
+            values[quantity.label] = bound
+            if sampled is not None:
+                sampled[quantity.label] = raw
+        if grids is not None:
+            grids[quantity.label] = context
     return run_sha256, values
 
 
@@ -540,11 +588,20 @@ def screen_designs(
             "violations": [],
             "error": None,
             "run_sha256": None,
+            "extrema_grid": {},
+            # Raw grid statistic of every value that event edges tightened.
+            "sampled_values": {},
         }
         try:
             run_dir = outcome.unwrap()
             row["run_sha256"], row["values"] = _read_run(
-                run_dir, model_path, design, quantities, backend_id=backend_id
+                run_dir,
+                model_path,
+                design,
+                quantities,
+                backend_id=backend_id,
+                grids=row["extrema_grid"],
+                sampled=row["sampled_values"],
             )
             _prune_screening_run(run_dir)
         except Exception as exc:  # retained per design; the batch continues
@@ -636,13 +693,39 @@ def run_batch(
         backend_id=request.backend_id,
     )
     for row in rows:
+        row["not_comparable"] = []
         if row["status"] == "pass":
-            row["violations"] = [
-                constraint.quantity.label
-                for constraint in request.constraints
-                if not constraint.holds(row["values"][constraint.quantity.label])
+            # A sampled extremum on a grid that does not resolve the switching
+            # period cannot clear a constraint or be ranked: a design is never
+            # feasible, let alone the winner, on a number the grid may have missed.
+            undecided: dict[str, str] = {}
+            violations: list[str] = []
+            for constraint in request.constraints:
+                label = constraint.quantity.label
+                judged = constraint.quantity.judge(
+                    row["values"][label],
+                    row["extrema_grid"],
+                    lower=constraint.minimum,
+                    upper=constraint.maximum,
+                )
+                if judged.unfit_reason is not None:
+                    undecided[label] = judged.unfit_reason
+                # The bound the verdict rests on: the sampled value tightened
+                # by the signal's event-edge extremes.
+                elif not constraint.holds(judged.value) and label not in violations:
+                    violations.append(label)
+            reason = request.objective.judge(
+                row["values"][request.objective.label], row["extrema_grid"]
+            ).unfit_reason
+            if reason is not None:
+                undecided.setdefault(request.objective.label, reason)
+            row["not_comparable"] = [
+                {"quantity": label, "reason": reason} for label, reason in undecided.items()
             ]
-        row["feasible"] = row["status"] == "pass" and not row["violations"]
+            row["violations"] = violations
+        row["feasible"] = (
+            row["status"] == "pass" and not row["violations"] and not row["not_comparable"]
+        )
 
     feasible = [row for row in rows if row["feasible"]]
     sign = 1.0 if request.sense == "minimize" else -1.0
@@ -686,12 +769,14 @@ def run_batch(
         }
         try:
             run_dir = outcome.unwrap()
+            full_sampled: dict[str, float] = {}
             _sha, values = _read_run(
                 run_dir,
                 retained_model,
                 row["parameters_si"],
                 quantities,
                 backend_id=request.backend_id,
+                sampled=full_sampled,
             )
             record["run"] = (run_dir / "run.json").relative_to(destination).as_posix()
             # Lean and full runs must agree exactly; a lean shortcut that
@@ -700,6 +785,15 @@ def run_batch(
                 {"quantity": label, "screening": row["values"][label], "full": value}
                 for label, value in values.items()
                 if value != row["values"][label]
+            ] + [
+                # The raw grid statistic behind a tightened value must agree too.
+                {
+                    "quantity": f"{label} (sampled)",
+                    "screening": row["sampled_values"].get(label),
+                    "full": full_sampled.get(label),
+                }
+                for label in sorted(set(full_sampled) | set(row["sampled_values"]))
+                if full_sampled.get(label) != row["sampled_values"].get(label)
             ]
             if record["mismatches"]:
                 record["status"] = "screening_mismatch"
@@ -724,14 +818,18 @@ def run_batch(
             ["design_id", "rank", "feasible", "status"]
             + [f"{name} [SI]" for name in request.parameters]
             + labels
-            + ["violations", "error"]
+            + ["violations", "not_comparable", "error"]
         )
         for row in rows:
             writer.writerow(
                 [row["design_id"], row["rank"] or "", row["feasible"], row["status"]]
                 + [repr(row["parameters_si"].get(name, "")) for name in request.parameters]
                 + [repr(row["values"][label]) if label in row["values"] else "" for label in labels]
-                + [";".join(row["violations"]), row["error"] or ""]
+                + [
+                    ";".join(row["violations"]),
+                    ";".join(item["quantity"] for item in row["not_comparable"]),
+                    row["error"] or "",
+                ]
             )
 
     summary = {
@@ -753,6 +851,7 @@ def run_batch(
         "design_count": len(rows),
         "feasible_count": len(feasible),
         "failed_count": len(failed),
+        "not_comparable_count": sum(1 for row in rows if row["not_comparable"]),
         "best_design": feasible[0]["design_id"] if feasible else None,
         "ranking": [
             {
@@ -760,6 +859,7 @@ def run_batch(
                 "design_id": row["design_id"],
                 "parameters_si": row["parameters_si"],
                 "values": row["values"],
+                "sampled_values": row["sampled_values"],
             }
             for row in feasible[:20]
         ],

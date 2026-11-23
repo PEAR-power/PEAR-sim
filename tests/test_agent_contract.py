@@ -564,3 +564,40 @@ def test_floquet_overrides_reach_the_controller_gains(workspace: Workspace) -> N
     assert not is_error, from_overrides
     assert from_overrides["stability"] == from_yaml["stability"] == "unstable"
     assert from_overrides["max_multiplier_magnitude"] == from_yaml["max_multiplier_magnitude"]
+
+
+def test_a_withheld_junction_temperature_carries_its_reason(
+    workspace: Workspace, tmp_path: Path
+) -> None:
+    """Thermal runaway withholds every loss and temperature number. The tool
+    reply must say that, or null reads as "no data"."""
+
+    from tests.test_self_consistent_tj import _model
+
+    source = _model(tmp_path, rth=13.75, alpha=0.004).source_path  # loop gain 1.1
+    is_error, result = _call(workspace, "simulate", {"model_yaml": source.read_text()})
+    assert not is_error, result
+    losses = result["losses"]
+    assert losses["total_mean_power_w"] is None
+    assert losses["electrothermal_mode"] == "self_consistent"
+    assert losses["electrothermal_status"] == "thermal_runaway"
+    (device,) = losses["devices"]
+    assert device["tj_max_c"] is None and device["conduction_mean_power_w"] is None
+    assert device["electrothermal_status"] == "thermal_runaway"
+    assert device["electrothermal_loop_gain"] == pytest.approx(1.1, rel=1e-3)
+    assert any("thermal_runaway" in warning for warning in losses["warnings"])
+
+
+def test_a_converged_electrothermal_loop_reports_its_status(
+    workspace: Workspace, tmp_path: Path
+) -> None:
+    from tests.test_self_consistent_tj import _model
+
+    source = _model(tmp_path, rth=3.75, alpha=0.004).source_path  # loop gain 0.3
+    is_error, result = _call(workspace, "simulate", {"model_yaml": source.read_text()})
+    assert not is_error, result
+    losses = result["losses"]
+    assert losses["electrothermal_status"] == "converged"
+    (device,) = losses["devices"]
+    assert device["electrothermal_status"] == "converged"
+    assert device["tj_max_c"] is not None and losses["total_mean_power_w"] is not None

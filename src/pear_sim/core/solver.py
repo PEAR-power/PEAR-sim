@@ -171,6 +171,11 @@ class SimulationResult:
     #: (run_sha256), so a run from another engine is never mistaken for one
     #: from the reference implementation.
     backend: str = "reference-python"
+    #: Extremes of each electrical output over the END POINTS of the solver's
+    #: integration intervals (both sides of every event), per window. The
+    #: output grid can step over a whole conduction interval; its end points
+    #: are still part of the waveform. ``None`` on a hand-built result.
+    event_edge_extrema: dict[str, dict[str, float]] | None = None
 
     def metrics(self) -> dict[str, dict[str, Any]]:
         """Return time-weighted metrics and explicitly named output-grid statistics.
@@ -189,6 +194,8 @@ class SimulationResult:
         declared_units = (
             {block.id: block.unit for block in graph.blocks} if graph else {}
         )
+        extrema_grid = _extrema_grid(self.model)
+        edges = self.event_edge_extrema or {}
         for name, values in self.signals.items():
             tail = values[tail_index:]
             if not len(tail):
@@ -204,6 +211,8 @@ class SimulationResult:
                 result[name] = _non_affine_metrics(
                     name, values, tail, tail_start, declared_units
                 )
+                if extrema_grid is not None:
+                    result[name]["extrema_grid"] = dict(extrema_grid)
                 continue
             full_moments = full_window["signals"][name]
             tail_moments = tail_window["signals"][name]
@@ -266,8 +275,59 @@ class SimulationResult:
                 )
             else:
                 payload["continuity"] = "topology_dependent_or_unproven"
+            if extrema_grid is not None:
+                payload["extrema_grid"] = dict(extrema_grid)
+                if name in edges:
+                    payload["extrema_grid"]["event_edge"] = dict(edges[name])
             result[name] = payload
         return result
+
+
+def _extrema_grid(model: Any) -> dict[str, Any] | None:
+    """Facts a reader needs to judge the sampled extrema: grid step vs carrier.
+
+    ``min``/``max``/``peak_to_peak``/``ripple`` are statistics of the requested
+    output grid. Whether that grid can see the switching ripple is decided by
+    the consumer (``pear_sim.evidence.metric_fitness``); this record only states
+    the step and the shortest declared switching period. ``None`` (the field is
+    then absent, which readers treat as unresolved) when the model object does
+    not carry transient settings, e.g. a hand-built result.
+    """
+
+    transient = getattr(model, "transient", None)
+    step = getattr(transient, "output_step", None)
+    if isinstance(step, bool) or not isinstance(step, (int, float)) or not step > 0.0:
+        return None
+    controls = [
+        *getattr(model, "controls", {}).values(),
+        *getattr(model, "sampled_controls", {}).values(),
+    ]
+    periods = [float(control.period) for control in controls]
+    shortest = min(periods) if periods else None
+    # A periodic source is a declared timescale too: a 1 kHz sine recorded
+    # every 1 ms samples one phase forever, with no switching control at all.
+    source_periods = [
+        1.0 / float(frequency)
+        for component in getattr(model, "components", ())
+        if (frequency := getattr(getattr(component, "waveform", None), "frequency_hz", None))
+        and float(frequency) > 0.0
+    ]
+    shortest_source = min(source_periods) if source_periods else None
+    # `event_edge` (min/max of the signal at the end points of the solver's
+    # integration intervals) is added per signal by the caller.
+    return {
+        "output_step_s": float(step),
+        "switching_control_count": len(periods),
+        "shortest_switching_period_s": shortest,
+        "samples_per_shortest_switching_period": (
+            None if shortest is None else shortest / float(step)
+        ),
+        "periodic_source_count": len(source_periods),
+        "shortest_source_period_s": shortest_source,
+        "samples_per_shortest_source_period": (
+            None if shortest_source is None else shortest_source / float(step)
+        ),
+    }
 
 
 _MACHINE_METRIC_NOT_COMPUTED = (
@@ -924,7 +984,22 @@ class HybridSimulator:
                 )
 
 
-        def record(time: float, sample_state: np.ndarray, sample_mode: CompiledMode) -> None:
+        def record(
+            time: float,
+            sample_state: np.ndarray,
+            sample_mode: CompiledMode,
+            *,
+            event_time: float | None = None,
+        ) -> None:
+            # ``event_time``: the sample is recorded in the state after the
+            # event at that instant. Its grid time stays the label, but a
+            # source that steps at the event is read after the step: the grid
+            # time can round to just before the event, which would pair the
+            # post-event topology with the pre-event source value.
+            if event_time is not None:
+                with sample_mode.circuit.after_event(event_time):
+                    record(time, sample_state, sample_mode)
+                return
             recorded_time.append(float(time))
             # One solve of the algebraic unknowns per sample, shared by every
             # electrical output (same values output() would compute itself).
@@ -949,6 +1024,47 @@ class HybridSimulator:
                 )
 
         kernel_outputs = electrical_outputs(self.model)
+        # name -> [min, max, min_last_half, max_last_half] over interval end points.
+        edge_extrema: dict[str, list[float]] = {
+            name: [math.inf, -math.inf, math.inf, -math.inf] for name in kernel_outputs
+        }
+
+        def observe_edge(
+            time: float, edge_state: np.ndarray, edge_mode: CompiledMode, *, closing: bool
+        ) -> None:
+            # Sources are read on this interval's own side of the instant. A
+            # source that steps exactly where the interval closes still has
+            # its OLD value in this topology; reading it at the instant itself
+            # pairs the old topology with the new source value and reports a
+            # current that never flowed (a switch opening as its supply steps
+            # from 0 to 100 V would show 100 V across the old load path).
+            # Its left limit when the interval closes there, its right limit
+            # when it opens there; a source that is continuous at the instant
+            # is read exactly at it either way (a PWL peak sits on its node,
+            # and a nudge of the read time would land beside the peak).
+            with edge_mode.circuit.source_side("before" if closing else "after"):
+                algebraic = edge_mode.algebraic(edge_state, time)
+                values = [
+                    float(edge_mode.output(name, edge_state, time, algebraic))
+                    for name in kernel_outputs
+                ]
+            # An event exactly at the window start belongs to the window with
+            # its state AFTER the switching, like the sample recorded there:
+            # the end of the interval that closes at that instant is the last
+            # point before the window, not a point in it.
+            in_tail = (
+                time > last_half_start + self.time_tolerance
+                if closing
+                else time >= last_half_start - self.time_tolerance
+            )
+            for name, value in zip(kernel_outputs, values, strict=True):
+                bounds = edge_extrema[name]
+                bounds[0] = min(bounds[0], value)
+                bounds[1] = max(bounds[1], value)
+                if in_tail:
+                    bounds[2] = min(bounds[2], value)
+                    bounds[3] = max(bounds[3], value)
+
         state_extrema = (
             rust_backend.state_extrema if self.backend == "rust" else _dense_state_extrema
         )
@@ -1013,7 +1129,9 @@ class HybridSimulator:
                     else math.inf
                 )
                 if -self.time_tolerance <= sample_delta <= 0.0:
-                    record(float(sample_times[sample_index]), state, mode)
+                    record(
+                        float(sample_times[sample_index]), state, mode, event_time=current_time
+                    )
                     sample_index += 1
                 continue
 
@@ -1060,6 +1178,25 @@ class HybridSimulator:
             if float(solution.t[-1]) > float(solution.t[0]):
                 interval_start = float(solution.t[0])
                 interval_end = float(solution.t[-1])
+                # Both sides of every event: the start of this interval in its
+                # mode and its end in the same mode. A conduction interval the
+                # output grid steps over entirely is still seen here.
+                observe_edge(
+                    interval_start, np.asarray(solution.y[:, 0], dtype=float), mode, closing=False
+                )
+                observe_edge(
+                    interval_end, np.asarray(solution.y[:, -1], dtype=float), mode, closing=True
+                )
+                if interval_start < last_half_start < interval_end:
+                    # The last-half window opens inside this interval. A decay
+                    # has its window maximum exactly there, where no interval
+                    # ends and the output grid need not have a sample.
+                    observe_edge(
+                        last_half_start,
+                        np.asarray(solution.sol(last_half_start), dtype=float),
+                        mode,
+                        closing=False,
+                    )
                 # The published `state_extrema` observation covers the last-half
                 # window only; per-interval extrema outside it exist solely for
                 # the `mode_intervals` audit trail. A lean run therefore searches
@@ -1272,7 +1409,12 @@ class HybridSimulator:
                         else math.inf
                     )
                     if -self.time_tolerance <= sample_delta <= 0.0:
-                        record(float(sample_times[sample_index]), state, mode)
+                        record(
+                            float(sample_times[sample_index]),
+                            state,
+                            mode,
+                            event_time=current_time,
+                        )
                         sample_index += 1
                     continue
 
@@ -1295,11 +1437,11 @@ class HybridSimulator:
                 sample_index < len(sample_times)
                 and sample_times[sample_index] <= current_time + self.time_tolerance
             ):
-                record(float(sample_times[sample_index]), state, mode)
+                record(float(sample_times[sample_index]), state, mode, event_time=current_time)
                 sample_index += 1
 
         if sample_index < len(sample_times):
-            record(float(sample_times[-1]), state, mode)
+            record(float(sample_times[-1]), state, mode, event_time=current_time)
 
         metric_accumulator.impulses = list(self._impulses)
         time_integrals, continuous_outputs, physics_audit = metric_accumulator.finalize(
@@ -1376,6 +1518,13 @@ class HybridSimulator:
             signal_trace=signal_trace,
             evidence_mode=self.evidence_mode,
             backend=self.backend_id,
+            event_edge_extrema={
+                name: dict(
+                    zip(("min", "max", "min_last_half", "max_last_half"), bounds, strict=True)
+                )
+                for name, bounds in edge_extrema.items()
+                if all(math.isfinite(bound) for bound in bounds)
+            },
         )
 
     def _assert_star_invariants(

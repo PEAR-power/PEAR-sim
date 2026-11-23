@@ -17,6 +17,16 @@ that far, in any environment, for any reason. Where a drift figure came from
 travels with it: every axis carries `source` and `note`, either inherited from
 the model's declared envelope or stated in the request.
 
+Criteria take their dimension from what is measured. ``signal`` plus ``field``
+fix the unit (``v(out)`` is volts); ``limit`` and ``reference`` are either a
+plain number in that SI unit or a unit-bearing string of the same dimension
+(``"50 mV"``). ``unit`` is optional and must agree: ``v(out) <= 50 A`` is a
+request error, and so is the ambiguous ``limit: 50, unit: mV``. A criterion on
+a sampled extremum (``max``, ``min``, ...) is decided only on a grid that
+resolves the switching period or when the grid's one-sided error cannot change
+the verdict (``pear_sim.evidence.metric_fitness``); otherwise the point is
+``not_comparable``, with no margin, and is not accepted.
+
 Claim boundary, restated in every artifact this module writes:
 
 * corner extremes bound the response only under per-parameter monotonicity; a
@@ -47,8 +57,12 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import yaml
 
+from pear_sim.errors import ModelError
+from pear_sim.evidence.metric_fitness import fitness_context, judge_sampled_bound
 from pear_sim.evidence.parallel_points import resolve_jobs, run_ordered
 from pear_sim.spec.model import Model, load_model
+from pear_sim.spec.signals import unit_for
+from pear_sim.spec.units import UnitError, parse_quantity, unit_scale_and_dimension
 from pear_sim.spec.parameter_envelope import PROVENANCE_SOURCES, ParameterEnvelope
 from pear_sim.spec.perturbation import (
     PerturbationError,
@@ -58,7 +72,6 @@ from pear_sim.spec.perturbation import (
     apply_perturbation_to_document,
     parse_perturbation_request,
 )
-from pear_sim.spec.units import parse_quantity
 
 
 __all__ = [
@@ -276,6 +289,45 @@ class _Criterion:
     unit: str
     provenance: dict[str, str]
 
+    def bounds(self) -> tuple[float | None, float | None]:
+        """The requirement as ``lower <= value <= upper``."""
+
+        if self.op == "max":
+            return None, self.limit
+        if self.op == "min":
+            return self.limit, None
+        reference = float(self.reference or 0.0)
+        return reference - self.limit, reference + self.limit
+
+    def verdict(
+        self, metrics: Mapping[str, Any], grids: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Status for one point: pass/fail with a margin, or why there is none.
+
+        A sampled extremum on a grid that does not resolve the switching
+        period decides nothing unless its known-sign error cannot change the
+        verdict (``pear_sim.evidence.metric_fitness``); it then gets
+        ``not_comparable`` and no margin.
+        """
+
+        value = metrics.get(f"{self.signal}::{self.field}")
+        if value is None:
+            return {"status": "not_run", "reason": "metric absent"}
+        value = float(value)
+        lower, upper = self.bounds()
+        judged = judge_sampled_bound(
+            self.field, grids.get(self.signal), value, lower=lower, upper=upper
+        )
+        if judged.unfit_reason is not None:
+            return {"status": "not_comparable", "value": value, "reason": judged.unfit_reason}
+        # The margin is taken from the bound the verdict rests on: the sampled
+        # value tightened by the signal's event-edge extremes.
+        status, margin = self.evaluate(judged.value)
+        verdict = {"status": status, "value": judged.value, "margin": margin}
+        if judged.tightened:
+            verdict["sampled_value"] = judged.sampled
+        return verdict
+
     def evaluate(self, value: float) -> tuple[str, float]:
         if self.op == "max":
             margin = self.limit - value
@@ -300,7 +352,83 @@ class _Criterion:
         return payload
 
 
-def _parse_criteria(raw: Any) -> tuple[_Criterion, ...]:
+_SIGNAL_FIELDS = ("min", "max", "mean_last_half", "min_last_half", "max_last_half")
+_FSW_FIELD = "fsw_measured_hz"
+
+
+def _measured_unit(signal: str, field: str, model: Model, *, name: str) -> str:
+    """Unit of ``signal::field`` as the producer measures it.
+
+    The dimension of a criterion comes from WHAT IS MEASURED, never from the
+    request's own ``unit`` label: a label the producer does not check lets
+    ``v(out) <= 50 A`` pass against 40 V.
+    """
+
+    if field == _FSW_FIELD:
+        return "Hz"
+    if field not in _SIGNAL_FIELDS:
+        raise PerturbationError(
+            f"{name}.field must be one of {', '.join(_SIGNAL_FIELDS)} or "
+            f"{_FSW_FIELD} (got {field!r})"
+        )
+    graph = getattr(model, "signals", None)
+    declared = {block.id: block.unit for block in graph.blocks} if graph else {}
+    try:
+        return unit_for(signal, declared)
+    except ModelError as exc:
+        raise PerturbationError(f"{name}.signal: {exc}") from exc
+
+
+def _criterion_value(raw: Any, measured_unit: str, *, name: str) -> float:
+    """An SI number, or a unit-bearing string of the measured dimension."""
+
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+        raise PerturbationError(
+            f"{name} must be a number in {measured_unit!r} or a string with a unit"
+        )
+    if isinstance(raw, str):
+        known = unit_scale_and_dimension(measured_unit)
+        if known is None:
+            raise PerturbationError(
+                f"{name}: a unit-bearing string is not supported for a quantity "
+                f"measured in {measured_unit!r}; give a plain number in that unit"
+            )
+        try:
+            value = float(parse_quantity(raw, known[1], name=name).value)
+        except UnitError as exc:
+            raise PerturbationError(str(exc)) from exc
+    else:
+        value = float(raw)
+    if not math.isfinite(value):
+        raise PerturbationError(f"{name} must be finite")
+    return value
+
+
+def _check_declared_unit(
+    declared: Any, measured_unit: str, *, subject: str, bare_number: bool, name: str
+) -> None:
+    if declared is None or declared == "":
+        return
+    if not isinstance(declared, str):
+        raise PerturbationError(f"{name} must be a string")
+    if declared.strip() == measured_unit:
+        return
+    given = unit_scale_and_dimension(declared)
+    known = unit_scale_and_dimension(measured_unit)
+    if given is None or known is None or given[1] != known[1]:
+        raise PerturbationError(
+            f"{name} {declared!r} does not match {subject}, which is measured in "
+            f"{measured_unit!r}"
+        )
+    if given[0] != known[0] and bare_number:
+        raise PerturbationError(
+            f"{name} {declared!r} with a bare number is ambiguous (is the number in "
+            f"{declared} or in {measured_unit}?); write the value with its unit, "
+            f"e.g. \"50 {declared}\", or give an SI number with unit {measured_unit!r}"
+        )
+
+
+def _parse_criteria(raw: Any, model: Model) -> tuple[_Criterion, ...]:
     if not isinstance(raw, list) or not 1 <= len(raw) <= 16:
         raise PerturbationError("criteria must list 1..16 entries")
     criteria = []
@@ -318,24 +446,48 @@ def _parse_criteria(raw: Any) -> tuple[_Criterion, ...]:
             raise PerturbationError(
                 f"{name}.op must be max, min or abs_deviation_max (got {op!r})"
             )
-        limit = entry.get("limit")
-        if isinstance(limit, bool) or not isinstance(limit, (int, float)):
-            raise PerturbationError(f"{name}.limit must be a number in SI units")
-        reference = entry.get("reference")
-        if op == "abs_deviation_max" and not isinstance(reference, (int, float)):
+        signal, field = str(entry.get("signal")), str(entry.get("field"))
+        measured_unit = _measured_unit(signal, field, model, name=name)
+        raw_limit, raw_reference = entry.get("limit"), entry.get("reference")
+        limit = _criterion_value(raw_limit, measured_unit, name=f"{name}.limit")
+        if op == "abs_deviation_max" and raw_reference is None:
             raise PerturbationError(f"{name}.reference is required for abs_deviation_max")
+        reference = (
+            None
+            if raw_reference is None
+            else _criterion_value(raw_reference, measured_unit, name=f"{name}.reference")
+        )
+        _check_declared_unit(
+            entry.get("unit"),
+            measured_unit,
+            subject=f"{signal} {field}",
+            bare_number=not isinstance(raw_limit, str)
+            or (raw_reference is not None and not isinstance(raw_reference, str)),
+            name=f"{name}.unit",
+        )
         criteria.append(
             _Criterion(
                 id=str(entry.get("id") or f"c{index}"),
-                signal=str(entry.get("signal")),
-                field=str(entry.get("field")),
+                signal=signal,
+                field=field,
                 op=str(op),
-                limit=float(limit),
-                reference=float(reference) if isinstance(reference, (int, float)) else None,
-                unit=str(entry.get("unit") or ""),
+                limit=limit,
+                reference=reference,
+                # Always the unit the limit is stored in: the measured SI unit.
+                unit=measured_unit,
                 provenance=_provenance(entry, name=name),
             )
         )
+    # Verdicts are keyed by id: with a repeated id the later criterion would
+    # silently replace the earlier one, and the order would decide acceptance.
+    seen: set[str] = set()
+    for criterion in criteria:
+        if criterion.id in seen:
+            raise PerturbationError(
+                f"criteria: id {criterion.id!r} is used more than once; every "
+                "criterion needs its own id (an omitted id defaults to c<index>)"
+            )
+        seen.add(criterion.id)
     return tuple(criteria)
 
 
@@ -550,12 +702,15 @@ def _point_metrics(
     recovery_band: float | None,
     event_onset: float | None,
     forced_windows: Sequence[ForcedGateWindow] = (),
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Point metrics, and each signal's ``extrema_grid`` for the criteria."""
+
     metrics_payload = json.loads((run_dir / "metrics.json").read_text())
     times, signals = _read_waveform(run_dir)
     settled_start = times[len(times) // 2] if times else 0.0
 
     measured: dict[str, Any] = {}
+    grids = {signal: fitness_context(fields) for signal, fields in metrics_payload.items()}
     for signal, fields in metrics_payload.items():
         for field in ("min", "max", "mean_last_half", "min_last_half", "max_last_half"):
             if field in fields:
@@ -604,7 +759,7 @@ def _point_metrics(
 
     # Explicitly NOT an observation of "protection did not trip".
     measured["protection"] = _NOT_MODELLED
-    return measured
+    return measured, grids
 
 
 def _materialize(
@@ -664,6 +819,18 @@ def _mutate_events(
         )
         by_id[event_id] = mutated
     return tuple(by_id[event.id] for event in events)
+
+
+def _acceptance(verdicts: Mapping[str, Mapping[str, Any]]) -> str:
+    """``pass`` only if every criterion passed; a violation outranks an undecided one."""
+
+    statuses = {verdict["status"] for verdict in verdicts.values()}
+    if statuses <= {"pass"}:
+        return "pass"
+    if "fail" in statuses:
+        return "fail"
+    # Neither is a measured violation: nothing was shown to fail.
+    return "not_comparable" if "not_comparable" in statuses else "not_run"
 
 
 def _event_onset(model: Model, events: Sequence[PerturbationEvent]) -> float | None:
@@ -727,7 +894,7 @@ def run_campaign(
             f"{MAX_CAMPAIGN_RUNS}-run cap"
         )
 
-    criteria = _parse_criteria(payload.get("criteria"))
+    criteria = _parse_criteria(payload.get("criteria"), model)
     nominal = payload.get("nominal") or {}
     nominal_vout = nominal.get("vout_v")
     recovery_band = nominal.get("recovery_band_percent")
@@ -795,7 +962,7 @@ def run_campaign(
             row["run"] = str(run_dir.relative_to(destination))
             row["execution_status"] = "pass"
             point_model = load_model(materialized)
-            row["metrics"] = _point_metrics(
+            row["metrics"], grids = _point_metrics(
                 run_dir,
                 nominal_vout=float(nominal_vout) if nominal_vout is not None else None,
                 recovery_band=(
@@ -814,22 +981,11 @@ def run_campaign(
             rows.append(row)
             continue
 
-        verdicts: dict[str, Any] = {}
-        accepted = True
-        for criterion in criteria:
-            key = f"{criterion.signal}::{criterion.field}"
-            value = row["metrics"].get(key)
-            if value is None:
-                verdicts[criterion.id] = {"status": "not_run", "reason": "metric absent"}
-                accepted = False
-                continue
-            status, margin = criterion.evaluate(float(value))
-            verdicts[criterion.id] = {
-                "status": status, "value": float(value), "margin": margin,
-            }
-            accepted = accepted and status == "pass"
+        verdicts = {
+            criterion.id: criterion.verdict(row["metrics"], grids) for criterion in criteria
+        }
         row["criteria"] = verdicts
-        row["acceptance_status"] = "pass" if accepted else "fail"
+        row["acceptance_status"] = _acceptance(verdicts)
         rows.append(row)
 
     boundary = None
@@ -952,7 +1108,7 @@ def _boundary_search(
     probe_dir.mkdir(parents=True, exist_ok=True)
     probes: list[dict[str, Any]] = []
 
-    def accepts(value: float, tag: str) -> bool:
+    def probe(value: float, tag: str) -> str:
         point_dir = probe_dir / tag
         point_dir.mkdir(parents=True, exist_ok=True)
         record: dict[str, Any] = {"value_si": value, "tag": tag}
@@ -964,7 +1120,7 @@ def _boundary_search(
             materialized = _materialize(document, model, spec, point_dir)
             run_dir = _run_point(materialized, point_dir, timeout_s=MAX_POINT_WALL_TIME_S)
             point_model = load_model(materialized)
-            metrics = _point_metrics(
+            metrics, grids = _point_metrics(
                 run_dir,
                 nominal_vout=float(nominal_vout) if nominal_vout is not None else None,
                 recovery_band=float(recovery_band) if recovery_band is not None else None,
@@ -972,42 +1128,85 @@ def _boundary_search(
                 forced_windows=point_model.forced_gate_windows,
             )
         except PerturbationError as exc:
-            record.update({"status": "fail", "error": str(exc)[:512]})
+            # The probe did not run (the model was refused, the worker failed
+            # or timed out). That is not a criterion violation: no KPI was
+            # measured, so it cannot place the KPI boundary.
+            record.update({"status": "error", "error": str(exc)[:512]})
             probes.append(record)
-            return False
-        verdicts = {}
-        accepted = True
-        for criterion in criteria:
-            value_at = metrics.get(f"{criterion.signal}::{criterion.field}")
-            if value_at is None:
-                verdicts[criterion.id] = "not_run"
-                accepted = False
-                continue
-            status, margin = criterion.evaluate(float(value_at))
-            verdicts[criterion.id] = status
-            accepted = accepted and status == "pass"
-        record.update({"status": "pass" if accepted else "fail", "criteria": verdicts})
+            return "error"
+        verdicts = {criterion.id: criterion.verdict(metrics, grids) for criterion in criteria}
+        status = _acceptance(verdicts)
+        record.update(
+            {
+                "status": status,
+                "criteria": {name: verdict["status"] for name, verdict in verdicts.items()},
+            }
+        )
+        reasons = [
+            f"{name}: {verdict['reason']}"
+            for name, verdict in verdicts.items()
+            if verdict["status"] not in ("pass", "fail") and verdict.get("reason")
+        ]
+        if reasons:
+            record["reason"] = "; ".join(reasons)[:512]
         probes.append(record)
-        return accepted
+        return status
 
-    low_ok = accepts(low, "bracket-low")
-    high_ok = accepts(high, "bracket-high")
-    if not low_ok:
-        result_value: float | None = None
+    def undecided(status: str, where: str) -> str:
+        prefix = "execution_error" if status == "error" else status
+        return f"{prefix}_{where}"
+
+    # A number is a KPI boundary only between a measured pass and a measured
+    # fail. A probe that could not be judged (not_comparable, not_run) or did
+    # not run at all (error) is neither: taking it for a failure would report
+    # where the output grid stops resolving the waveform, or where the model
+    # stops being valid, as if it were where the design stops meeting its
+    # criteria.
+    result_value: float | None = None
+    largest_pass: float | None = None
+    smallest_fail: float | None = None
+    undecided_tag: str | None = None
+    low_status = probe(low, "bracket-low")
+    high_status = probe(high, "bracket-high")
+    if low_status == "fail":
         verdict = "no_margin_at_bracket_low"
-    elif high_ok:
-        result_value = high
+        smallest_fail = low
+    elif low_status != "pass":
+        verdict = undecided(low_status, "at_bracket_low")
+        undecided_tag = "bracket-low"
+    elif high_status == "pass":
+        result_value = largest_pass = high
         verdict = "criteria_still_pass_at_bracket_high"
+    elif high_status != "fail":
+        largest_pass = low
+        verdict = undecided(high_status, "at_bracket_high")
+        undecided_tag = "bracket-high"
     else:
         left, right = low, high
+        verdict = "bisected"
         for step in range(iterations):
             middle = 0.5 * (left + right)
-            if accepts(middle, f"bisect-{step:02d}"):
+            tag = f"bisect-{step:02d}"
+            status = probe(middle, tag)
+            if status == "pass":
                 left = middle
-            else:
+            elif status == "fail":
                 right = middle
-        result_value = left
-        verdict = "bisected"
+            else:
+                verdict = undecided(status, "inside_bracket")
+                undecided_tag = tag
+                break
+        largest_pass, smallest_fail = left, right
+        if verdict == "bisected":
+            result_value = left
+    undecided_reason = next(
+        (
+            item.get("error") or item.get("reason") or item["status"]
+            for item in probes
+            if item["tag"] == undecided_tag
+        ),
+        None,
+    )
 
     return {
         "parameter": parameter,
@@ -1017,6 +1216,14 @@ def _boundary_search(
         "iterations": iterations,
         "verdict": verdict,
         "max_passing_value_si": result_value,
+        "largest_passing_probe_si": largest_pass,
+        "smallest_failing_probe_si": smallest_fail,
+        "probe_status_counts": {
+            status: sum(1 for item in probes if item.get("status") == status)
+            for status in ("pass", "fail", "not_comparable", "not_run", "error")
+        },
+        "undecided_probe": undecided_tag,
+        "undecided_reason": undecided_reason,
         "max_passing_drift_percent": (
             None
             if result_value is None or quantity.value == 0.0

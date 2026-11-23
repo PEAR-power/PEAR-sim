@@ -213,8 +213,7 @@ def _boundary_plot(boundary: Mapping[str, Any]) -> str:
     marks = []
     for index, probe in enumerate(probes):
         x = sx(float(probe["value_si"]))
-        passed = probe.get("status") == "pass"
-        colour = "#2a7" if passed else "#d33"
+        colour = {"pass": "#2a7", "fail": "#d33"}.get(str(probe.get("status")), "#999")
         y = 40 + (index % 3) * 14
         marks.append(
             f'<circle cx="{x:.1f}" cy="{y}" r="4.5" fill="{colour}"/>'
@@ -222,7 +221,7 @@ def _boundary_plot(boundary: Mapping[str, Any]) -> str:
             f'text-anchor="middle">{_esc(probe.get("tag", ""))}</text>'
         )
     edge = boundary.get("max_passing_value_si")
-    if isinstance(edge, (int, float)):
+    if isinstance(edge, (int, float)) and boundary.get("verdict") == "bisected":
         marks.append(
             f'<line x1="{sx(float(edge)):.1f}" y1="20" x2="{sx(float(edge)):.1f}" '
             f'y2="{height - 30}" stroke="#b8860b" stroke-width="2" '
@@ -238,8 +237,10 @@ def _boundary_plot(boundary: Mapping[str, Any]) -> str:
         f'<figure><svg viewBox="0 0 {width} {height}" role="img">{axis}'
         f'{"".join(marks)}</svg><figcaption>Probes on '
         f'<code>{_esc(boundary["parameter"])}</code> (SI). Green passed every '
-        f"criterion, red failed at least one; the dashed line is the largest "
-        f"probed value that still passed.</figcaption></figure>"
+        f"criterion, red failed at least one, grey could not be judged or "
+        f"did not run; the dashed line, drawn only between a "
+        f"measured pass and a measured fail, is the largest probed value "
+        f"that still passed.</figcaption></figure>"
     )
 
 
@@ -340,20 +341,50 @@ def _boundary_section(summary: Mapping[str, Any]) -> str:
     if not boundary:
         return ""
     percent = boundary.get("max_passing_drift_percent")
-    headline = (
-        "no value in the bracket met every criterion"
-        if boundary.get("max_passing_value_si") is None
-        else (
-            f'<strong>{_esc(boundary["parameter"])} tolerates up to '
-            f'{_num(boundary["max_passing_value_si"])} '
-            f'({_num(percent)} % from nominal)</strong> before a declared '
+    probes = boundary.get("probes") or []
+    counts = {
+        status: sum(1 for probe in probes if probe.get("status") == status)
+        for status in ("pass", "fail")
+    }
+    other = len(probes) - counts["pass"] - counts["fail"]
+    bisections = sum(1 for probe in probes if str(probe.get("tag", "")).startswith("bisect-"))
+    verdict = str(boundary.get("verdict"))
+    parameter = _esc(boundary["parameter"])
+    edge = boundary.get("max_passing_value_si")
+    if verdict == "criteria_still_pass_at_bracket_high":
+        # Both ends pass: nothing failed anywhere, so the probes show a range
+        # over which the criteria hold, not a limit beyond which they fail.
+        headline = (
+            f"<strong>{parameter} meets every declared criterion up to at least "
+            f"{_num(edge)} ({_num(percent)} % from nominal), the end of the searched "
+            "bracket</strong>; no failure was observed, so this search does not bound "
+            "the tolerable drift"
+        )
+    elif edge is not None:
+        headline = (
+            f"<strong>{parameter} tolerates up to {_num(edge)} "
+            f"({_num(percent)} % from nominal)</strong> before a declared "
             "criterion fails"
         )
-    )
+    elif verdict == "no_margin_at_bracket_low":
+        headline = "the start of the bracket already fails a declared criterion"
+    else:
+        # Not "nothing passed": the search stopped at a probe that could not
+        # be judged or did not run, so no boundary was established.
+        reason = boundary.get("undecided_reason")
+        headline = (
+            "no boundary was established: probe "
+            f'<code>{_esc(boundary.get("undecided_probe") or "—")}</code> could not be '
+            "judged or did not run"
+            + (f" ({_esc(reason)})" if reason else "")
+            + f'; {counts["pass"]} probe(s) passed and {counts["fail"]} failed'
+        )
     return (
         "<h2>Tolerable-drift boundary</h2>"
-        f"<p>{headline}. Verdict: <code>{_esc(boundary['verdict'])}</code>, "
-        f"{_esc(boundary['iterations'])} bisection steps.</p>"
+        f"<p>{headline}. Verdict: <code>{_esc(verdict)}</code>; "
+        f"{len(probes)} probe(s) run ({counts['pass']} pass, {counts['fail']} fail, "
+        f"{other} undecided), {bisections} of {_esc(boundary['iterations'])} "
+        "allowed bisection steps taken.</p>"
         f'<div class="claim"><strong>Assumption:</strong> '
         f"{_esc(boundary['assumption'])}</div>"
         f"{_boundary_plot(boundary)}"

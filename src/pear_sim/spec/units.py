@@ -108,6 +108,12 @@ def _normalize_unit(unit: str) -> str:
     return normalized.lower()
 
 
+def unit_scale_and_dimension(unit: str) -> tuple[float, str] | None:
+    """``(scale to SI, dimension)`` of a unit symbol, or ``None`` if unsupported."""
+
+    return _UNITS.get(_normalize_unit(unit))
+
+
 def parse_quantity(value: Any, expected: str | None = None, *, name: str = "value") -> Quantity:
     if isinstance(value, bool):
         raise UnitError(f"{name}: boolean is not a numeric quantity")

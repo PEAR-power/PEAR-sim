@@ -10,6 +10,7 @@ from collections.abc import Mapping
 import math
 from typing import Any
 
+from pear_sim.evidence.metric_fitness import fitness_context, judge_sampled_bound
 from pear_sim.run.contracts import sha256_json
 
 
@@ -479,12 +480,35 @@ def _evaluate_criterion(
             "not_comparable",
             f"Metric {metric_name!r} is non-finite.",
         )
+    # A sampled extremum decides a bound only on a grid that resolves the
+    # switching period, or when its known-sign error cannot change the verdict.
+    if "target" in criterion:
+        tolerance = max(
+            criterion.get("absolute_tolerance", 0.0),
+            criterion.get("relative_tolerance", 0.0) * abs(criterion["target"]),
+        )
+        lower, upper = criterion["target"] - tolerance, criterion["target"] + tolerance
+    else:
+        lower, upper = criterion.get("minimum"), criterion.get("maximum")
+    judged = judge_sampled_bound(
+        metric_name, fitness_context(record), value, lower=lower, upper=upper
+    )
+    if judged.unfit_reason is not None:
+        return _unevaluated(
+            criterion, "not_comparable", f"Metric {metric_name!r}: {judged.unfit_reason}."
+        )
     measured = {
-        "value": value,
+        "value": judged.value,
         "unit": unit,
         "signal": signal,
         "metric": metric_name,
     }
+    if judged.tightened:
+        # The recorded grid statistic, next to the event-edge bound it was
+        # tightened to and that the verdict uses.
+        measured["sampled_value"] = judged.sampled
+        measured["value_method"] = "sampled_extremum_tightened_by_event_edges"
+        value = judged.value
     requirement = _criterion_requirement(criterion)
     delta: dict[str, Any] | None = None
     if "target" in criterion:

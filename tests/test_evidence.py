@@ -33,6 +33,16 @@ def _metric_record(*, unit: str = "V", **values: float) -> dict[str, object]:
         "window_end_s": 2.0,
         "full_window_start_s": 0.0,
         "full_window_end_s": 2.0,
+        # The current producer format: a grid that resolves the switching period.
+        "extrema_grid": {
+            "output_step_s": 1.0e-6,
+            "switching_control_count": 1,
+            "shortest_switching_period_s": 50.0e-6,
+            "samples_per_shortest_switching_period": 50.0,
+            "periodic_source_count": 0,
+            "shortest_source_period_s": None,
+            "samples_per_shortest_source_period": None,
+        },
         **values,
     }
 

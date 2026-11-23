@@ -3,6 +3,7 @@
 # PEARSim provenance mark: fac45c9d-2490-41e0-8e53-bbd84e280889
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 import heapq
 import itertools
@@ -16,6 +17,7 @@ from pear_sim.errors import ModelError, StateDiscontinuityError, TopologyError
 from pear_sim.spec.signals import is_declared_signal, is_machine_signal
 from pear_sim.limits import MAX_ACTIVE_SET_CANDIDATES, MAX_IDEAL_DIODES
 from pear_sim.spec.model import Component, Model
+from pear_sim.spec.waveforms import value_after, value_before
 
 # Distinct switch configurations whose active-set search is kept for replay.
 MAX_MODE_PLANS = 4096
@@ -704,7 +706,7 @@ class CompiledMode:
                     raise ModelError(
                         "Evaluation time is required for a waveform current source"
                     )
-                return float(component.waveform.value(time))
+                return self.circuit.waveform_value(component.waveform, time)
             return float(component.value)
         if component.id in self.branch_index:
             return float(values[self.branch_index[component.id]])
@@ -1269,6 +1271,12 @@ class Circuit:
         self._source_waveforms = [
             component.waveform for component in self.waveform_sources
         ]
+        # None: sources are read with value(t). "before"/"after": their left
+        # or right limit, for an observation that belongs to one side of an
+        # instant (see source_side).
+        self._source_side: str | None = None
+        # Instant of the event a sample is recorded after (see after_event).
+        self._source_event_time: float | None = None
         self.initial_diodes = {component.id: component.initial for component in self.diodes}
         self._cache: dict[Topology, CompiledMode | TopologyError] = {}
         # Active-set search plans, see _ModePlan. Cleared with the cache.
@@ -1371,11 +1379,64 @@ class Circuit:
                 matrix[column, row] = mutual
         return matrix
 
+    @contextmanager
+    def source_side(self, side: str) -> Iterator[None]:
+        """Read every waveform source on one side of the evaluation instant.
+
+        ``"before"`` gives left limits, ``"after"`` right limits. A source that
+        is continuous at the instant is read exactly there either way; only a
+        step, a pulse edge or a vertical PWL segment differs. An observation at
+        the end of an integration interval belongs to that interval's topology
+        and must see the source value that topology saw.
+        """
+
+        if side not in ("before", "after"):
+            raise ValueError(f"source side must be 'before' or 'after', got {side!r}")
+        previous = self._source_side
+        self._source_side = side
+        try:
+            yield
+        finally:
+            self._source_side = previous
+
+    @contextmanager
+    def after_event(self, event_time: float) -> Iterator[None]:
+        """Read sources for a sample recorded in the state AFTER an event.
+
+        An output sample whose grid time coincides with an event is recorded
+        with the post-event topology, but its grid time can round to just
+        before the event. A source that steps at the event must then be read
+        at its value after the step, or the sample pairs the new topology with
+        the old source value. A source that is continuous at the event is
+        still read at the sample's own time, unchanged.
+        """
+
+        previous = self._source_event_time
+        self._source_event_time = float(event_time)
+        try:
+            yield
+        finally:
+            self._source_event_time = previous
+
+    def waveform_value(self, waveform: Any, time: float) -> float:
+        """``waveform`` at ``time``, on the side selected by :meth:`source_side`."""
+
+        if self._source_event_time is not None:
+            after = value_after(waveform, self._source_event_time)
+            if after != value_before(waveform, self._source_event_time):
+                return after
+            return float(waveform.value(time))
+        if self._source_side == "before":
+            return value_before(waveform, time)
+        if self._source_side == "after":
+            return value_after(waveform, time)
+        return float(waveform.value(time))
+
     def source_values(self, time: float) -> np.ndarray:
         """Waveform-source values u(t) in ``waveform_index`` order."""
 
         return np.array(
-            [waveform.value(time) for waveform in self._source_waveforms],
+            [self.waveform_value(waveform, time) for waveform in self._source_waveforms],
             dtype=float,
         )
 

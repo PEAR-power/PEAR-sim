@@ -400,6 +400,31 @@ def run_sensitivity(
             dtype=float,
         )
         entry: dict[str, Any] = {"output": quantity.label, "selector": quantity.as_dict()}
+        # A sampled extremum on a grid that does not resolve the switching
+        # period is not a usable number (pear_sim.evidence.metric_fitness).
+        # Dropping only those runs would estimate the indices over a subset
+        # chosen by the grid (typically the high-frequency corner of the
+        # sample), so the output is not estimated at all.
+        unfit = [
+            (row["design_id"], reason)
+            for row in rows
+            if row["status"] == "pass"
+            and (
+                reason := quantity.judge(
+                    row["values"][quantity.label], row.get("extrema_grid") or {}
+                ).unfit_reason
+            )
+            is not None
+        ]
+        if unfit:
+            entry["status"] = "not_estimated"
+            entry["not_comparable_runs"] = len(unfit)
+            entry["reason"] = (
+                f"{len(unfit)} of {len(rows)} runs cannot supply {quantity.label} "
+                f"(first: {unfit[0][0]}): {unfit[0][1]}"
+            )
+            results.append(entry)
+            continue
         try:
             if method == "morris":
                 indices = morris_indices(values, steps, dimensions, bootstrap=bootstrap, seed=seed)

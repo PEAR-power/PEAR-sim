@@ -112,3 +112,10 @@ out/morris/
 
 `status` is `pass`, `pass_with_failed_runs` (some runs failed, estimates still made) or
 `incomplete` (an output could not be estimated). The command exits 0 on the first two.
+
+An output that is a sampled extremum (`max`, `min`, `peak_to_peak`, ...) needs an output
+grid that resolves the switching period in every run (at least 10 samples per shortest
+period; see `extrema_grid` in `docs/model-format.md`). If any run falls short, that
+output is `not_estimated` with `not_comparable_runs` and the reason: dropping only those
+runs would estimate the indices over a subset chosen by the grid, usually the
+high-frequency corner of the sample. Other outputs of the same request are unaffected.

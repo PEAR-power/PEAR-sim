@@ -7,7 +7,159 @@ break the model format; every break carries a migration note).
 
 ## [Unreleased]
 
+### Changed
+
+- **Sampled extrema no longer pass a requirement the output grid could not see.**
+  `min`, `max`, `peak_to_peak` and `ripple` (and their `_last_half` / `sample_` forms)
+  are statistics of the requested output grid. On `examples/buck.yaml` (20 kHz, inductor
+  current peaking at 4.60 A) recorded once per PWM period (`output_step: 50 us`), the
+  grid reads 3.40 A, and `i(l1) max_last_half <= 4.1 A` was accepted by `evaluate`, by
+  `sweep perturbation` (margin +0.70 A) and by `batch` (one feasible design, ranked
+  first). Every signal record in `metrics.json` now carries `extrema_grid`
+  (`output_step_s`, `switching_control_count`, `shortest_switching_period_s`,
+  `samples_per_shortest_switching_period`), and one rule
+  (`pear_sim.evidence.metric_fitness`) is applied on all three paths: with fewer than 10
+  output samples per shortest declared switching period, a sampled extremum decides a
+  bound only when its one-sided error cannot change the verdict (a sampled maximum is a
+  lower bound on the true one, so a value already above an upper limit still fails).
+  Otherwise `evaluate` returns `not_comparable`, the campaign point gets
+  `not_comparable` with no margin (run `acceptance_status: not_comparable`, campaign
+  not `pass`, `boundary_search` verdict `not_comparable_at_bracket_low` when the
+  bracket start cannot be judged), and the batch design is listed under
+  `not_comparable`, is not feasible and is not ranked (`not_comparable_count` in the
+  summary, a `not_comparable` column in `designs.csv`). At `output_step: 1 us` all
+  three paths report the violation. Models without a switching control are unaffected.
+  The floor rules out aliasing against the carrier; it does not make a sampled extremum
+  exact. `sensitivity` applies the same rule to its outputs: if any run cannot supply
+  a sampled extremum, that output is `not_estimated` (`not_comparable_runs`, summary
+  `incomplete`) instead of being estimated on aliased values or on the subset of runs
+  the grid happened to resolve; other outputs of the request are estimated as before.
+
+  Samples per period do not see a pulse narrower than the grid step. With 4 % duty at
+  20 kHz (the switch conducting from 1 µs to 3 µs) and `output_step: 5 us` there are
+  exactly 10 samples per period and none inside the pulse: `i(q1)` sampled as 0 A and
+  `max i(q1) <= 0.1 A` passed, against 3.46 A at `0.25 us`. `extrema_grid.event_edge`
+  now records each electrical output's `min`/`max` (full window and last half) over the
+  end points of the solver's integration intervals, on both sides of every event, and
+  the rule compares the limit with the sampled value tightened by them. Both grids now
+  fail with 3.48 A, and the buck above fails `<= 4.1 A` at `50 us` with the same 4.60 A
+  as at `1 us`. Verdicts report `value` (the bound used) and `sampled_value` when they
+  differ; the metric fields stay grid statistics. An extremum strictly inside an
+  interval between two events is still seen only by the samples.
+
+  A peak-to-peak or ripple is tightened to the span of all observations: the highest of
+  samples and event edges minus the lowest of both. With the maximum seen at an edge
+  (+1.000 V) and the minimum in a sample (−0.9921 V) the waveform spans at least
+  1.9921 V, and a 1.989 V limit is violated although the sampled span is 1.9842 V.
+  An event exactly at the start of the last-half window enters that window with its
+  state after the switching, like the sample recorded there: a switch that turns off at
+  the window start no longer contributes its pre-turn-off current to
+  `event_edge.max_last_half`.
+
+  Three more cases the observations got wrong:
+
+  - An interval end point reads its sources on that interval's own side of the instant.
+    With a supply stepping from 0 to 100 V at the instant a series switch to a 10 Ω load
+    opens, the closing interval paired the old topology with the new source value and
+    recorded 10 A that never flowed: `max <= 5 A` failed and `max >= 5 A` passed (campaign
+    margin +5 A, `batch` winner). The edge now reads 0 A. The side is the source's exact
+    left or right limit, not a read a time tolerance away: a source that is continuous at
+    the instant is read exactly there, so a PWL apex declared at a node (100 V on a
+    100 V/ns edge) is recorded as 100 V whatever the run length.
+  - A periodic source declares a period the grid must resolve, like a switching control.
+    A 10 V, 1 kHz sine recorded every 1 ms samples one phase and reads 0 V; with no PWM
+    control the grid counted as resolved and `max <= 5 V` passed. `extrema_grid` adds
+    `periodic_source_count`, `shortest_source_period_s` and
+    `samples_per_shortest_source_period` (sine and pulse sources), held to the same
+    10-sample floor: `not_comparable` at 1 ms, `fail` with 10 V at 25 µs.
+  - The start of the last-half window is observed when it falls inside a solver
+    interval. A capacitor discharging from 10 V with a 1 ms time constant has its
+    1–2 ms maximum, 3.679 V, exactly at 1 ms; on a 600 µs grid the first sample in the
+    window read 3.012 V and `max_last_half <= 3.3 V` passed. Both grids now fail.
+
+  `batch` reads every sampled extremum as that tightened value: `values` in the
+  summary, the ranking, `designs.csv` and the finalist check all use it, and
+  `sampled_values` keeps the raw grid statistic where the two differ. Minimizing
+  `max i(q1)` over `vin` = 120 V and 80 V with the pulse between samples used to tie at
+  0 A and pick 120 V by id; it now ranks 80 V (3.44 A) ahead of 120 V (3.52 A).
+
+  `boundary_search` reports a number only between a comparable `pass` and a comparable
+  `fail`. It used to count a probe it could not judge as a failure: searching `fsw`
+  from 20 to 200 kHz against a 1000 A limit, where no probe can fail, returned
+  `bisected` at 98.75 kHz with a +393.75 % margin, which is where the grid stops
+  resolving the period. New verdicts `not_comparable_at_bracket_high` and
+  `not_comparable_inside_bracket` leave `max_passing_value_si` and
+  `max_passing_drift_percent` null; `largest_passing_probe_si`,
+  `smallest_failing_probe_si` and `probe_status_counts` state what was observed.
+  A probe that did not run (model refused, worker failed or timed out) has status
+  `error`, not `fail`: searching `duty` from 40 % to 120 % against a limit no run can
+  reach returned `bisected` with a +150 % margin because the probes above 100 % were
+  refused by the PWM validator. The verdict is now `execution_error_at_bracket_high`
+  (likewise `_at_bracket_low`, `_inside_bracket`, and `not_run_...` for an absent
+  metric), with `undecided_probe` and `undecided_reason`. A campaign point whose only
+  shortfall is an absent metric has `acceptance_status: not_run` instead of `fail`.
+  The HTML report follows the JSON: it no longer says that no value in the bracket met
+  the criteria when the search merely stopped at an undecided probe, and it states the
+  probes actually run and the bisection steps actually taken. When both ends of the
+  bracket pass it says the criteria hold up to at least the bracket end and that no
+  failure was observed, instead of wording that end as the limit before a failure.
+
+  **Migration.** Bundles written by 0.1.x have no `extrema_grid`. `report` reads them
+  as before and `evaluate` still decides means, RMS and `final`, but a sampled-extremum
+  criterion that the old value does not already violate is `not_comparable`:
+  re-simulate the model to judge it. A model whose `analysis.transient.output_step` gives
+  fewer than 10 samples per switching period needs a finer step for such criteria.
+
+- **Campaign criteria take their dimension from the measured signal**
+  (`pear-sim sweep perturbation`). `unit` was a display label beside a bare number, so
+  `signal: v(out), field: mean_last_half, op: max, limit: 50, unit: A` passed with
+  margin +10 against a 40 V output. The unit now follows from `signal` and `field`
+  (`fsw_measured_hz` is hertz). `limit` and `reference` are a number in that SI unit or
+  a unit-bearing string of the same dimension (`"50 mV"`); `limit: "50 mV"` and
+  `limit: 0.05, unit: V` give the same criterion and the same margin. The summary
+  always records the SI unit.
+
+  **Migration.** These requests are now refused before any run: a `unit` of another
+  dimension (`v(out)` in `A`), a scaled `unit` beside a bare number (`limit: 50,
+  unit: mV` — write `limit: "50 mV"`), a `field` other than `min`, `max`,
+  `mean_last_half`, `min_last_half`, `max_last_half` or `fsw_measured_hz` (it used to
+  give `not_run` at every point), and a `signal` that is not a signal expression.
+  A repeated `criteria[].id` is refused as well: verdicts are keyed by id, so the later
+  criterion replaced the earlier one and `v(out) <= 1 V` plus `v(out) <= 100 V` under one
+  id passed or failed a 40 V output depending on their order.
+  Requests with a matching or absent `unit` are unchanged.
+
 ### Fixed
+
+- A sample recorded at a switching instant paired the post-event topology with the
+  pre-event value of a source that steps at the same instant (present in 0.1.1). The
+  sample is recorded after the event, but its grid time can round to just before it and
+  the source was read at the grid time. With a 1 kHz, 50 % switch feeding 10 Ω from a
+  source that is 0 V while the switch conducts and 100 V while it is open, the switch
+  current is 0 A throughout, yet `waveforms.csv` at `output_step: 10 us` held four
+  10 A samples: `max <= 5 A` failed and `max >= 5 A` passed. A source that steps at the
+  event is now read after its step; the sample keeps its grid time, and a source that
+  is continuous at the event is read at the grid time exactly as before, so runs
+  without such a coincidence are unchanged.
+
+- Core loss (iGSE): with `1/period` in a **gap between two Steinmetz ranges** of a
+  material card, the last range was used whatever its distance, and the flag reported
+  the distance to that far range. With ranges 25–99 kHz and 200–1000 kHz and a 100 kHz
+  waveform on `examples/buck_core_losses_n87.yaml`, the 200–1000 kHz coefficients were
+  used with `signed_distance_hz = -900000`. The range whose edge is nearest is now used
+  (the lower one on an exact tie), here 25–99 kHz with `signed_distance_hz = +1000`, so
+  the estimate equals the one from a card whose lower range covers 100 kHz.
+  `signed_distance_hz` is always measured to an edge of the range that was used.
+  Estimates with `1/period` inside a range, or outside all of them, are unchanged.
+
+- MCP `simulate`: the `losses` block now carries `electrothermal_mode` and
+  `electrothermal_status`, and each device `electrothermal_status` and
+  `electrothermal_loop_gain`. When a self-consistent junction-temperature loop has no
+  fixed point (`thermal_runaway`, `beyond_card_temperature_axis`, `not_converged`) the
+  kernel withholds every loss and temperature number; the reply showed
+  `total_mean_power_w: null` and `tj_max_c: null` with the reason only in
+  `losses-thermal.json`. The kernel's behaviour is unchanged.
+
 
 - `fsw_measured_hz` in perturbation-campaign summaries (`pear-sim sweep perturbation`)
   is now the switching frequency, not the pooled rate of gate rises. Before, it counted

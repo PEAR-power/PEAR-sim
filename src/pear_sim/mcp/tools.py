@@ -421,6 +421,7 @@ def _losses_summary(bundle: Path) -> dict[str, Any] | None:
         conduction = device.get("conduction") or {}
         switching = device.get("switching") or {}
         thermal = device.get("thermal") or {}
+        loop = device.get("electrothermal") or {}
         devices.append(
             {
                 "component": device.get("component_id"),
@@ -435,9 +436,18 @@ def _losses_summary(bundle: Path) -> dict[str, Any] | None:
                 ),
                 "tj_max_c": thermal.get("tj_max_c"),
                 "tj_validity_violated": thermal.get("validity_violated"),
+                # Why tj_max_c and the powers are null when they are: a
+                # self-consistent loop without a fixed point (thermal_runaway,
+                # beyond_card_temperature_axis, not_converged) withholds every
+                # number, and null alone reads as "no data".
+                "electrothermal_status": loop.get("status"),
+                "electrothermal_loop_gain": loop.get("loop_gain"),
             }
         )
+    electrothermal = data.get("electrothermal") or {}
     return {
+        "electrothermal_mode": electrothermal.get("mode"),
+        "electrothermal_status": electrothermal.get("status"),
         "total_mean_power_w": data.get("total_mean_power_w"),
         "devices": devices,
         "claim": data.get("claim"),

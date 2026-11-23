@@ -221,3 +221,69 @@ def test_frequency_outside_ranges_is_flagged(tmp_path):
     codes = [flag["code"] for flag in artifact["inductors"][0]["flags"]]
     assert codes == ["FREQUENCY_OUTSIDE_RANGES"]
     assert artifact["inductors"][0]["flags"][0]["signed_distance_hz"] == pytest.approx(-50e3)
+
+
+def _gap_card(gap_low_hz: float, gap_high_hz: float):
+    """The N87 example card with its ranges pulled apart to leave a gap."""
+
+    document = _example_document()
+    ranges = document["core_losses"]["materials"]["n87"]["steinmetz_ranges"]
+    assert len(ranges) >= 2
+    lower, upper = dict(ranges[0]), dict(ranges[1])
+    lower["frequency_max_hz"] = gap_low_hz
+    upper["frequency_min_hz"] = gap_high_hz
+    document["core_losses"]["materials"]["n87"]["steinmetz_ranges"] = [lower, upper]
+    return document
+
+
+@pytest.mark.parametrize(
+    ("frequency_hz", "expected_range", "expected_distance_hz"),
+    [
+        (20e3, 0, -5e3),  # below every range
+        (99e3, 0, 0.0),  # last covered point of the lower range
+        (100e3, 0, 1e3),  # just inside the gap, 1 kHz above the lower range
+        (149e3, 0, 50e3),
+        (149.5e3, 0, 50.5e3),  # exact middle of the gap: the lower range
+        (150e3, 1, -50e3),
+        (199e3, 1, -1e3),  # just inside the gap, 1 kHz below the upper range
+        (200e3, 1, 0.0),  # first covered point of the upper range
+        (2e6, 1, 1e6),  # above every range
+    ],
+)
+def test_range_selection_takes_the_nearest_edge_across_a_gap(
+    tmp_path, frequency_hz, expected_range, expected_distance_hz
+):
+    from pear_sim.analysis.core_losses import _select_range
+
+    model = _load(tmp_path, _gap_card(99e3, 200e3))
+    (card,) = model.core_losses.materials.values()
+    selected, distance = _select_range(card, frequency_hz)
+    assert selected is card.ranges[expected_range]
+    assert distance == pytest.approx(expected_distance_hz)
+    # The distance is measured to an edge of the range that was returned.
+    edge = selected.frequency_min_hz if distance < 0 else selected.frequency_max_hz
+    assert distance == 0.0 or frequency_hz - edge == pytest.approx(distance)
+
+
+def test_a_waveform_in_a_card_gap_uses_the_nearer_range(tmp_path):
+    """100 kHz with ranges 25-99 kHz and 200-1000 kHz: the lower card is 1 kHz
+    away, the upper one 100 kHz. The estimate must be the lower range's, and
+    the flag must say so (+1 kHz), not the upper range's with -900 kHz."""
+
+    gap_model = _load(tmp_path, _gap_card(99e3, 200e3))
+    out = tmp_path / "gap"
+    write_result(HybridSimulator(gap_model).simulate(), out)
+    record = json.loads((out / "core-losses.json").read_text())["inductors"][0]
+
+    (covered_dir := tmp_path / "covered").mkdir()
+    covered_model = _load(covered_dir, _gap_card(101e3, 200e3))
+    write_result(HybridSimulator(covered_model).simulate(), covered_dir / "run")
+    covered = json.loads((covered_dir / "run" / "core-losses.json").read_text())["inductors"][0]
+
+    assert record["steinmetz_range"]["frequency_max_hz"] == pytest.approx(99e3)
+    (flag,) = record["flags"]
+    assert flag["code"] == "FREQUENCY_OUTSIDE_RANGES"
+    assert flag["signed_distance_hz"] == pytest.approx(1e3, rel=1e-6)
+    assert covered["flags"] == []
+    # Same coefficients, same waveform: the same number as the covering card.
+    assert record["power_w"] == pytest.approx(covered["power_w"], rel=1e-12)

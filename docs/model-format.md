@@ -1471,8 +1471,10 @@ Equations and conventions:
   form, so a sinusoid reproduces the Steinmetz equation exactly. The integral runs over
   the recorded samples as a piecewise-linear B(t); at least 64 samples per period are
   required (`analysis.transient.output_step`).
-- The Steinmetz range is the one containing `1/period`; outside every range the
-  nearest one is used and flagged `FREQUENCY_OUTSIDE_RANGES` with the signed distance.
+- The Steinmetz range is the one containing `1/period`. Outside every range, including
+  in a gap between two ranges, the range whose edge is nearest is used (the lower one on
+  an exact tie) and flagged `FREQUENCY_OUTSIDE_RANGES`; `signed_distance_hz` is
+  `1/period` minus that edge of the range that was used.
 
 The `core-losses.json` artifact holds, per inductor: `status` (`estimated` or
 `not_estimated` with a `reason`), the material card and geometry used, the flux
@@ -1740,6 +1742,37 @@ which is made explicit in `extrema_method`. `ripple`/`ripple_last_half` appears 
 for outputs recognized as structurally continuous in all visited modes. For switched
 signals, such as an ideal switch voltage or a diode current, `peak_to_peak` is
 reported, not "ripple". The unit is `V` for `v(...)` and `A` for `i(...)`.
+
+Every signal record also carries `extrema_grid`, the facts needed to judge those sampled
+extrema: `output_step_s`, `switching_control_count`, `shortest_switching_period_s` (the
+shortest period among the declared PWM controls, `null` without any) and
+`samples_per_shortest_switching_period`, and the same three facts for periodic sources
+(`periodic_source_count`, `shortest_source_period_s`,
+`samples_per_shortest_source_period`; sine and pulse waveforms). A grid can miss a peak but cannot invent one, so
+a sampled `max`/`peak_to_peak`/`ripple` is a lower bound on the true value and a sampled
+`min` an upper bound. With fewer than 10 samples per shortest switching period or per
+shortest periodic-source period,
+`evaluate`, `sweep perturbation` and `batch` use a sampled extremum only where that
+one-sided error cannot change the verdict (a sampled `max` above an upper limit is still
+a violation) and report `not_comparable` otherwise. The floor rules out aliasing against
+the carrier; it is not an accuracy statement about the extremum.
+
+For electrical outputs `extrema_grid.event_edge` holds `min`, `max`, `min_last_half` and
+`max_last_half` of the signal over the end points of the solver's integration intervals,
+on both sides of every event. A grid can step over a whole conduction interval (a 2 µs
+switch pulse between samples 5 µs apart reads 0 A at 10 samples per period); its end
+points are on the waveform, so they bound the true extremum from the same side as the
+samples. The three acceptance paths compare the limit with the sampled value tightened by
+these extremes and report both (`value` and `sampled_value`) when they differ. A
+peak-to-peak or ripple is tightened to the joint span: the highest of samples and edges
+minus the lowest of both. An event exactly at the start of the last-half window counts in
+that window with its state after the switching; when the window starts inside an interval,
+the signal is observed at that instant too. Each end point reads its sources on its own
+interval's side of the instant (the exact left or right limit; a continuous source is read
+exactly at the instant), so a source step that coincides with a switching event is
+not paired with the other side's topology. `min`,
+`max` and the other metric fields themselves stay grid statistics. An extremum strictly
+inside an interval between two events (a resonant peak) is seen by neither.
 
 Metrics do not replace the waveform or a separate event analysis. The `last_half`
 window is a general alpha aggregate, not automatic proof that steady state has been
