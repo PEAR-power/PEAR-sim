@@ -7,6 +7,35 @@ break the model format; every break carries a migration note).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-23
+
+Adds closed-loop Floquet analysis and loop-gain measurement by injection, capacitor ESR
+and inductor DCR with a parasitic loss audit, iGSE core-loss estimation, self-consistent
+junction temperature, explicit handling of state discontinuities (`impulsive_events`),
+and post-processed switching transitions.
+
+**Migration from 0.1.1.**
+
+- **Re-simulate to judge sampled extrema.** `evaluate`, `sweep perturbation`, `batch` and
+  `sensitivity` decide `min` / `max` / `peak_to_peak` / `ripple` requirements only on an
+  output grid that resolves the declared periods, using `extrema_grid`, which 0.1.1
+  bundles do not carry. Against an old bundle such a criterion is `not_comparable` unless
+  the recorded value already violates it; means, RMS and `final` are judged as before.
+  A model with fewer than 10 output samples per switching or source period needs a finer
+  `analysis.transient.output_step` for these criteria.
+- **Saturating PMSM flux maps give different waveforms.** A `flux_map` driven into
+  saturation diverged in 0.1.1; the fix changes the result of such models (on
+  `examples/pmsm_saturating_flux_map.yaml` the peak of `i(motor.b.l)` goes from 17.51 A
+  to 14.39 A). Unsaturated maps and every other example are unchanged.
+- **Campaign requests are validated more strictly** (`sweep perturbation`): a criterion
+  `unit` of the wrong dimension, a scaled `unit` beside a bare number, an unknown `field`
+  and a repeated `id` are refused. `recovery_time_s` is now the band entry, not the last
+  sample outside the band, and is later by up to one output step.
+- **A sample at a switching instant** now reads a source that steps at that instant
+  after its step. Runs without such a coincidence are bit-identical.
+
+Details and the remaining migration notes are in the entries below.
+
 ### Changed
 
 - **Sampled extrema no longer pass a requirement the output grid could not see.**
