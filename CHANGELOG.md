@@ -131,6 +131,16 @@ break the model format; every break carries a migration note).
 
 ### Fixed
 
+- `recovery_time_s` in perturbation-campaign metrics was the time of the last output
+  sample still OUTSIDE the recovery band, so it was early by up to one output step. An
+  RC charging to 10 V with a 1 ms time constant enters the 5 % band at 2.9957 ms; on a
+  0.5 ms grid the campaign reported 2.50 ms. The band entry is now placed on the straight
+  line between that sample and the next one (2.9967 ms here), and `recovery_time_lo_s` /
+  `recovery_time_hi_s` give the two samples that bracket it (2.5 ms and 3.0 ms), with
+  `recovery_time_method: linear_interpolation_between_output_samples`. A response that
+  is inside the band throughout still reports 0, and one that never returns still
+  reports `recovery_status: not_recovered_within_window`.
+
 - A sample recorded at a switching instant paired the post-event topology with the
   pre-event value of a source that steps at the same instant (present in 0.1.1). The
   sample is recorded after the event, but its grid time can round to just before it and
