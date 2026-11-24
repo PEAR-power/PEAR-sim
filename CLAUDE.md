@@ -24,9 +24,14 @@ src/pear_sim/
                units, canonical_topologies (structural recognition)
   run/         io (bundle writer), contracts (canonical JSON + hashing)
   analysis/    harmonics, analytic_checks, mode_coverage, gate_drive,
-               three_phase_modulation
-  evidence/    expectations (KPI eval), sweep + benchmark_harness (retained runs),
-               numerical/platform evidence, run_compare, parameter_sweep(+worker)
+               three_phase_modulation, steady_state (shooting), small_signal,
+               closed_loop (Floquet), loop_gain (injection), losses_thermal,
+               core_losses (iGSE), switching_transitions, gradient/
+  evidence/    expectations (KPI eval), metric_fitness (the one rule for judging
+               sampled extrema), sweep + benchmark_harness (retained runs),
+               numerical/platform evidence, run_compare, parameter_sweep(+worker),
+               batch, sensitivity, perturbation_campaign(+worker), tolerance_corners,
+               stability / floquet / loop_gain (retained analysis bundles)
   benchmarks/  independent closed-form oracles (buck/boost/inverting) + _shared
   review/      hash-chained human-review packets
   reporting/   offline HTML/SVG projections (never recompute producer data)
@@ -34,7 +39,8 @@ src/pear_sim/
   mcp/         MCP server (stdio), tool definitions, sandboxed workspace + worker
   design/      typed design specification (hard vs soft requirements)
   topology/    declarative topology library + comparison
-  oracle/      second-engine adapter (ngspice, linear subset)
+  oracle/      second-engine adapter (motulator, machine models); the ngspice
+               comparison lives in tests/test_ngspice_oracle.py
   errors.py, limits.py, _jsonutil.py at the root
 
 rust/pear-sim-core/  optional compiled kernel (Rust + PyO3): RK45 segment integration
@@ -61,6 +67,11 @@ Evidence-equivalence check for refactors touching producers: regenerate the
 three boundary sweeps and compare against a pre-change baseline ignoring only
 volatile fields (`*sha256*`, `wall_time`, `bytes`, `runtime_s`; skip `.html`).
 Everything else — statuses, gate values, metrics — must match exactly.
+
+Sampled extrema (`min`/`max`/`peak_to_peak`/`ripple`) are grid statistics. Any
+code that judges a requirement on one goes through
+`pear_sim.evidence.metric_fitness` (`judge_sampled_bound` on
+`fitness_context(record)`); never compare the raw metric with a limit.
 
 ## Conventions
 

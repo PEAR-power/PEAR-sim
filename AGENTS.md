@@ -41,6 +41,8 @@ files keep it.
 - `src/pear_sim/analysis/mode_coverage.py`: conservative topology recognition and accepted-mode observations.
 - `src/pear_sim/api/capabilities.py`: versioned, fail-closed capability declarations for agent clients.
 - `src/pear_sim/evidence/expectations.py` and `src/pear_sim/evidence/evidence_io.py`: strict KPI expectation evaluation over manifest-verified runs.
+- `src/pear_sim/evidence/metric_fitness.py`: the one rule for judging a requirement on a sampled extremum (`min`/`max`/`peak_to_peak`/`ripple`); `evaluate`, the perturbation campaign, `batch` and `sensitivity` all call it. Never compare such a metric with a limit directly.
+- `src/pear_sim/evidence/perturbation_campaign.py`: parametric-corner and event-injection campaigns with declared criteria and a boundary search.
 - `src/pear_sim/evidence/benchmark_harness.py`: topology-neutral retained-point execution, fail-closed errors, summaries, and artifact manifests; it must not import production physics or oracle equations.
 - `src/pear_sim/benchmarks/affine.py`: independently tested matrix-exponential primitives for already-derived affine oracle equations; topology matrices remain local to each oracle.
 - `src/pear_sim/benchmarks/buck_boundary.py`: independent periodic canonical-buck CCM/BCM/DCM oracle and comparison gates.
@@ -62,6 +64,12 @@ files keep it.
 - `src/pear_sim/analysis/small_signal.py`: two-topology state-space averaging, control-to-output Bode, declared-compensator loop-gain margins.
 - `src/pear_sim/evidence/stability.py`: retained stability bundles with blocking convergence/CCM/margin gates.
 - `src/pear_sim/evidence/floquet.py`: retained closed-loop Floquet bundles (`analyze floquet`), blocking orbit/assessed/stable gates.
+- `src/pear_sim/analysis/loop_gain.py` and `src/pear_sim/evidence/loop_gain.py`: loop gain measured by injection on the switching model (`analyze loop-gain`); experimental.
+- `src/pear_sim/analysis/losses_thermal.py`: post-processed device losses, Foster junction temperatures, optional self-consistent Tj.
+- `src/pear_sim/analysis/core_losses.py`: post-processed iGSE core loss from a declared material card.
+- `src/pear_sim/analysis/switching_transitions.py`: post-processed dead-time Coss swing and loop overshoot.
+- `src/pear_sim/spec/waveforms.py`: source waveforms, their breakpoints and exact one-sided values.
+- `src/pear_sim/mcp/`: MCP server (stdio), tool definitions, sandboxed workspace and worker.
 - `src/pear_sim/api/cli.py`: stable agent-facing process contract.
 - `schema/model.schema.json`: normative structural schema for `pear-sim/v0.1`.
 - `schema/expectations.schema.json`: structural schema for `pear-sim/expectations/v0.1`.

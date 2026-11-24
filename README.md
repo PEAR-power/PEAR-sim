@@ -160,14 +160,19 @@ currents stay continuous across them.
 | Magnetics | mutual coupling, coupled winding groups (3×3 and larger), saturable inductor | `transformer_rl.yaml`, `rl_sat_inductor.yaml` |
 | Devices | ideal or piecewise-linear switches and diodes (`on_resistance`, `forward_voltage`), MOSFET as switch + body diode | `sync_buck_mosfet.yaml` |
 | Control | fixed PWM, complementary PWM with dead time, three-phase SPWM/SVPWM, level-shifted NPC modulation, sampled PI and dq current loops, a signal-block layer with a `pi` block | `synchronous_buck_complementary.yaml`, `buck_closed_loop_signals.yaml` |
-| Losses & thermal | device cards (conduction LUT, switching energies), Foster networks, air and liquid cooling, efficiency map, rainflow counting | `buck_with_loss_cards.yaml`, `traction_inverter_liquid_cooled.yaml` |
+| Losses & thermal | device cards (conduction LUT, switching energies), Foster networks, air and liquid cooling, optional self-consistent junction temperature, capacitor ESR / inductor DCR with a per-component parasitic loss audit, iGSE core loss from a material card, efficiency map, rainflow counting | `buck_with_loss_cards.yaml`, `traction_inverter_liquid_cooled.yaml` |
 
 **Analyses beyond a single transient:** periodic steady state by Newton shooting
 (including inductor-star topologies), small-signal loop gain with phase/gain margins for
 a *declared* compensator — with the ZOH and computation-delay term, because a continuous
 Bode plot on a digitally controlled converter is optimistic by tens of degrees — modal
 resonance audit, event-aligned Fourier/THD, bounded parameter and tolerance-corner
-sweeps. Sweeps run their points in parallel (`--jobs`, default all cores but one); the
+sweeps, and perturbation campaigns (`sweep perturbation`: parametric corners and injected
+events judged against declared criteria, with a bisected tolerable-drift boundary). For a
+control law written in the signal-block layer, `analyze floquet` finds the closed-loop
+periodic orbit and its Floquet multipliers on the switching model, and `analyze loop-gain`
+measures the loop gain by injection on that same model (both experimental, for a declared
+subset of blocks). Sweeps run their points in parallel (`--jobs`, default all cores but one); the
 retained results do not depend on the job count.
 
 **Many designs at once.** `pear-sim batch` screens up to 2 000 designs (Latin hypercube,
@@ -236,23 +241,38 @@ Read this before trusting a number.
   circuit equations. There is no reverse recovery, no switching transient in the
   circuit equations (the dead-time Coss swing and the loop overshoot exist only as a
   post-processed estimate, `switching_transitions`, §7c of the format), no
-  temperature dependence and no EMI, and no parasitics unless you declare them as
-  circuit elements (ESR and DCR are series resistors). Switching losses come *after*
-  the run from declared cards, so that dissipation never feeds back into the solution —
+  temperature dependence in the circuit and no EMI, and no parasitics unless you declare
+  them as circuit elements (ESR and DCR are series resistors). Losses come *after* the
+  run from declared cards, so that dissipation never feeds back into the solution —
   **the electrothermal loop is open by decision**, and the Jacobian says so on its face.
+  `loss_analysis.tj_mode: self_consistent` (experimental) iterates conduction loss and
+  junction temperature to a fixed point on the recorded run and withholds every number
+  when there is none (`thermal_runaway`); it still does not change the waveforms. Core
+  loss (iGSE) is post-processing in the same sense.
 - **No part catalogue.** Every device card shipped in this repo is synthetic. A loss or
   temperature number is exactly as good as the card it came from, and the tool cannot
   tell you the card is fiction.
 - **Not a general DAE solver.** Capacitor loops, general inductor cutsets and arbitrary
   floating-state topologies are refused with a named `TopologyError`, not silently
   regularized with hidden `gmin` or leakage. Narrow, documented zero-current and
-  inductor-star paths are covered; anything else fails closed.
+  inductor-star paths are covered; anything else fails closed. One opt-in exception,
+  experimental: `analysis.transient.impulsive_events: conserve` lets a switch-closed
+  capacitor loop or a switch-opened inductor node take a charge- or flux-conserving jump,
+  lists every jump and books the dissipated energy in the physics audit.
 - **Bounded active set.** Diode active-set search is bounded (64 devices, a candidate
   budget); exhausting the budget is an error carrying the first cause, never a guess.
 - **Margins attest a declared compensator** on an averaged model of one PWM leg in CCM,
   not a closed-loop proof: you state the compensator and the tool tells you what it
   implies. Closed-loop time-domain runs use the signal-block layer (including a `pi`
-  block), which is a separate, simulated thing.
+  block), which is a separate, simulated thing. The Floquet multipliers and the injected
+  loop gain computed on it are experimental and refuse, by name, the blocks and sources
+  they do not cover.
+- **Sampled extrema are grid statistics.** `min`, `max`, `peak_to_peak` and `ripple` come
+  from the requested output grid, tightened by the signal's values at the solver's event
+  instants. `evaluate`, `sweep perturbation`, `batch` and `sensitivity` return
+  `not_comparable` rather than judge such a requirement on a grid with fewer than 10
+  samples per switching or source period. A peak strictly between two events on a coarse
+  grid can still be missed.
 - **Modal and coverage reports are observations, not verdicts.** A run with zero natural
   commutations means that coverage was *not exercised* — never that the mechanism passed.
 - Out of scope entirely: real-time/HIL, production code generation, FEM/PCB/field
@@ -299,8 +319,10 @@ of the same circuit share a physics hash; a changed tolerance changes the reques
 This is what makes "did anything actually change between these two revisions?" a
 mechanical question — see `pear-sim compare`.
 
-Metrics are continuous-time quadratures over topology segments; anything computed on the
-requested grid is named `sample_*` so the two are never confused. Adaptive solvers take
+Means and RMS values are continuous-time quadratures over topology segments; anything
+computed on the requested grid is named `sample_*`, and the `min` / `max` / `peak_to_peak`
+aliases are grid statistics too (`extrema_method` says so, `extrema_grid` records the
+grid against the declared periods). Adaptive solvers take
 different internal steps across platforms and versions, so comparisons belong on an
 explicit output grid with declared tolerances, never on byte equality.
 
@@ -349,11 +371,12 @@ Reviewing work: `review prepare` builds a hash-bound packet of what was simulate
 binding. It is an auditable transport format — **not** a signature authority and not
 organizational authorization; reviewer identity is not authenticated.
 
-Development: `uv run pytest` (about 1,200 tests) and `uv run ruff check .` must be green
+Development: `uv run pytest` (about 1,700 tests) and `uv run ruff check .` must be green
 per commit. Contributor rules: [CONTRIBUTING.md](CONTRIBUTING.md) and
 [AGENTS.md](AGENTS.md); architecture in [docs/architecture.md](docs/architecture.md).
 
-CI runs Linux (Python 3.11 and 3.13), Windows and macOS.
+CI runs Linux (Python 3.11 and 3.13; x86-64 and ARM), Windows and macOS, plus the
+ngspice and motulator oracles and the compiled kernel's parity with the Python engine.
 
 ---
 
@@ -365,8 +388,9 @@ scheduled gate edges and natural diode commutations — are located as exact ins
 stepped over. That keeps capacitor voltages and inductor currents continuous, makes runs
 deterministic, and lets steady state, small-signal averaging and sensitivities work on the
 same exact period map. Details and the reasons behind the main choices:
-[architecture](docs/architecture.md) and the [ADRs](docs/adr/). A compiled core is planned
-as an optional backend behind the same model format, CLI and MCP contract.
+[architecture](docs/architecture.md) and the [ADRs](docs/adr/). The optional compiled
+kernel ([docs/rust-core.md](docs/rust-core.md)) sits behind the same model format, CLI and
+MCP contract; the Python engine remains the reference.
 
 ## Contributing
 
