@@ -730,21 +730,40 @@ def _point_metrics(
         )
         if recovery_band is not None and window:
             band = abs(nominal_vout) * recovery_band / 100.0
-            recovery = None
-            # Last instant outside the band; recovery is what follows it.
-            for time, value in reversed(window):
-                if abs(value - nominal_vout) > band:
-                    recovery = time
-                    break
-            if recovery is None:
+            origin = event_onset if event_onset is not None else window[0][0]
+            # Last sample outside the band. Recovery happens between it and
+            # the next sample, not at it: reporting the last outside sample
+            # itself is early by up to one output step.
+            last_outside = next(
+                (
+                    index
+                    for index in range(len(window) - 1, -1, -1)
+                    if abs(window[index][1] - nominal_vout) > band
+                ),
+                None,
+            )
+            if last_outside is None:
                 measured["recovery_time_s"] = 0.0
-            elif recovery >= window[-1][0] - 1e-15:
+            elif last_outside == len(window) - 1:
                 # Never came back inside the band before the window closed.
                 measured["recovery_time_s"] = None
                 measured["recovery_status"] = "not_recovered_within_window"
             else:
-                measured["recovery_time_s"] = recovery - (
-                    event_onset if event_onset is not None else window[0][0]
+                time_out, value_out = window[last_outside]
+                time_in, value_in = window[last_outside + 1]
+                error_out, error_in = value_out - nominal_vout, value_in - nominal_vout
+                # The band edge on the side the signal comes back from, crossed
+                # on the straight line between the two samples.
+                edge = math.copysign(band, error_out)
+                fraction = (error_out - edge) / (error_out - error_in)
+                crossing = time_out + fraction * (time_in - time_out)
+                measured["recovery_time_s"] = crossing - origin
+                # The samples only bracket the instant: it lies between the
+                # last one outside the band and the first one back inside.
+                measured["recovery_time_lo_s"] = time_out - origin
+                measured["recovery_time_hi_s"] = time_in - origin
+                measured["recovery_time_method"] = (
+                    "linear_interpolation_between_output_samples"
                 )
 
     frequency = _measured_switching_frequency(run_dir, settled_start, forced_windows)

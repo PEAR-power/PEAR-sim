@@ -20,9 +20,15 @@ uv run pytest            # full suite
 uv run ruff check .
 ```
 
-Optional: install [ngspice](https://ngspice.sourceforge.io/) to run the
-independent-engine differential tests (`tests/test_ngspice_oracle.py`); they
-skip without it, and CI runs them.
+Optional, each skipped when absent and each run in CI:
+
+- [ngspice](https://ngspice.sourceforge.io/) for the independent-engine
+  differential tests (`tests/test_ngspice_oracle.py`);
+- an interpreter with `motulator==0.24.1`, named by
+  `PEAR_SIM_MOTULATOR_PYTHON`, for the machine-model comparison
+  (`tests/test_motulator_oracle.py`);
+- the compiled kernel, for the tests that run on the Rust backend (build and
+  install it as described in [docs/rust-core.md](docs/rust-core.md)).
 
 ## What a good pull request contains
 

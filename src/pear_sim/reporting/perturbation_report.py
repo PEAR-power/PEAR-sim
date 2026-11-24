@@ -263,7 +263,13 @@ def _metric_columns(runs: Sequence[Mapping[str, Any]]) -> list[str]:
     columns += sorted(
         key
         for key in present
-        if key not in columns and key not in ("protection", "recovery_status", "fsw_measured_status")
+        if key not in columns
+        and key not in (
+            "protection",
+            "recovery_status",
+            "recovery_time_method",
+            "fsw_measured_status",
+        )
     )[:6]
     return columns
 

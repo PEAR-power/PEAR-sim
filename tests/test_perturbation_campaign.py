@@ -413,3 +413,66 @@ def test_a_median_on_an_open_bound_is_withheld(tmp_path):
     result = _measured_switching_frequency(_events_run(tmp_path, events), 0.0, ())
 
     assert result.value_hz is None
+
+
+# --------------------------------------------------------------------------
+# recovery time
+# --------------------------------------------------------------------------
+
+
+def test_recovery_time_lies_between_the_samples_that_bracket_the_band_entry(tmp_path):
+    """An RC charging to 10 V with a 1 ms time constant enters the 5 % band at
+    ln(20) ms = 2.9957 ms. On a 0.5 ms grid the last sample outside the band
+    is at 2.5 ms and the first inside at 3.0 ms; reporting 2.5 ms, the last
+    sample still OUTSIDE, was early by most of a step."""
+
+    import math
+
+    model = tmp_path / "rc.yaml"
+    model.write_text(
+        """schema: pear-sim/v0.1
+name: rc_charge
+parameters:
+  r: 1 kohm
+circuit:
+  ground: gnd
+  components:
+    - {id: vs, type: voltage_source, p: in, n: gnd, value: 10 V}
+    - {id: r1, type: resistor, p: in, n: out, value: "${r}"}
+    - {id: c1, type: capacitor, p: out, n: gnd, value: 1 uF, initial_voltage: 0 V}
+analysis:
+  transient: {start: 0 s, stop: 8 ms, output_step: 0.5 ms, solver: dopri5, rtol: 1.0e-9, atol: 1.0e-11}
+outputs: [v(out)]
+"""
+    )
+    request = {
+        "schema": REQUEST_SCHEMA,
+        "label": "rc recovery",
+        "nominal": {"vout_v": 10.0, "recovery_band_percent": 5.0},
+        "axes": [
+            {
+                "id": "r", "kind": "parameter_values", "parameter": "r",
+                "values": ["1 kohm"], "source": "assumption", "note": "nominal",
+            }
+        ],
+        "criteria": [
+            {
+                "id": "settled", "signal": "v(out)", "field": "mean_last_half",
+                "op": "abs_deviation_max", "reference": 10.0, "limit": 1.0, "unit": "V",
+                "source": "assumption", "note": "placeholder",
+            }
+        ],
+    }
+    artifacts = run_campaign(model, _write(tmp_path, request), tmp_path / "out", jobs=1)
+    (run,) = json.loads(artifacts.summary.read_text())["runs"]
+    metrics = run["metrics"]
+    analytic = math.log(20.0) * 1e-3
+    assert metrics["recovery_time_lo_s"] == pytest.approx(2.5e-3)
+    assert metrics["recovery_time_hi_s"] == pytest.approx(3.0e-3)
+    assert metrics["recovery_time_lo_s"] < analytic < metrics["recovery_time_hi_s"]
+    assert metrics["recovery_time_lo_s"] < metrics["recovery_time_s"] < metrics["recovery_time_hi_s"]
+    # Linear interpolation between the two samples of an exponential: 2.9967 ms.
+    assert metrics["recovery_time_s"] == pytest.approx(2.9967e-3, abs=1e-7)
+    assert metrics["recovery_time_s"] == pytest.approx(analytic, abs=2e-6)
+    assert metrics["recovery_time_method"] == "linear_interpolation_between_output_samples"
+    assert "recovery_status" not in metrics
