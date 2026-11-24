@@ -7,7 +7,7 @@ break the model format; every break carries a migration note).
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-11-23
+## [0.2.0] - 2026-11-24
 
 Adds closed-loop Floquet analysis and loop-gain measurement by injection, capacitor ESR
 and inductor DCR with a parasitic loss audit, iGSE core-loss estimation, self-consistent
